@@ -1,0 +1,7 @@
+node_modules/
+dist/
+media/
+tools/*.img
+tools/*.lbl
+tools/*.csv
+tools/*.nc
