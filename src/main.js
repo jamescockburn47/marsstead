@@ -8,10 +8,11 @@
 // L headlamp, [ ] scrub time (the demo's best friend).
 
 import * as THREE from 'three';
-import { groundHeight, latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
+import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
+import { meshGroundHeight } from './marschunk.js';
 import { sunElevation, sunAzimuth, solClock, solarLongitude, season } from './marstime.js';
 import { lightState, surfaceTempC } from './marslight.js';
-import { tauAt } from './dust.js';
+import { tauAt, windAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
   G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0,
@@ -57,13 +58,13 @@ class Game {
 
     this.terrain = new TerrainLayer(this.scene);
     this.sky = new SkyDome(this.scene);
-    this.dust = new DustLayer(this.scene, groundHeight);
+    this.dust = new DustLayer(this.scene, meshGroundHeight);
     this.colonist = new Colonist(this.scene);
     this.hud = new Hud(IS_PLACEHOLDER);
 
     // the walker's state — spawned at HOME (the Jezero delta)
     this.pos = new THREE.Vector3(0, 0, 0);
-    this.pos.y = groundHeight(0, 0);
+    this.pos.y = meshGroundHeight(0, 0);
     this.vel = new THREE.Vector3();
     this.vy = 0;
     this.airborne = false;
@@ -162,7 +163,7 @@ class Game {
       if (this.idleTimer > 45) { this.idleTimer = 0; this.say('idle'); }
     }
 
-    const ground = groundHeight(this.pos.x, this.pos.z);
+    const ground = meshGroundHeight(this.pos.x, this.pos.z);
     if (!this.airborne && this.keys.Space) {
       this.vy = JUMP_V0; this.airborne = true;
       this.sayOnce('first-jump');
@@ -192,7 +193,7 @@ class Game {
       Math.cos(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
     ).add(this.pos);
     // keep the lens out of the ground
-    co.y = Math.max(co.y, groundHeight(co.x, co.z) + 0.6);
+    co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.6);
     this.cam.position.lerp(co, Math.min(1, 8 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 0.95, this.pos.z);
 
@@ -238,6 +239,10 @@ class Game {
     // dust is sunlit matter: it fades with the light (never glows at night)
     this.dust.moteMat.opacity = 0.06 + 0.44 * L.sunIntensity;
     this.dust.devilMat.opacity = 0.05 + 0.3 * L.sunIntensity;
+    // the fractal atmosphere: dome + haze sheets read the same pure envelopes
+    const wind = windAt(this.pos.x, this.pos.z, this.t);
+    this.dust.setAtmos(L, sunDir, tau, wind.x, wind.z, this.t,
+      this.cam.position, meshGroundHeight(this.cam.position.x, this.cam.position.z));
     if (this.dust.nearestDevil < 220) this.sayOnce('devil-near');
 
     // ---- the suit's slow arithmetic

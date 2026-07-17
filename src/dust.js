@@ -25,6 +25,19 @@ export function tauAt(mtcHours, base = 0.4) {
   return base + afternoon;
 }
 
+// ---- the haze envelope -----------------------------------------------------
+// How much suspended dust veils a view ray, by elevation angle (rad above
+// the horizon) and dust load tau. Dust hangs LOW: the horizon drowns first,
+// the zenith clears last — this envelope is the CPU truth the dust-dome
+// shader mirrors, and verify-dust holds its shape (bounded, denser at the
+// horizon, growing with tau).
+export function hazeDensity(elevRad, tau) {
+  const horiz = 1 - Math.max(0, Math.min(1, Math.sin(Math.max(0, elevRad))));
+  const low = Math.pow(horiz, 2.4);                 // hugging the ground
+  const load = Math.max(0, Math.min(1.5, tau)) / 1.5;
+  return Math.min(0.9, (0.12 + 0.75 * low) * load);
+}
+
 // ---- swirl: the vortex wake ------------------------------------------------
 // The velocity a dust mote feels near a moving body: a trailing vortex
 // pair — dust curls in behind you and rides your wake. Analytic, bounded,

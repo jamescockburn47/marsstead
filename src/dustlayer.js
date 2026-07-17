@@ -4,8 +4,81 @@
 // spinning grains you can see coming from half a kilometre.
 
 import * as THREE from 'three';
-import { windAt, swirl, devilState, devilSpin, DEVIL_COUNT } from './dust.js';
+import { windAt, swirl, devilState, devilSpin, hazeDensity, DEVIL_COUNT } from './dust.js';
 import { hash2 } from './noise.js';
+
+// shared GLSL: the landing page's fbm, the family's fractal workhorse
+const FBM_GLSL = /* glsl */`
+  float h21(vec2 p){ p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23); return fract(p.x * p.y); }
+  float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1,0)), f.x),
+               mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
+  float fbm(vec2 p){ float a = .5, s = 0.;
+    for (int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; a *= .5; }
+    return s; }
+`;
+
+// the dust dome: an inverted sphere around the lens whose alpha is scrolling
+// fbm weighted to the horizon — the whole sky-to-ground air gains a moving
+// grain of suspended dust for one draw call. Fractal maths, not particles.
+const DOME_VS = /* glsl */`
+  varying vec3 vDir;
+  void main() {
+    vDir = normalize(position);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const DOME_FS = /* glsl */`
+  precision highp float;
+  varying vec3 vDir;
+  uniform vec3 uCol, uSunDir;
+  uniform float uT, uHaze, uSunI;
+  uniform vec2 uWind;
+  ${FBM_GLSL}
+  void main() {
+    vec3 d = normalize(vDir);
+    // project the view ray onto the dust sheet: rays near the horizon cross
+    // more of it (the same 1/(y+e) foreshortening the sky shader's stars use)
+    vec2 sheet = d.xz / (abs(d.y) + 0.28);
+    float n = fbm(sheet * 2.2 - uWind * uT * 0.010);
+    n = 0.55 * n + 0.45 * fbm(sheet * 5.1 - uWind * uT * 0.024 + 31.7);
+    // horizon weighting mirrors the pure hazeDensity envelope
+    float horiz = 1.0 - clamp(sin(max(0.0, asin(clamp(d.y, -1.0, 1.0)))), 0.0, 1.0);
+    float w = pow(horiz, 2.4);
+    float a = uHaze * (0.25 + 0.75 * w) * (0.45 + 0.75 * n);
+    // dust brightens toward the sun — the shaft of a dusty afternoon
+    vec3 col = uCol + vec3(0.22, 0.10, 0.03) * uSunI * exp(-distance(d, uSunDir) * 2.2);
+    gl_FragColor = vec4(col, clamp(a, 0.0, 0.85));
+  }
+`;
+
+// low haze sheets: three camera-following planes whose alpha is wind-blown
+// fbm in WORLD space (no swim) — the rivers of dust that hug the plain
+const SHEET_VS = /* glsl */`
+  varying vec3 vWorld;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vWorld = w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }
+`;
+const SHEET_FS = /* glsl */`
+  precision highp float;
+  varying vec3 vWorld;
+  uniform vec3 uCol;
+  uniform float uT, uAlpha;
+  uniform vec2 uWind;
+  ${FBM_GLSL}
+  void main() {
+    vec2 p = vWorld.xz * 0.055 - uWind * uT * 0.06;
+    float n = fbm(p) * 0.6 + fbm(p * 3.1 + 17.0) * 0.4;
+    float a = uAlpha * smoothstep(0.35, 0.75, n);
+    gl_FragColor = vec4(uCol, a);
+  }
+`;
 
 const MOTES = 1800;
 const MOTE_RANGE = 45;       // motes live in a box around the colonist
@@ -63,6 +136,66 @@ export class DustLayer {
     this.devils = new THREE.Points(this.devilGeo, this.devilMat);
     this.devils.frustumCulled = false;
     scene.add(this.devils);
+
+    // --- the dust dome (one draw call of fractal air)
+    this.domeUniforms = {
+      uCol: { value: new THREE.Color(0.8, 0.5, 0.3) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uWind: { value: new THREE.Vector2(1, 0) },
+      uT: { value: 0 }, uHaze: { value: 0.3 }, uSunI: { value: 1 },
+    };
+    this.dome = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 24, 12),
+      new THREE.ShaderMaterial({
+        vertexShader: DOME_VS, fragmentShader: DOME_FS,
+        uniforms: this.domeUniforms, side: THREE.BackSide,
+        transparent: true, depthWrite: false, depthTest: false,
+      }));
+    this.dome.scale.setScalar(300);
+    this.dome.renderOrder = 50;      // the veil draws over the world
+    this.dome.frustumCulled = false;
+    scene.add(this.dome);
+
+    // --- three low haze sheets riding the wind over the plain
+    this.sheets = [];
+    const sheetGeo = new THREE.PlaneGeometry(240, 240);
+    for (const [height, alpha] of [[0.5, 0.16], [1.8, 0.11], [4.5, 0.07]]) {
+      const uniforms = {
+        uCol: { value: new THREE.Color(0.8, 0.5, 0.3) },
+        uWind: { value: new THREE.Vector2(1, 0) },
+        uT: { value: 0 }, uAlpha: { value: alpha },
+      };
+      const mesh = new THREE.Mesh(sheetGeo, new THREE.ShaderMaterial({
+        vertexShader: SHEET_VS, fragmentShader: SHEET_FS, uniforms,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.renderOrder = 49;
+      this.sheets.push({ mesh, uniforms, height, alpha });
+      scene.add(mesh);
+    }
+  }
+
+  // the atmosphere pass: fed each frame from the pure light + haze envelopes
+  setAtmos(light, sunDir, tau, windX, windZ, t, camPos, groundY) {
+    const du = this.domeUniforms;
+    du.uCol.value.setRGB(...light.fogColour);
+    du.uSunDir.value.copy(sunDir);
+    du.uWind.value.set(windX, windZ);
+    du.uT.value = t;
+    // the pure envelope, sampled at a mid-sky ray, scaled by daylight —
+    // dust is sunlit matter (storms keep a floor so brown-out still veils)
+    const day = 0.15 + 0.85 * light.sunIntensity + light.storm * 0.6;
+    this.dome.position.copy(camPos);
+    du.uHaze.value = hazeDensity(0.18, tau) * Math.min(1, day);
+    du.uSunI.value = light.sunIntensity;
+    for (const s of this.sheets) {
+      s.uniforms.uCol.value.setRGB(...light.fogColour);
+      s.uniforms.uWind.value.set(windX, windZ);
+      s.uniforms.uT.value = t;
+      s.uniforms.uAlpha.value = s.alpha * Math.min(1, day) * Math.min(1, tau / 0.5);
+      s.mesh.position.set(camPos.x, groundY + s.height, camPos.z);
+    }
   }
 
   // px/pz/pvx/pvz: colonist position + velocity (the swirl register's body)

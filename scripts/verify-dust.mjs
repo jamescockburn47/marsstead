@@ -3,7 +3,8 @@
 // breathes within limits. All deterministic.
 
 import {
-  windAt, tauAt, swirl, devilState, devilSpin, DEVIL_COUNT, DEVIL_LIFE, DEVIL_RANGE,
+  windAt, tauAt, swirl, devilState, devilSpin, hazeDensity,
+  DEVIL_COUNT, DEVIL_LIFE, DEVIL_RANGE,
 } from '../src/dust.js';
 
 let failed = 0;
@@ -78,6 +79,22 @@ function check(name, ok, detail = '') {
   const inside = devilSpin(1, 2, 1), core = devilSpin(2, 2, 1), out = devilSpin(8, 2, 1);
   check('devil spin peaks at core', core >= inside && core > out && out > 0);
   check('devil spin bounded', devilSpin(0.001, 2, 1) < 10 && Number.isFinite(devilSpin(1e6, 2, 1)));
+}
+
+// 6. the haze envelope: bounded, horizon-heavy, grows with tau
+{
+  let ok = true;
+  for (let e = 0; e <= 1.6; e += 0.05) {
+    for (const tau of [0.2, 0.5, 1, 1.5, 5]) {
+      const h = hazeDensity(e, tau);
+      if (!(h >= 0 && h <= 0.9)) ok = false;
+    }
+  }
+  check('haze bounded', ok);
+  check('haze horizon-heavy', hazeDensity(0.05, 0.6) > hazeDensity(1.2, 0.6) * 2,
+    `${hazeDensity(0.05, 0.6).toFixed(3)} vs ${hazeDensity(1.2, 0.6).toFixed(3)}`);
+  check('haze grows with tau', hazeDensity(0.2, 1.2) > hazeDensity(0.2, 0.4));
+  check('haze saturates', hazeDensity(0.1, 99) <= 0.9);
 }
 
 if (failed) { console.error(`verify-dust: ${failed} FAILED`); process.exit(1); }

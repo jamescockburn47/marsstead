@@ -77,3 +77,26 @@ export function frostAt(x, z) {
   const { lat } = worldToLatLon(x, z);
   return Math.abs(lat) > 55;
 }
+
+// ---- the surface the walker STANDS on -------------------------------------
+// The renderer draws straight triangles between lattice samples; the smooth
+// analytic groundHeight dips above and below those planes mid-cell, so feet
+// standing on the analytic value clip through the visible ground. This
+// function returns the height of the DRAWN surface: the same near-ring
+// lattice (global — chunk edges align by construction), the same diagonal
+// split as buildChunkData's index order (a,c,b / b,c,d), interpolated
+// barycentrically. Walker, camera and mesh can no longer disagree anywhere.
+export function meshGroundHeight(x, z) {
+  const step = CHUNK / RES_NEAR;
+  const gx = x / step, gz = z / step;
+  const i0 = Math.floor(gx), j0 = Math.floor(gz);
+  const u = gx - i0, v = gz - j0;
+  const x0 = i0 * step, z0 = j0 * step;
+  const h00 = groundHeight(x0, z0);
+  const h10 = groundHeight(x0 + step, z0);
+  const h01 = groundHeight(x0, z0 + step);
+  const h11 = groundHeight(x0 + step, z0 + step);
+  // triangles split on the same diagonal the index buffer uses
+  if (u + v < 1) return h00 + (h10 - h00) * u + (h01 - h00) * v;
+  return h11 + (h01 - h11) * (1 - u) + (h10 - h11) * (1 - v);
+}

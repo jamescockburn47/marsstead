@@ -5,6 +5,7 @@
 import { groundHeight } from '../src/mars.js';
 import {
   CHUNK, RES_NEAR, RES_FAR, SKIRT_DROP, buildChunkData, resForRing, colourFor,
+  meshGroundHeight,
 } from '../src/marschunk.js';
 
 let failed = 0;
@@ -79,6 +80,41 @@ function check(name, ok, detail = '') {
 }
 
 check('chunk size sane', CHUNK >= 32 && CHUNK <= 128);
+
+// 7. the WALKED surface is the DRAWN surface: meshGroundHeight equals the
+//    analytic height exactly at lattice points, and mid-cell it lies on the
+//    triangle plane — inside the corner heights' hull, never the smooth
+//    curve's overshoot. This is the no-clipping contract.
+{
+  const step = CHUNK / RES_NEAR;
+  let exact = true;
+  for (let i = -20; i <= 20; i += 3) {
+    for (let j = -20; j <= 20; j += 5) {
+      if (Math.abs(meshGroundHeight(i * step, j * step) - groundHeight(i * step, j * step)) > 1e-9) exact = false;
+    }
+  }
+  check('mesh surface exact at lattice', exact);
+
+  let hull = true, worstGap = 0;
+  for (let n = 0; n < 800; n++) {
+    const x = ((n * 137.71) % 900) - 450, z = ((n * 89.13) % 900) - 450;
+    const i0 = Math.floor(x / step) * step, j0 = Math.floor(z / step) * step;
+    const hs = [
+      groundHeight(i0, j0), groundHeight(i0 + step, j0),
+      groundHeight(i0, j0 + step), groundHeight(i0 + step, j0 + step),
+    ];
+    const m = meshGroundHeight(x, z);
+    if (m < Math.min(...hs) - 1e-9 || m > Math.max(...hs) + 1e-9) hull = false;
+    worstGap = Math.max(worstGap, Math.abs(m - groundHeight(x, z)));
+  }
+  check('mesh surface within cell hull', hull);
+  console.log(`  (analytic-vs-mesh mid-cell gap up to ${worstGap.toFixed(3)} m — the clip the walker no longer feels)`);
+
+  // continuity across a cell edge: approaching from both sides agrees
+  const e = 3 * step;
+  const a = meshGroundHeight(e - 1e-7, 10.3), b = meshGroundHeight(e + 1e-7, 10.3);
+  check('mesh surface continuous at edges', Math.abs(a - b) < 1e-3, `${Math.abs(a - b)}`);
+}
 
 if (failed) { console.error(`verify-marschunk: ${failed} FAILED`); process.exit(1); }
 console.log('verify-marschunk: all green');

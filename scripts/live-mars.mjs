@@ -42,9 +42,13 @@ await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.marsstead && window.marsstead.ready, null, { timeout: 20000 });
 check('game boots to ready', true);
 
-// let terrain stream in
-await page.waitForTimeout(4000);
-const chunkCount = await page.evaluate(() => window.marsstead.terrain.chunks.size);
+// let terrain stream in — wait on PROGRESS, not wall time (the software
+// renderer builds 3 chunks per frame at whatever fps it can manage)
+let chunkCount = 0;
+for (let i = 0; i < 40 && chunkCount < 100; i++) {
+  await page.waitForTimeout(500);
+  chunkCount = await page.evaluate(() => window.marsstead.terrain.chunks.size);
+}
 check('terrain streams (no cheap tiles)', chunkCount >= 100, `chunks=${chunkCount}`);
 
 // afternoon establishing shot
