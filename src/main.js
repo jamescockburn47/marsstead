@@ -15,7 +15,7 @@ import { lightState, surfaceTempC } from './marslight.js';
 import { tauAt, windAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
-  G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0,
+  G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0, LOPE_HOP_V0,
   STRIDE_HZ_WALK, STRIDE_HZ_LOPE, fallStep, fallSeverity,
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
@@ -23,7 +23,7 @@ import { SkyDome } from './sky.js';
 import { DustLayer } from './dustlayer.js';
 import { Colonist } from './colonist.js';
 import { createBuggy, stepBuggy } from './buggy.js';
-import { BuggyLayer } from './buggylayer.js';
+import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
 import { Hud } from './hud.js';
 import { vesperSay } from './vesper.js';
 
@@ -69,6 +69,7 @@ class Game {
     this.buggy.y = meshGroundHeight(this.buggy.x, this.buggy.z);
     this.buggyLayer = new BuggyLayer(this.scene);
     this.driving = false;
+    this.fpv = false;   // C toggles first-person while driving
     this.buggyFlags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
     this.driftTimer = 0; this.airTimer = 0;
 
@@ -89,6 +90,7 @@ class Game {
     // the suit
     this.air = 1; this.warm = 1;
     this.saidCounts = {}; this.lamp = false;
+    this.lampMode = 'auto'; this.lampLit = false; // auto: dusk switches them
     this.idleTimer = 0; this.saidFirsts = new Set();
 
     this.keys = {};
@@ -124,11 +126,11 @@ class Game {
 
   devKeys(e) {
     if (e.code === 'KeyL') {
-      this.lamp = !this.lamp;
-      this.colonist.setLamp(this.lamp && !this.driving);
-      this.buggyLayer.setLamps(this.lamp && this.driving);
+      // cycle auto -> on -> off -> auto (auto is the default: dusk decides)
+      this.lampMode = this.lampMode === 'auto' ? 'on' : this.lampMode === 'on' ? 'off' : 'auto';
     }
     if (e.code === 'KeyE') this.toggleBuggy();
+    if (e.code === 'KeyC' && this.driving) this.fpv = !this.fpv;
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
   }
@@ -195,6 +197,7 @@ class Game {
     if (this.keys.KeyA) wish.add(right);
     if (this.keys.KeyD) wish.sub(right);
     const loping = this.keys.ShiftLeft || this.keys.ShiftRight;
+    const speed0 = this.vel.length();
     const target = wish.lengthSq() > 0
       ? wish.normalize().multiplyScalar(loping ? LOPE_SPEED : WALK_SPEED)
       : new THREE.Vector3();
@@ -218,6 +221,10 @@ class Game {
     if (!this.airborne && this.keys.Space) {
       this.vy = JUMP_V0; this.airborne = true;
       this.sayOnce('first-jump');
+    } else if (!this.airborne && loping && speed0 > 3.2) {
+      // the LOPE: running is a chain of small ballistic bounds — each
+      // stride leaves the ground for real (LOPE_HOP_V0's ~0.6 s flight)
+      this.vy = LOPE_HOP_V0; this.airborne = true;
     }
     if (this.airborne) {
       this.vy = fallStep(this.vy, dt, G_MARS);
@@ -248,10 +255,30 @@ class Game {
     this.cam.position.lerp(co, Math.min(1, 8 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 0.95, this.pos.z);
 
-    // the parked buggy still needs drawing (and its dust settling)
+    // the parked buggy still needs drawing — seated on its wheels
+    const pwg = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading);
+    this.buggy.y = pwg.h;
     this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
-      meshGroundHeight(this.buggy.x, this.buggy.z));
+      pwg.h, pwg.pitch, pwg.roll);
     this.hud.setSpeed(null);
+  }
+
+  // sample the drawn surface under all four wheel contacts: the body's
+  // height AND attitude come from where the wheels actually stand — the
+  // same "stand on what is drawn" rule the walker follows (no floating
+  // flat over a slope, no downhill wheels in the air)
+  wheelGround(bx, bz, heading) {
+    const sin = Math.sin(heading), cos = Math.cos(heading);
+    const at = (lx, lz) => meshGroundHeight(bx + lx * cos + lz * sin, bz - lx * sin + lz * cos);
+    const hFL = at(-TRACK, WHEELBASE), hFR = at(TRACK, WHEELBASE);
+    const hRL = at(-TRACK, -WHEELBASE), hRR = at(TRACK, -WHEELBASE);
+    const hF = (hFL + hFR) / 2, hR = (hRL + hRR) / 2;
+    const hL = (hFL + hRL) / 2, hRt = (hFR + hRR) / 2;
+    return {
+      h: (hF + hR) / 2,
+      pitch: Math.atan2(hR - hF, 2 * WHEELBASE),
+      roll: Math.atan2(hRt - hL, 2 * TRACK),
+    };
   }
 
   frameDriving(dt) {
@@ -261,9 +288,11 @@ class Game {
       steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
       handbrake: !!this.keys.Space,
     };
-    // sample the drawn surface + its gradient under the buggy
+    // ground: height + attitude from the four wheel contacts, gradient
+    // from central differences (drives the slope forces)
     const e = 0.7, bx = this.buggy.x, bz = this.buggy.z;
-    const h = meshGroundHeight(bx, bz);
+    const wg = this.wheelGround(bx, bz, this.buggy.heading);
+    const h = wg.h;
     const ground = {
       h,
       gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
@@ -284,7 +313,7 @@ class Game {
       };
     }
     this.buggyFlags = flags;
-    this.buggyLayer.update(dt, this.buggy, flags, h);
+    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll);
 
     // VESPER reads the same flags the physics raises
     if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {
@@ -295,25 +324,40 @@ class Game {
       this.airTimer += dt;
       if (this.airTimer > 0.8) { this.airTimer = -6; this.say('buggy-air'); }
     } else if (this.airTimer > 0) this.airTimer = 0;
-    if (flags.landed && flags.impact > 5) this.say('buggy-crash');
+    if (flags.rollover) this.say('buggy-rollover');
+    if (flags.cleanFlip) this.say('buggy-flip');
+    else if (flags.landed && flags.impact > 5 && !flags.rollover) this.say('buggy-crash');
 
     // the settler rides the seat
     this.pos.set(this.buggy.x, this.buggy.y, this.buggy.z);
 
-    // chase camera: eases in behind the buggy's heading, farther back
-    const targetYaw = this.buggy.heading;
-    let dy = targetYaw - this.camYaw;
-    dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    this.camYaw += dy * Math.min(1, 2.2 * dt);
-    this.camDist = 12;
-    const co = new THREE.Vector3(
-      Math.sin(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
-      this.camDist * Math.sin(this.camPitch) + 2.2,
-      Math.cos(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
-    ).add(this.pos);
-    co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.7);
-    this.cam.position.lerp(co, Math.min(1, 6 * dt));
-    this.cam.lookAt(this.buggy.x, this.buggy.y + 1.0, this.buggy.z);
+    if (this.fpv) {
+      // first person: the driver's eye — rigid to the body (no lerp; a
+      // laggy FP camera is a seasick FP camera), attitude included
+      const eye = this.buggyLayer.group.localToWorld(new THREE.Vector3(0, 1.32, -0.05));
+      this.cam.position.copy(eye);
+      let dy = this.buggy.heading - this.camYaw;
+      dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      this.camYaw += dy * Math.min(1, 6 * dt); // mouse can still glance around
+      const look = new THREE.Vector3(
+        Math.sin(this.camYaw), -Math.sin(this.camPitch - 0.25) * 0.6, Math.cos(this.camYaw),
+      ).add(eye);
+      this.cam.lookAt(look);
+    } else {
+      // chase camera: eases in behind the buggy's heading, farther back
+      let dy = this.buggy.heading - this.camYaw;
+      dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      this.camYaw += dy * Math.min(1, 2.2 * dt);
+      this.camDist = 12;
+      const co = new THREE.Vector3(
+        Math.sin(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+        this.camDist * Math.sin(this.camPitch) + 2.2,
+        Math.cos(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+      ).add(this.pos);
+      co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.7);
+      this.cam.position.lerp(co, Math.min(1, 6 * dt));
+      this.cam.lookAt(this.buggy.x, this.buggy.y + 1.0, this.buggy.z);
+    }
 
     this.hud.setSpeed(Math.abs(this.buggy.u) * 3.6);
   }
@@ -348,6 +392,15 @@ class Game {
       -Math.cos(pAng), Math.sin(pAng) * 0.8, 0.35,
     ).normalize();
     this.sky.set(L, sunDir, phobosDir, this.cam.position);
+
+    // automatic lights: dusk switches them on, dawn off; L overrides
+    const wantLit = this.lampMode === 'on' || (this.lampMode === 'auto' && sunEl < 4);
+    if (wantLit !== this.lampLit) {
+      this.lampLit = wantLit;
+      if (wantLit && this.lampMode === 'auto') this.sayOnce('lights-on');
+    }
+    this.colonist.setLamp(this.lampLit && !this.driving);
+    this.buggyLayer.setLamps(this.lampLit);
 
     // dusk / night / dawn beats
     if (sunEl < 6 && sunEl > -2 && this.lastSunEl > sunEl) this.sayOnce('sunset');

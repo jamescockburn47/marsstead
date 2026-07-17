@@ -42,6 +42,12 @@ export const TRACTION = 0.82;     // drive may spend this much of the rear circl
 export const U_KIN = 3.5;         // below this, blend to kinematic steering
 export const POWER = 9500;        // W — engines are power-limited at speed
 export const FRONT_SPLIT = 0.25;  // AWD, rear-biased: the rally layout
+export const PITCH_RATE = 2.6;    // rad/s of airborne pitch authority
+export const ROLL_RATE = 3.2;     // rad/s of airborne roll authority
+export const CLEAN_ATT = 0.5;     // rad from level that still lands clean
+export const H_CG = 0.55;         // m, centre-of-mass height — the tipping lever
+export const HALF_TRACK = 0.95;   // m to the outer wheels
+export const TRIP_V = 4.5;        // m/s sideways: fast enough to trip a rollover
 
 // per-axle vertical load (static split; g does the low-grip work)
 export function axleLoad() { return (MASS * G_MARS) / 2; }
@@ -58,6 +64,9 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
     vy: 0, airborne: false,
     steer: 0,               // smoothed road-wheel angle
     drive: 0,               // smoothed throttle — keys step, engines ramp
+    pitch: 0, roll: 0,      // body attitude — the flip axes
+    rollKick: 0,            // rad/s imposed by a rollover launch
+    airSpin: 0,             // |rotation| accumulated this flight (flips!)
     wheelSpin: 0,           // rolling phase for the visual layer
   };
 }
@@ -66,7 +75,10 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
 // ground: { h, gx, gz } — height and gradient at (x, z)
 // returns flags { skidF, skidR, airborne, landed, impact }
 export function stepBuggy(s, input, ground, dt) {
-  const flags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
+  const flags = {
+    skidF: false, skidR: false, airborne: false, landed: false, impact: 0,
+    flip: false, cleanFlip: false, rollover: false,
+  };
 
   // steering eases to command — a wheel, not a switch (speed-sensitive:
   // full lock crawling, gentler at speed, like real steering feel)
@@ -134,6 +146,25 @@ export function stepBuggy(s, input, ground, dt) {
     const dv = (fyF * Math.cos(s.steer) + fyR) / MASS - s.u * s.r - G_MARS * gxB;
     const dr = (WHEELBASE_F * fyF * Math.cos(s.steer) - WHEELBASE_R * fyR) / YAW_INERTIA;
 
+    // ---- lateral stability: the tipping ledger. Load-transfer ratio =
+    // (felt lateral accel x CG height) / (g x half-track); at 1.0 the
+    // inner wheels unload. On FLAT ground friction caps aLat at mu*g, so
+    // LTR tops out ~0.38 — the buggy slides before it tips, as the real
+    // physics says. What DOES roll it: side-slopes stacking gravity on
+    // the same side, and the trip rollover — sliding sideways fast into
+    // rising ground. A rollover LAUNCHES the tumble; the judged landing
+    // machinery already knows what to do with an upside-down arrival.
+    const aLat = (fyF * Math.cos(s.steer) + fyR) / MASS + G_MARS * gxB;
+    const ltr = Math.abs(aLat) * H_CG / (G_MARS * HALF_TRACK)
+      + Math.abs(gxB) * 0.6; // side-slope adds its own lever
+    const tripped = Math.abs(s.v) > TRIP_V && Math.sign(s.v) * gxB < -0.12;
+    if ((ltr > 1 || tripped) && Math.abs(s.u) + Math.abs(s.v) > 3) {
+      flags.rollover = true;
+      s.airborne = true;
+      s.vy = Math.max(s.vy, 1.6);
+      s.rollKick = (Math.sign(aLat || s.v) || 1) * 4.5;
+    }
+
     s.u += du * dt;
     s.v += dv * dt;
     s.r += dr * dt;
@@ -158,8 +189,16 @@ export function stepBuggy(s, input, ground, dt) {
       if (Math.abs(s.r) < 0.02) s.r = 0;
     }
   } else {
-    // ballistic: no tyre forces, yaw settles, the world holds its breath
+    // ballistic: no tyre forces, yaw settles — but the FLIP AXES are
+    // yours: in the air, throttle/steer become pitch/roll authority
+    // (reaction wheels in spirit; Dune Flip Arena in soul). Low gravity
+    // means long hang time means flip time.
     s.r *= 1 - Math.min(1, 0.8 * dt);
+    const dPitch = input.throttle * PITCH_RATE * dt;
+    const dRoll = -input.steer * ROLL_RATE * dt + s.rollKick * dt;
+    s.pitch += dPitch;
+    s.roll += dRoll;
+    s.airSpin += Math.abs(dPitch) + Math.abs(dRoll);
     flags.airborne = true;
   }
 
@@ -187,14 +226,34 @@ export function stepBuggy(s, input, ground, dt) {
     s.y += s.vy * dt;
     flags.airborne = true;
     if (s.y <= ground.h) {
-      // touchdown: scrub speed with the vertical hit, report the impact
+      // touchdown: the LANDING is judged. Attitude near level -> the
+      // ordinary vertical-hit scrub; crooked -> a hard scrub; upside
+      // down-ish -> a crash-out (speed mostly gone, never death).
       const hit = Math.abs(s.vy);
-      const scrub = 1 - Math.min(0.45, hit * 0.045);
+      const att = Math.max(
+        Math.abs(((s.pitch + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI),
+        Math.abs(((s.roll + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI),
+      );
+      let scrub = 1 - Math.min(0.45, hit * 0.045);
+      if (att > CLEAN_ATT) scrub *= att > 2.0 ? 0.25 : 0.6;
+      if (s.airSpin > Math.PI * 1.8) {
+        flags.flip = true;
+        if (att <= CLEAN_ATT) flags.cleanFlip = true; // stuck the landing
+      }
       s.u *= scrub; s.v *= scrub * 0.8;
       s.y = ground.h; s.vy = 0;
       s.airborne = false;
-      flags.landed = true; flags.impact = hit;
+      s.airSpin = 0;
+      s.rollKick = 0;
+      flags.landed = true; flags.impact = att > 2.0 ? Math.max(hit, 6) : hit;
     }
+  }
+
+  // grounded: attitude settles back to the ground plane fast
+  if (!s.airborne) {
+    const settle = Math.min(1, 8 * dt);
+    s.pitch *= 1 - settle;
+    s.roll *= 1 - settle;
   }
 
   // wheel roll phase for the visual layer (radius ~0.42 m)

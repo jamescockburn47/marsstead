@@ -48,7 +48,15 @@ export function fallSeverity(impactSpeed) {
 // gates on, expressed as pure data so the walker and the verify agree.
 export const WALK_SPEED = 2.6;    // m/s
 export const LOPE_SPEED = 6.0;    // m/s — the bounding run
-export const JUMP_V0 = 3.2;       // m/s — suit-assisted hop (apex ~1.4 m)
+export const JUMP_V0 = 2.3;       // m/s — an honest suited jump (apex ~0.71 m,
+                                  // hang ~1.24 s). Mars is 0.38 g, NOT the
+                                  // Moon's 0.17: the read is "springy", never
+                                  // "floating". Tuned down from 3.2 after the
+                                  // playtest read as exaggerated moon-jumping.
+export const LOPE_HOP_V0 = 1.15;  // m/s — the lope's per-stride hop: the
+                                  // running gait IS a chain of small ballistic
+                                  // bounds (apex ~0.18 m, flight ~0.62 s,
+                                  // ~3.7 m covered per bound at LOPE_SPEED)
 export const STRIDE_HZ_WALK = 1.4; // strides/s at walk
 export const STRIDE_HZ_LOPE = 1.1; // slower cadence, longer flight — the bound
 

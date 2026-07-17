@@ -2,7 +2,7 @@
 
 import {
   G_MARS, G_EARTH, jumpApex, hangTime, hopRange, fallSpeed, fallSeverity,
-  fallStep, strideBob, JUMP_V0, WALK_SPEED, LOPE_SPEED,
+  fallStep, strideBob, JUMP_V0, LOPE_HOP_V0, WALK_SPEED, LOPE_SPEED,
 } from '../src/physics.js';
 
 let failed = 0;
@@ -16,8 +16,16 @@ check('g ratio ~ 0.379', Math.abs(G_MARS / G_EARTH - 0.3794) < 0.001);
 
 // closed-form ballistics
 check('apex v0^2/2g', Math.abs(jumpApex(3.2) - (3.2 * 3.2) / (2 * G_MARS)) < 1e-12);
-check('suit jump apex ~1.38 m', Math.abs(jumpApex(JUMP_V0) - 1.376) < 0.01, `${jumpApex(JUMP_V0)}`);
-check('same jump on Earth ~0.52 m', Math.abs(jumpApex(JUMP_V0, G_EARTH) - 0.522) < 0.01);
+check('suit jump apex ~0.71 m (Mars, not Moon)', Math.abs(jumpApex(JUMP_V0) - 0.711) < 0.01, `${jumpApex(JUMP_V0)}`);
+check('same jump on Earth ~0.27 m', Math.abs(jumpApex(JUMP_V0, G_EARTH) - 0.270) < 0.01);
+// the lope: each running stride is a small ballistic bound
+{
+  const apex = jumpApex(LOPE_HOP_V0);
+  const flight = hangTime(LOPE_HOP_V0);
+  check('lope bound apex ~0.18 m', Math.abs(apex - 0.178) < 0.01, `${apex.toFixed(3)}`);
+  check('lope bound flight ~0.62 s', Math.abs(flight - 0.618) < 0.01, `${flight.toFixed(3)}`);
+  check('lope covers ~3.7 m per bound', Math.abs(flight * 6.0 - 3.71) < 0.1);
+}
 check('Mars jump ~2.64x Earth jump', Math.abs(jumpApex(3, G_MARS) / jumpApex(3, G_EARTH) - G_EARTH / G_MARS) < 1e-9);
 check('hang time 2v0/g', Math.abs(hangTime(JUMP_V0) - (2 * JUMP_V0) / G_MARS) < 1e-12);
 check('45deg hop range v0^2/g', Math.abs(hopRange(10, Math.PI / 4) - 100 / G_MARS) < 1e-9);

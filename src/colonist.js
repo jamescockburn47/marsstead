@@ -92,7 +92,7 @@ export class Colonist {
     this.upper.position.y = HIP; // upper-body space sits on the hips
 
     // headlamp — the underground's one light, and dusk's little friend
-    this.lamp = new THREE.SpotLight(0xfff2dd, 0, 22, Math.PI / 9, 0.9, 1.6);
+    this.lamp = new THREE.SpotLight(0xfff2dd, 0, 38, Math.PI / 7.5, 0.7, 1.4);
     this.lamp.position.set(0, 0.70, 0.16);
     this.lampTarget = new THREE.Object3D();
     this.lampTarget.position.set(0, 0.20, 5);
@@ -105,7 +105,7 @@ export class Colonist {
     this.phase = 0;
   }
 
-  setLamp(on) { this.lamp.intensity = on ? 14 : 0; }
+  setLamp(on) { this.lamp.intensity = on ? 30 : 0; }
 
   // speed (m/s), airborne flag, heading (rad), stride frequency (Hz)
   pose(dt, speed, airborne, heading, hz) {

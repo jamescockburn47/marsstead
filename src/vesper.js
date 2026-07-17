@@ -15,7 +15,7 @@ import { hash2 } from './noise.js';
 export const EVENTS = [
   'wake', 'first-steps', 'first-jump', 'lope', 'sunset', 'night',
   'dawn', 'devil-near', 'cold', 'air-low', 'idle', 'fall',
-  'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash',
+  'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on',
 ];
 
 export const LINES = {
@@ -77,7 +77,7 @@ export const LINES = {
     "That's suit wear, not damage. Mars pulls softly, but it always collects.",
   ],
   'buggy-first': [
-    "The buggy. Rear-wheel drive, no air worth the name, and a third of the grip you grew up with. Unlearn everything.",
+    "The buggy. All-wheel drive, no air worth the name, and a third of the grip you grew up with. Unlearn everything.",
     "Gently on the throttle — the wheels will spin long before she moves. Mars grades on traction.",
     "Braking distances are two and a half times what your reflexes expect. I've done the arithmetic; your job is believing it.",
   ],
@@ -90,6 +90,20 @@ export const LINES = {
     "Airborne. A car is flying. I'm filing this under routine Mars physics.",
     "All four wheels off the planet. The suspension and I are braced.",
     "Long hang time. Low gravity turns every dune into an invitation.",
+  ],
+  'buggy-flip': [
+    "A full rotation, landed clean. I have no protocol for this. Inventing one: magnificent.",
+    "Flip logged and stuck. Somewhere, the engineers who rated this chassis are applauding through their fingers.",
+    "That was a complete revolution of a motor vehicle. Mars gravity approves; I'm withholding comment.",
+  ],
+  'buggy-rollover': [
+    "That's a rollover. The chassis is rated for optimism; the dust broke your fall.",
+    "Over she goes. Sliding sideways into a bank does that on any planet. Logged, tenderly.",
+    "Rolled it. Speed's gone, pride's negotiable, everything else survives. Mars keeps accounts.",
+  ],
+  'lights-on': [
+    "Dark enough. Lights are on — I'll mind the shadows with you.",
+    "Sun's gone; lamps up. The dust eats the beams a little. Drive to what you can see.",
   ],
   'buggy-crash': [
     "Landed. The chassis forgives you. Once.",

@@ -218,5 +218,91 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('coasts to a real stop', s.u === 0 && Math.abs(s.v) < 0.01, `u=${s.u} v=${s.v.toFixed(3)}`);
 }
 
+// ---- the flip layer (the Dune Flip Arena tribute): air control is real,
+// rotations count, landings are judged
+
+// 17. airborne pitch authority integrates the commanded rate
+{
+  const s = createBuggy(); s.airborne = true; s.vy = 4; s.y = 0; s.u = 10;
+  const deep = { h: -200, gx: 0, gz: 0 };
+  for (let t = 0; t < 1; t += DT) stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, deep, DT);
+  check('air pitch authority', Math.abs(s.pitch - 2.6) < 0.1, `pitch=${s.pitch.toFixed(2)}`);
+}
+
+// 18. a full rotation flags a flip; landing level flags it CLEAN
+{
+  const s = createBuggy(); s.airborne = true; s.vy = 6; s.y = 0; s.u = 12;
+  const flat = { h: 0, gx: 0, gz: 0 };
+  let flip = false, clean = false;
+  for (let t = 0; t < 6; t += DT) {
+    // pitch hard until one full rotation is banked, then level out
+    const spin = s.airSpin < Math.PI * 2 ? 1 : (Math.abs(((s.pitch % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) > 0.15 ? 1 : 0);
+    const f = stepBuggy(s, { throttle: s.airborne ? spin : 0, steer: 0, brake: 0, handbrake: false }, flat, DT);
+    if (f.flip) flip = true;
+    if (f.cleanFlip) clean = true;
+    if (f.landed) break;
+  }
+  check('full rotation lands a clean flip', flip && clean, `flip=${flip} clean=${clean}`);
+}
+
+// 19. landing inverted crashes out (speed mostly gone), never "dies"
+{
+  const s = createBuggy(); s.airborne = true; s.vy = 3; s.y = 0; s.u = 14;
+  s.pitch = Math.PI; // upside down, no time to recover
+  const flat = { h: 0, gx: 0, gz: 0 };
+  let impact = 0;
+  for (let t = 0; t < 4; t += DT) {
+    const f = stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, flat, DT);
+    if (f.landed) { impact = f.impact; break; }
+  }
+  check('inverted landing crashes out', s.u < 14 * 0.35 && impact >= 6, `u=${s.u.toFixed(1)} impact=${impact.toFixed(1)}`);
+}
+
+// 20. grounded attitude settles level again
+{
+  const s = createBuggy(); s.pitch = 0.4; s.roll = -0.3; s.u = 5;
+  drive(s, { throttle: 0.3, steer: 0, brake: 0, handbrake: false }, FLAT, 2);
+  check('attitude settles on the ground', Math.abs(s.pitch) < 0.02 && Math.abs(s.roll) < 0.02);
+}
+
+// ---- lateral stability (docs/DYNAMICS.md): slides before tipping on the
+// flat; rolls on side-slopes and trips; rollovers hand off to the judged
+// landing
+
+// 21. flat-ground max-effort cornering NEVER rolls (LTR tops out ~0.38)
+{
+  const s = createBuggy(); s.u = 16;
+  let rolled = false;
+  for (let t = 0; t < 5; t += DT) {
+    const f = stepBuggy(s, { throttle: 0.8, steer: 1, brake: 0, handbrake: false }, FLAT, DT);
+    if (f.rollover) rolled = true;
+  }
+  check('flat ground: slides, never tips', rolled === false);
+}
+
+// 22. sliding sideways fast into rising ground trips a rollover
+{
+  const s = createBuggy(); s.u = 6; s.v = 6; // a hard sideways slide...
+  const bank = { h: 0, gx: -0.3, gz: 0 };    // ...into ground rising that way
+  let rolled = false;
+  for (let t = 0; t < 2 && !rolled; t += DT) {
+    const f = stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, bank, DT);
+    if (f.rollover) rolled = true;
+  }
+  check('trip rollover on a bank', rolled === true);
+}
+
+// 23. the rollover ends in a judged (usually crashed) landing, never a hang
+{
+  const s = createBuggy(); s.u = 6; s.v = 6;
+  const bank = { h: 0, gx: -0.3, gz: 0 };
+  let landed = false;
+  for (let t = 0; t < 8 && !landed; t += DT) {
+    const f = stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, bank, DT);
+    if (f.landed) landed = true;
+  }
+  check('rollover comes back down', landed === true);
+}
+
 if (failed) { console.error(`verify-buggy: ${failed} FAILED`); process.exit(1); }
 console.log('verify-buggy: all green');
