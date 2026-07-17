@@ -45,7 +45,7 @@ function check(name, ok, detail = '') {
     const s = swirl(6, 0, dx, dz);
     const mag = Math.hypot(s.x, s.z);
     worst = Math.max(worst, mag);
-    if (!Number.isFinite(mag) || mag > 12) ok = false;
+    if (!Number.isFinite(mag) || mag > 20) ok = false;
   }
   check('swirl bounded incl. core', ok, `max=${worst.toFixed(2)}`);
   const near = Math.hypot(...Object.values(swirl(6, 0, 0.5, 0.5)));

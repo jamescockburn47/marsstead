@@ -23,11 +23,11 @@ export function resForRing(r) {
 // Mars owns the warm colours (DESIGN.md, the colour law): no green, ever.
 export function colourFor(h, x, z, steep) {
   // basalt shows through where the ground is steep or scoured
-  if (steep > 0.55) return [0.24, 0.13, 0.10];
+  if (steep > 0.55) return [0.27, 0.12, 0.08];
   const dustier = fbm2(x * 0.02 + 7, z * 0.02) * 0.12;
-  if (h > 12) return [0.62 + dustier, 0.42, 0.28];   // pale high dust
-  if (h < -14) return [0.35, 0.18, 0.12];            // low dark floor
-  return [0.51 + dustier, 0.29, 0.18];               // the ochre plain
+  if (h > 12) return [0.68 + dustier, 0.38, 0.20];   // pale high dust
+  if (h < -14) return [0.36, 0.15, 0.09];            // low dark floor
+  return [0.56 + dustier, 0.27, 0.13];               // the rust plain
 }
 
 // positions (world-space), colours, and indices for chunk (cx, cz) at a

@@ -7,26 +7,46 @@ import * as THREE from 'three';
 import { windAt, swirl, devilState, devilSpin, DEVIL_COUNT } from './dust.js';
 import { hash2 } from './noise.js';
 
-const MOTES = 900;
-const MOTE_RANGE = 55;       // motes live in a box around the colonist
+const MOTES = 1800;
+const MOTE_RANGE = 45;       // motes live in a box around the colonist
 const GRAINS_PER_DEVIL = 260;
+
+// a soft round speck, drawn in code at boot (zero assets): PointsMaterial
+// renders square sprites; this radial-alpha map rounds every grain off
+function speckTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.55)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
 
 export class DustLayer {
   constructor(scene, groundHeight) {
     this.ground = groundHeight;
 
     // --- drifting motes
+    // biased toward the ground: most dust lives below the knee, a thin
+    // minority rides higher — the plain wears a visible skin of motion
     const mpos = new Float32Array(MOTES * 3);
     for (let i = 0; i < MOTES; i++) {
       mpos[i * 3] = (hash2(i, 1) - 0.5) * 2 * MOTE_RANGE;
-      mpos[i * 3 + 1] = hash2(i, 2) * 6;
+      mpos[i * 3 + 1] = Math.pow(hash2(i, 2), 2.2) * 4 + 0.05;
       mpos[i * 3 + 2] = (hash2(i, 3) - 0.5) * 2 * MOTE_RANGE;
     }
     this.moteGeo = new THREE.BufferGeometry();
     this.moteGeo.setAttribute('position', new THREE.BufferAttribute(mpos, 3));
+    const speck = speckTexture();
     this.moteMat = new THREE.PointsMaterial({
-      color: new THREE.Color(0.55, 0.38, 0.26), size: 0.045,
-      transparent: true, opacity: 0.3, sizeAttenuation: true, depthWrite: false,
+      color: new THREE.Color(0.62, 0.40, 0.24), size: 0.09, map: speck,
+      transparent: true, opacity: 0.5, sizeAttenuation: true, depthWrite: false,
     });
     this.motes = new THREE.Points(this.moteGeo, this.moteMat);
     this.motes.frustumCulled = false;
@@ -37,7 +57,7 @@ export class DustLayer {
     this.devilGeo = new THREE.BufferGeometry();
     this.devilGeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
     this.devilMat = new THREE.PointsMaterial({
-      color: new THREE.Color(0.66, 0.46, 0.32), size: 0.35,
+      color: new THREE.Color(0.66, 0.46, 0.32), size: 0.4, map: speck,
       transparent: true, opacity: 0.28, sizeAttenuation: true, depthWrite: false,
     });
     this.devils = new THREE.Points(this.devilGeo, this.devilMat);
@@ -59,7 +79,7 @@ export class DustLayer {
       z += (w.z * 0.35 + s.z) * dt;
       y += (Math.sin(t * 0.7 + i) * 0.08 + (hash2(i, 9) - 0.45) * 0.3) * dt;
       // keep motes hugging the ground plane band
-      const g = 0.2 + hash2(i, 4) * 5;
+      const g = 0.1 + Math.pow(hash2(i, 4), 2.2) * 3.5;
       y += (g - y) * 0.02;
       // recycle: drifted out of the box -> respawn on the windward edge
       if (Math.abs(x) > MOTE_RANGE || Math.abs(z) > MOTE_RANGE) {

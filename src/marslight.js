@@ -18,13 +18,13 @@ export const TAU_DUSTY = 1.2;   // a thick one
 export const TAU_STORM = 5.0;   // brown-out
 
 // the palette poles (linear-ish RGB 0..1)
-const SKY_ZEN_DAY = [0.45, 0.26, 0.19];   // dusty mauve-brown zenith
-const SKY_HOR_DAY = [0.82, 0.51, 0.30];   // butterscotch horizon
+const SKY_ZEN_DAY = [0.48, 0.24, 0.16];   // dusty mauve-brown zenith
+const SKY_HOR_DAY = [0.85, 0.46, 0.23];   // butterscotch horizon, rust-deep
 const SKY_NIGHT = [0.015, 0.012, 0.02];   // near-black, a violet memory
 const SUN_HIGH = [1.0, 0.93, 0.82];       // small pale-gold disc
 const SUN_LOW = [0.95, 0.87, 0.85];       // whiter at dusk (real: dust reddens the SKY, not the disc)
 const HALO_BLUE = [0.45, 0.62, 0.85];     // the famous blue forward-scatter
-const AMB_DAY = [0.55, 0.38, 0.30];       // dust-fill: shadows are dusty rose
+const AMB_DAY = [0.58, 0.34, 0.24];       // dust-fill: shadows are dusty rose
 const AMB_NIGHT = [0.05, 0.055, 0.08];    // starlight + a breath of Phobos
 const STORM_TINT = [0.42, 0.27, 0.14];    // the sepia of the brown noon
 

@@ -43,8 +43,14 @@ class Game {
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.camera.left = -60; this.sun.shadow.camera.right = 60;
-    this.sun.shadow.camera.top = 60; this.sun.shadow.camera.bottom = -60;
+    // a tight box around the colonist: shadows stay crisp AND attached —
+    // bias tuned so the shadow roots at the boots instead of drifting
+    // downslope (peter-panning) or acne-ing on the flat
+    this.sun.shadow.camera.left = -45; this.sun.shadow.camera.right = 45;
+    this.sun.shadow.camera.top = 45; this.sun.shadow.camera.bottom = -45;
+    this.sun.shadow.camera.near = 20; this.sun.shadow.camera.far = 300;
+    this.sun.shadow.bias = -0.0002;
+    this.sun.shadow.normalBias = 0.35;
     this.scene.add(this.sun, this.sun.target);
     this.fill = new THREE.HemisphereLight(0xcf9a72, 0x4a2a1c, 0.5);
     this.scene.add(this.fill);
@@ -188,7 +194,7 @@ class Game {
     // keep the lens out of the ground
     co.y = Math.max(co.y, groundHeight(co.x, co.z) + 0.6);
     this.cam.position.lerp(co, Math.min(1, 8 * dt));
-    this.cam.lookAt(this.pos.x, this.pos.y + 1.4, this.pos.z);
+    this.cam.lookAt(this.pos.x, this.pos.y + 0.95, this.pos.z);
 
     // ---- the light of Mars
     const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
@@ -230,8 +236,8 @@ class Game {
     this.terrain.update(this.pos.x, this.pos.z);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
     // dust is sunlit matter: it fades with the light (never glows at night)
-    this.dust.moteMat.opacity = 0.05 + 0.25 * L.sunIntensity;
-    this.dust.devilMat.opacity = 0.03 + 0.25 * L.sunIntensity;
+    this.dust.moteMat.opacity = 0.06 + 0.44 * L.sunIntensity;
+    this.dust.devilMat.opacity = 0.05 + 0.3 * L.sunIntensity;
     if (this.dust.nearestDevil < 220) this.sayOnce('devil-near');
 
     // ---- the suit's slow arithmetic

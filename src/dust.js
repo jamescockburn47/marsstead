@@ -32,12 +32,12 @@ export function tauAt(mtcHours, base = 0.4) {
 export function swirl(vx, vz, dx, dz) {
   const sp = Math.hypot(vx, vz);
   if (sp < 0.3) return { x: 0, z: 0 };
-  const r2 = dx * dx + dz * dz + 0.35;         // softened core — never blows up
-  const fall = Math.exp(-r2 / 6);              // reach ~2.5 m
+  const r2 = dx * dx + dz * dz + 0.5;          // softened core — never blows up
+  const fall = Math.exp(-r2 / 10);             // reach ~3.5 m — the wake SHOWS
   // rotational part (a vortex around the body)...
-  const rot = (1.1 * sp * fall) / r2;
+  const rot = (1.4 * sp * fall) / r2;
   // ...plus entrainment along the wake
-  const drag = 0.55 * fall;
+  const drag = 0.8 * fall;
   return {
     x: -dz * rot + vx * drag,
     z: dx * rot + vz * drag,
