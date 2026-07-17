@@ -15,6 +15,7 @@ import { hash2 } from './noise.js';
 export const EVENTS = [
   'wake', 'first-steps', 'first-jump', 'lope', 'sunset', 'night',
   'dawn', 'devil-near', 'cold', 'air-low', 'idle', 'fall',
+  'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash',
 ];
 
 export const LINES = {
@@ -74,6 +75,26 @@ export const LINES = {
   fall: [
     "Logged the tumble. The gravity forgives; try to land where I can see you.",
     "That's suit wear, not damage. Mars pulls softly, but it always collects.",
+  ],
+  'buggy-first': [
+    "The buggy. Rear-wheel drive, no air worth the name, and a third of the grip you grew up with. Unlearn everything.",
+    "Gently on the throttle — the wheels will spin long before she moves. Mars grades on traction.",
+    "Braking distances are two and a half times what your reflexes expect. I've done the arithmetic; your job is believing it.",
+  ],
+  'buggy-drift': [
+    "Sideways. Intentional, I hope. It does look tremendous.",
+    "That's the regolith two-step. The dust needed raking anyway.",
+    "Textbook oversteer. The textbook is new here, but you're writing it.",
+  ],
+  'buggy-air': [
+    "Airborne. A car is flying. I'm filing this under routine Mars physics.",
+    "All four wheels off the planet. The suspension and I are braced.",
+    "Long hang time. Low gravity turns every dune into an invitation.",
+  ],
+  'buggy-crash': [
+    "Landed. The chassis forgives you. Once.",
+    "The suspension logged that one. So did I.",
+    "Speed is free here; stopping is expensive. Note taken, I trust.",
   ],
 };
 

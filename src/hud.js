@@ -58,8 +58,14 @@ export class Hud {
   }
 
   setClock(main, sub) {
-    this.clockMain.textContent = main;
+    this.clockMain.textContent = main + (this.speedLine || '');
     this.clockSub.textContent = sub;
+  }
+
+  // km/h while driving, null on foot
+  setSpeed(kmh) {
+    if (kmh === null) { this.speedLine = ''; return; }
+    this.speedLine = ` · ${Math.round(kmh)} km/h`;
   }
 
   setVitals(air01, warm01, tempC) {

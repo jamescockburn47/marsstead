@@ -22,6 +22,8 @@ import { TerrainLayer } from './terrain.js';
 import { SkyDome } from './sky.js';
 import { DustLayer } from './dustlayer.js';
 import { Colonist } from './colonist.js';
+import { createBuggy, stepBuggy } from './buggy.js';
+import { BuggyLayer } from './buggylayer.js';
 import { Hud } from './hud.js';
 import { vesperSay } from './vesper.js';
 
@@ -61,6 +63,14 @@ class Game {
     this.dust = new DustLayer(this.scene, meshGroundHeight);
     this.colonist = new Colonist(this.scene);
     this.hud = new Hud(IS_PLACEHOLDER);
+
+    // the buggy: parked a short walk east of the drop site
+    this.buggy = createBuggy(14, 6, -0.8);
+    this.buggy.y = meshGroundHeight(this.buggy.x, this.buggy.z);
+    this.buggyLayer = new BuggyLayer(this.scene);
+    this.driving = false;
+    this.buggyFlags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
+    this.driftTimer = 0; this.airTimer = 0;
 
     // the walker's state — spawned at HOME (the Jezero delta)
     this.pos = new THREE.Vector3(0, 0, 0);
@@ -113,9 +123,36 @@ class Game {
   }
 
   devKeys(e) {
-    if (e.code === 'KeyL') { this.lamp = !this.lamp; this.colonist.setLamp(this.lamp); }
+    if (e.code === 'KeyL') {
+      this.lamp = !this.lamp;
+      this.colonist.setLamp(this.lamp && !this.driving);
+      this.buggyLayer.setLamps(this.lamp && this.driving);
+    }
+    if (e.code === 'KeyE') this.toggleBuggy();
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
+  }
+
+  // E: mount within reach; dismount to the buggy's left
+  toggleBuggy() {
+    if (this.driving) {
+      this.driving = false;
+      const sin = Math.sin(this.buggy.heading), cos = Math.cos(this.buggy.heading);
+      this.pos.set(this.buggy.x - cos * 1.6, 0, this.buggy.z + sin * 1.6);
+      this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+      this.colonist.group.visible = true;
+      this.colonist.setLamp(this.lamp);
+      this.buggyLayer.setLamps(false);
+    } else {
+      const d = Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
+      if (d < 3.2) {
+        this.driving = true;
+        this.colonist.group.visible = false;
+        this.colonist.setLamp(false);
+        this.buggyLayer.setLamps(this.lamp);
+        this.sayOnce('buggy-first');
+      }
+    }
   }
 
   say(event) {
@@ -130,11 +167,25 @@ class Game {
   }
 
   frame(now) {
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
     this.simMillis += dt * 1000 * TIME_SCALE;
 
+    if (this.driving) {
+      this.frameDriving(dt);
+    } else {
+      this.frameOnFoot(dt);
+    }
+
+    // ---- the light of Mars
+    this.frameWorld(dt);
+    this.renderer.render(this.scene, this.cam);
+    requestAnimationFrame((n) => this.frame(n));
+  }
+
+  frameOnFoot(dt) {
+    this.camDist = 7;
     // ---- movement under 0.38 g
     const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
@@ -197,6 +248,77 @@ class Game {
     this.cam.position.lerp(co, Math.min(1, 8 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 0.95, this.pos.z);
 
+    // the parked buggy still needs drawing (and its dust settling)
+    this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
+      meshGroundHeight(this.buggy.x, this.buggy.z));
+    this.hud.setSpeed(null);
+  }
+
+  frameDriving(dt) {
+    const input = {
+      throttle: (this.keys.KeyW ? 1 : 0) + (this.keys.KeyS && this.buggy.u <= 0.5 ? -0.6 : 0),
+      brake: this.keys.KeyS && this.buggy.u > 0.5 ? 1 : 0,
+      steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
+      handbrake: !!this.keys.Space,
+    };
+    // sample the drawn surface + its gradient under the buggy
+    const e = 0.7, bx = this.buggy.x, bz = this.buggy.z;
+    const h = meshGroundHeight(bx, bz);
+    const ground = {
+      h,
+      gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
+      gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
+    };
+    // fixed-substep integration: cover the WHOLE frame dt in 120 Hz slices,
+    // so the dynamics run true at any framerate (and stay stable)
+    const total = Math.min(dt, 0.1);
+    const n = Math.max(1, Math.ceil(total / (1 / 120)));
+    const h2 = total / n;
+    let flags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
+    for (let i = 0; i < n; i++) {
+      const f = stepBuggy(this.buggy, input, ground, h2);
+      flags = {
+        skidF: flags.skidF || f.skidF, skidR: flags.skidR || f.skidR,
+        airborne: flags.airborne || f.airborne, landed: flags.landed || f.landed,
+        impact: Math.max(flags.impact, f.impact),
+      };
+    }
+    this.buggyFlags = flags;
+    this.buggyLayer.update(dt, this.buggy, flags, h);
+
+    // VESPER reads the same flags the physics raises
+    if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {
+      this.driftTimer += dt;
+      if (this.driftTimer > 0.7) { this.driftTimer = -4; this.say('buggy-drift'); }
+    } else if (this.driftTimer > 0) this.driftTimer = 0;
+    if (flags.airborne) {
+      this.airTimer += dt;
+      if (this.airTimer > 0.8) { this.airTimer = -6; this.say('buggy-air'); }
+    } else if (this.airTimer > 0) this.airTimer = 0;
+    if (flags.landed && flags.impact > 5) this.say('buggy-crash');
+
+    // the settler rides the seat
+    this.pos.set(this.buggy.x, this.buggy.y, this.buggy.z);
+
+    // chase camera: eases in behind the buggy's heading, farther back
+    const targetYaw = this.buggy.heading;
+    let dy = targetYaw - this.camYaw;
+    dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    this.camYaw += dy * Math.min(1, 2.2 * dt);
+    this.camDist = 12;
+    const co = new THREE.Vector3(
+      Math.sin(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+      this.camDist * Math.sin(this.camPitch) + 2.2,
+      Math.cos(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+    ).add(this.pos);
+    co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.7);
+    this.cam.position.lerp(co, Math.min(1, 6 * dt));
+    this.cam.lookAt(this.buggy.x, this.buggy.y + 1.0, this.buggy.z);
+
+    this.hud.setSpeed(Math.abs(this.buggy.u) * 3.6);
+  }
+
+  frameWorld(dt) {
     // ---- the light of Mars
     const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
     const sunEl = sunElevation(this.simMillis, lat, lon);
@@ -258,9 +380,6 @@ class Game {
       `Ls ${solarLongitude(this.simMillis).toFixed(1)}° · ${season(this.simMillis)} · Jezero`,
     );
     this.hud.update(this.t);
-
-    this.renderer.render(this.scene, this.cam);
-    requestAnimationFrame((n) => this.frame(n));
   }
 }
 

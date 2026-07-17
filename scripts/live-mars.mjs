@@ -81,6 +81,42 @@ await page.waitForTimeout(1200);
 await page.keyboard.up('KeyW');
 await page.keyboard.up('ShiftLeft');
 
+// ---- the buggy: walk over (teleport — this is a smoke test), mount, drive
+await page.evaluate(() => {
+  const g = window.marsstead;
+  g.pos.set(g.buggy.x - 2, g.pos.y, g.buggy.z);
+});
+await page.keyboard.press('KeyE');
+await page.waitForTimeout(300);
+const driving = await page.evaluate(() => window.marsstead.driving);
+check('E mounts the buggy', driving === true);
+
+await page.keyboard.down('KeyW');
+let buggySpeed = 0;
+for (let i = 0; i < 45 && buggySpeed < 8; i++) {
+  await page.waitForTimeout(300);
+  buggySpeed = await page.evaluate(() => Math.abs(window.marsstead.buggy.u));
+}
+check('the buggy accelerates', buggySpeed > 3, `${buggySpeed.toFixed(1)} m/s`);
+
+// throw it sideways: full lock + handbrake at speed -> the physics must skid
+await page.keyboard.down('KeyA');
+await page.keyboard.down('Space');
+let skidded = false;
+for (let i = 0; i < 12 && !skidded; i++) {
+  await page.waitForTimeout(200);
+  skidded = await page.evaluate(() => window.marsstead.buggyFlags.skidR);
+}
+await page.screenshot({ path: 'media/phase1-buggy.png' });
+check('handbrake drift skids the rear', skidded === true);
+await page.keyboard.up('KeyA');
+await page.keyboard.up('Space');
+await page.keyboard.up('KeyW');
+await page.waitForTimeout(800);
+await page.keyboard.press('KeyE'); // dismount for the dusk walk
+await page.waitForTimeout(300);
+check('E dismounts', await page.evaluate(() => !window.marsstead.driving));
+
 // scrub to the blue hour: small steps, wait a real frame each time so the
 // read isn't stale, stop with the sun ON the horizon — then turn the lens
 // INTO the sunset (camYaw = pi - azimuth aims the camera down-sun)

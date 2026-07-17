@@ -86,7 +86,7 @@ const GRAINS_PER_DEVIL = 260;
 
 // a soft round speck, drawn in code at boot (zero assets): PointsMaterial
 // renders square sprites; this radial-alpha map rounds every grain off
-function speckTexture() {
+export function speckTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const ctx = c.getContext('2d');
