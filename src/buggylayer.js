@@ -2,13 +2,13 @@
 // class of unpressurised crew rover (four large wheels, passive
 // spring-damped suspension on visible wishbone arms, a sensor mast with a
 // camera head, a rear solar deck, one open seat). Family facet look, zero
-// assets. The rear wheels roostertail dust from the SAME skid flag the
-// physics raises, and the body sits on the terrain via the four
-// wheel-contact heights main.js samples (no floating on slopes).
+// assets. Roostertails and landing thumps spawn into the shared PuffCloud
+// (dustlayer.js) from the SAME skid flag the physics raises — fine grains
+// that fly, settle and vanish; and the body sits on the terrain via the
+// four wheel-contact heights main.js samples (no floating on slopes).
 
 import * as THREE from 'three';
 import { hash2 } from './noise.js';
-import { speckTexture } from './dustlayer.js';
 
 const PANEL = 0xd8cec0;   // dust-white body panels
 const RUST = 0xb34a2a;    // the family rust accent
@@ -26,8 +26,6 @@ function box(w, h, d, colour) {
 export const TRACK = 0.95;      // half-width to wheel centres
 export const WHEELBASE = 1.05;  // half-length to axle centres
 const WHEEL_R = 0.5;
-
-const ROOST = 240;
 
 export class BuggyLayer {
   constructor(scene) {
@@ -117,20 +115,6 @@ export class BuggyLayer {
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     scene.add(this.group);
 
-    // roostertails (unchanged): dust off the rear wheels when the rear skids
-    const rpos = new Float32Array(ROOST * 2 * 3);
-    this.roostAge = new Float32Array(ROOST * 2).fill(9);
-    this.roostVel = new Float32Array(ROOST * 2 * 3);
-    this.roostGeo = new THREE.BufferGeometry();
-    this.roostGeo.setAttribute('position', new THREE.BufferAttribute(rpos, 3));
-    this.roostMat = new THREE.PointsMaterial({
-      color: new THREE.Color(0.66, 0.44, 0.28), size: 0.14, map: speckTexture(),
-      transparent: true, opacity: 0.55, sizeAttenuation: true, depthWrite: false,
-    });
-    this.roost = new THREE.Points(this.roostGeo, this.roostMat);
-    this.roost.frustumCulled = false;
-    scene.add(this.roost);
-    this.roostNext = 0;
   }
 
   setLamps(on) {
@@ -140,8 +124,10 @@ export class BuggyLayer {
 
   // place + pose from the dynamics state each frame. groundPitch/groundRoll
   // come from the four wheel-contact heights (main.js samples them) so the
-  // body RIDES the slope instead of hovering flat over it.
-  update(dt, s, flags, groundY, groundPitch = 0, groundRoll = 0) {
+  // body RIDES the slope instead of hovering flat over it. puffs is the
+  // shared fine-dust PuffCloud: roostertails and landing thumps spawn into
+  // it and it handles flight, settling and death — nothing hangs forever.
+  update(dt, s, flags, groundY, groundPitch = 0, groundRoll = 0, puffs = null) {
     this.group.position.set(s.x, s.y, s.z);
     this.group.rotation.set(0, s.heading, 0);
     if (flags.airborne) {
@@ -157,34 +143,38 @@ export class BuggyLayer {
     for (const p of this.steerPivots) p.rotation.y = s.steer;
     for (const w of this.wheels) w.rotation.x = s.wheelSpin;
 
-    const spawn = (flags.skidR && Math.abs(s.u) > 2) || flags.landed;
-    const sin = Math.sin(s.heading), cos = Math.cos(s.heading);
-    if (spawn) {
-      for (let n = 0; n < 6; n++) {
-        const i = this.roostNext = (this.roostNext + 1) % (ROOST * 2);
-        const side = i % 2 === 0 ? -TRACK : TRACK;
-        const k = i * 3;
-        const p = this.roostGeo.attributes.position.array;
-        p[k] = s.x + side * cos - WHEELBASE * sin;
-        p[k + 1] = s.y + 0.2;
-        p[k + 2] = s.z - side * sin - WHEELBASE * cos;
-        const kick = 2 + hash2(i, Math.floor(s.wheelSpin * 7)) * 3;
-        this.roostVel[k] = -sin * -kick * 0.6 + (hash2(i, 3) - 0.5) * 2;
-        this.roostVel[k + 1] = 1.2 + hash2(i, 5) * 1.6;
-        this.roostVel[k + 2] = -cos * -kick * 0.6 + (hash2(i, 7) - 0.5) * 2;
-        this.roostAge[i] = 0;
+    if (puffs) {
+      const sin = Math.sin(s.heading), cos = Math.cos(s.heading);
+      // roostertails: a fine, numerous spray off the rear wheels while the
+      // rear skids — kicked back along the wake, arcing, then settling
+      if (flags.skidR && Math.abs(s.u) > 2) {
+        for (let n = 0; n < 14; n++) {
+          const side = (n % 2 === 0 ? -TRACK : TRACK) * (0.8 + hash2(n, this.seed | 0) * 0.3);
+          const j = this.seed = ((this.seed || 0) + 1) % 4096;
+          const kick = 1.5 + hash2(j, 11) * 3.5;
+          puffs.spawn(
+            s.x + side * cos - WHEELBASE * sin,
+            s.y + 0.15 + hash2(j, 13) * 0.2,
+            s.z - side * sin - WHEELBASE * cos,
+            sin * kick * 0.7 + (hash2(j, 3) - 0.5) * 2.2,
+            0.8 + hash2(j, 5) * 1.5,
+            cos * kick * 0.7 + (hash2(j, 7) - 0.5) * 2.2,
+          );
+        }
+      }
+      // a landing thump blooms a ring of dust at all four wheels
+      if (flags.landed) {
+        for (let n = 0; n < 26; n++) {
+          const j = this.seed = ((this.seed || 0) + 1) % 4096;
+          const a = hash2(j, 17) * Math.PI * 2;
+          const rr = 0.8 + hash2(j, 19) * 1.2;
+          puffs.spawn(
+            s.x + Math.cos(a) * rr, s.y + 0.12, s.z + Math.sin(a) * rr,
+            Math.cos(a) * (1 + hash2(j, 23) * 2), 0.6 + hash2(j, 29) * 1.2,
+            Math.sin(a) * (1 + hash2(j, 23) * 2),
+          );
+        }
       }
     }
-    const p = this.roostGeo.attributes.position.array;
-    for (let i = 0; i < ROOST * 2; i++) {
-      if (this.roostAge[i] > 2.2) continue;
-      this.roostAge[i] += dt;
-      const k = i * 3;
-      this.roostVel[k + 1] -= 3.72 * dt * 0.5;
-      p[k] += this.roostVel[k] * dt;
-      p[k + 1] = Math.max(groundY + 0.05, p[k + 1] + this.roostVel[k + 1] * dt);
-      p[k + 2] += this.roostVel[k + 2] * dt;
-    }
-    this.roostGeo.attributes.position.needsUpdate = true;
   }
 }

@@ -20,7 +20,7 @@ import {
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
 import { SkyDome } from './sky.js';
-import { DustLayer } from './dustlayer.js';
+import { DustLayer, PuffCloud, Footprints } from './dustlayer.js';
 import { Colonist } from './colonist.js';
 import { createBuggy, stepBuggy } from './buggy.js';
 import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
@@ -61,6 +61,9 @@ class Game {
     this.terrain = new TerrainLayer(this.scene);
     this.sky = new SkyDome(this.scene);
     this.dust = new DustLayer(this.scene, meshGroundHeight);
+    this.puffs = new PuffCloud(this.scene, 2400, 0.05);
+    this.footprints = new Footprints(this.scene, 240);
+    this.prevStridePhase = 0; this.footSide = 1; this.wasAirborne = false;
     this.colonist = new Colonist(this.scene);
     this.hud = new Hud(IS_PLACEHOLDER);
 
@@ -244,6 +247,31 @@ class Game {
     this.colonist.pose(dt, speed, this.airborne, this.heading,
       loping ? STRIDE_HZ_LOPE : STRIDE_HZ_WALK);
 
+    // ---- footfalls: prints in the sand + little poofs of dust.
+    // Walking: each half stride-cycle plants a boot. Bounding/jumping:
+    // the LANDING is the footfall (both boots, bigger poof).
+    const stridePhase = this.colonist.phase % Math.PI;
+    const landedNow = this.wasAirborne && !this.airborne;
+    if (landedNow || (!this.airborne && speed > 0.5 && stridePhase < this.prevStridePhase)) {
+      this.footSide = -this.footSide;
+      this.footprints.stamp(this.pos.x, this.pos.z, this.heading, this.footSide, meshGroundHeight);
+      if (landedNow) this.footprints.stamp(this.pos.x, this.pos.z, this.heading, -this.footSide, meshGroundHeight);
+      const n = landedNow ? 10 : 4;
+      for (let i = 0; i < n; i++) {
+        const j = (this.puffSeed = ((this.puffSeed || 0) + 1) % 4096);
+        const a = (j * 2.399) % (Math.PI * 2); // golden-angle spread
+        this.puffs.spawn(
+          this.pos.x + Math.cos(a) * 0.15, this.pos.y + 0.06,
+          this.pos.z + Math.sin(a) * 0.15,
+          Math.cos(a) * (0.3 + (j % 7) * 0.06) + this.vel.x * 0.15,
+          0.35 + (j % 5) * 0.08,
+          Math.sin(a) * (0.3 + (j % 7) * 0.06) + this.vel.z * 0.15,
+        );
+      }
+    }
+    this.prevStridePhase = stridePhase;
+    this.wasAirborne = this.airborne;
+
     // ---- camera: soft third-person orbit
     const co = new THREE.Vector3(
       Math.sin(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
@@ -259,7 +287,7 @@ class Game {
     const pwg = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading);
     this.buggy.y = pwg.h;
     this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
-      pwg.h, pwg.pitch, pwg.roll);
+      pwg.h, pwg.pitch, pwg.roll, this.puffs);
     this.hud.setSpeed(null);
   }
 
@@ -313,7 +341,7 @@ class Game {
       };
     }
     this.buggyFlags = flags;
-    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll);
+    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll, this.puffs);
 
     // VESPER reads the same flags the physics raises
     if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {
@@ -414,6 +442,7 @@ class Game {
     // dust is sunlit matter: it fades with the light (never glows at night)
     this.dust.moteMat.opacity = 0.06 + 0.44 * L.sunIntensity;
     this.dust.devilMat.opacity = 0.05 + 0.3 * L.sunIntensity;
+    this.puffs.update(dt, meshGroundHeight);
     // the fractal atmosphere: dome + haze sheets read the same pure envelopes
     const wind = windAt(this.pos.x, this.pos.z, this.t);
     this.dust.setAtmos(L, sunDir, tau, wind.x, wind.z, this.t,
