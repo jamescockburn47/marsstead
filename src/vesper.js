@@ -15,7 +15,7 @@ import { hash2 } from './noise.js';
 export const EVENTS = [
   'wake', 'first-steps', 'first-jump', 'lope', 'sunset', 'night',
   'dawn', 'devil-near', 'cold', 'air-low', 'idle', 'fall',
-  'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on',
+  'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on', 'salvage-first', 'suit-full', 'ring-taken',
 ];
 
 export const LINES = {
@@ -100,6 +100,19 @@ export const LINES = {
     "That's a rollover. The chassis is rated for optimism; the dust broke your fall.",
     "Over she goes. Sliding sideways into a bank does that on any planet. Logged, tenderly.",
     "Rolled it. Speed's gone, pride's negotiable, everything else survives. Mars keeps accounts.",
+  ],
+  'salvage-first': [
+    "First part off the hull. The lander doesn't mind — it did its job; now its job is being a warehouse.",
+    "Unbolted clean. Everything we build starts as something that flew here.",
+    "That panel crossed two hundred million kilometres to become your wall. Spend it well.",
+  ],
+  'suit-full': [
+    "Hands full, settler. The rover's deck exists for exactly this.",
+    "You can't carry that too. Load the rover — hauling is what it's for.",
+  ],
+  'ring-taken': [
+    "The airlock ring. The only one on the planet. Whatever you build around this had better hold.",
+    "That ring is the one part we can't make twice. I've flagged it in my inventory as 'precious'. New category.",
   ],
   'lights-on': [
     "Dark enough. Lights are on — I'll mind the shadows with you.",

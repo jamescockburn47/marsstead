@@ -23,6 +23,11 @@ const CSS = `
     opacity: .6; display: block; margin-bottom: 4px; }
   #hud .badge { position: absolute; bottom: 12px; right: 14px; font-size: 9px;
     letter-spacing: 2px; opacity: .4; }
+  #hud .prompt { position: absolute; bottom: 86px; left: 0; width: 100%;
+    text-align: center; font-size: 13px; letter-spacing: 1px; opacity: .95; }
+  #hud .prompt b { color: #e8c46a; font-weight: normal; letter-spacing: 2px; }
+  #hud .bags { position: absolute; top: 96px; right: 18px; text-align: right;
+    font-size: 11px; letter-spacing: 1px; opacity: .85; line-height: 1.8; }
 `;
 
 export class Hud {
@@ -45,6 +50,9 @@ export class Hud {
     el(vitals, 'div').textContent = 'WARMTH';
     this.warmBar = el(el(vitals, 'div', 'bar cold'), 'i');
     this.tempLabel = el(vitals, 'div');
+
+    this.prompt = el(this.root, 'div', 'prompt');
+    this.bags = el(this.root, 'div', 'bags');
 
     this.vesper = el(this.root, 'div', 'vesper');
     el(this.vesper, 'span', 'who').textContent = 'VESPER';
@@ -72,6 +80,32 @@ export class Hud {
     this.airBar.style.width = `${Math.round(air01 * 100)}%`;
     this.warmBar.style.width = `${Math.round(warm01 * 100)}%`;
     this.tempLabel.textContent = `${Math.round(tempC)}°C`;
+  }
+
+  // the interaction prompt, bottom-centre; html-free (innerHTML never)
+  setPrompt(text) {
+    if (!text) { this.prompt.textContent = ''; return; }
+    this.prompt.textContent = '';
+    // bold the key tokens: segments wrapped in | | render highlighted
+    for (const seg of text.split('|')) {
+      const isKey = seg.startsWith('*');
+      const node = document.createElement(isKey ? 'b' : 'span');
+      node.textContent = isKey ? seg.slice(1) : seg;
+      this.prompt.appendChild(node);
+    }
+  }
+
+  // suit line always; rover line when given
+  setBags(suitLine, roverLine = null) {
+    this.bags.textContent = '';
+    const s = document.createElement('div');
+    s.textContent = suitLine;
+    this.bags.appendChild(s);
+    if (roverLine) {
+      const r = document.createElement('div');
+      r.textContent = roverLine;
+      this.bags.appendChild(r);
+    }
   }
 
   say(line, now, holdSeconds = 7) {

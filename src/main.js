@@ -25,6 +25,12 @@ import { Colonist } from './colonist.js';
 import { createBuggy, stepBuggy } from './buggy.js';
 import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
 import { Hud } from './hud.js';
+import { createLander, available, unboltSeconds, takeOne, remaining, remainingTotal } from './salvage.js';
+import { LanderLayer } from './landerlayer.js';
+import {
+  ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
+  transfer, loadLabel, massOf,
+} from './inventory.js';
 import { vesperSay } from './vesper.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
@@ -75,6 +81,18 @@ class Game {
     this.fpv = false;   // C toggles first-person while driving
     this.buggyFlags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
     this.driftTimer = 0; this.airTimer = 0;
+
+    // the lander: the ship you rode down, west of the drop point — the
+    // finite warehouse (and, for now, the free air refill of the gentle
+    // start). Salvage state is pure; the layer strips visibly.
+    this.lander = createLander();
+    this.landerPos = { x: -11, z: -6 };
+    this.landerLayer = new LanderLayer(this.scene, this.landerPos.x, this.landerPos.z,
+      meshGroundHeight(this.landerPos.x, this.landerPos.z));
+    this.suit = createStore(SUIT_CAPACITY);
+    this.roverStore = createStore(ROVER_CAPACITY);
+    this.salvageSel = 0;      // Q cycles the target type
+    this.unbolt = null;       // { id, t, need } while working a bolt
 
     // the walker's state — spawned at HOME (the Jezero delta)
     this.pos = new THREE.Vector3(0, 0, 0);
@@ -132,10 +150,59 @@ class Game {
       // cycle auto -> on -> off -> auto (auto is the default: dusk decides)
       this.lampMode = this.lampMode === 'auto' ? 'on' : this.lampMode === 'on' ? 'off' : 'auto';
     }
-    if (e.code === 'KeyE') this.toggleBuggy();
+    if (e.code === 'KeyE') this.interact();
+    if (e.code === 'KeyQ') this.salvageSel++;
+    if (e.code === 'KeyF') this.loadRover();
+    if (e.code === 'KeyG') this.unloadRover();
     if (e.code === 'KeyC' && this.driving) this.fpv = !this.fpv;
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
+  }
+
+  distToLander() {
+    return Math.hypot(this.pos.x - this.landerPos.x, this.pos.z - this.landerPos.z);
+  }
+  distToRover() {
+    return Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
+  }
+  salvageTarget() {
+    const opts = available(this.lander);
+    if (!opts.length) return null;
+    return opts[((this.salvageSel % opts.length) + opts.length) % opts.length];
+  }
+
+  // E is THE doing key: rover first if in reach, else the lander's bolts
+  interact() {
+    if (this.driving) { this.toggleBuggy(); return; }
+    if (this.distToRover() < 3.2) { this.toggleBuggy(); return; }
+    if (this.distToLander() < 6 && !this.unbolt) {
+      const id = this.salvageTarget();
+      if (!id) return;
+      // heavy salvage (the ring) goes straight to the rover's deck — park
+      // it alongside first; everything else needs suit room
+      const roverClose = this.distToRover() < 9;
+      const fitsSuit = canAdd(this.suit, id, 1);
+      const fitsDeck = roverClose && canAdd(this.roverStore, id, 1);
+      if (!fitsSuit && !fitsDeck) { this.say('suit-full'); return; }
+      this.unbolt = { id, t: 0, need: unboltSeconds(id) };
+    }
+  }
+
+  // F: everything the suit holds goes onto the rover's deck
+  loadRover() {
+    if (this.driving || this.distToRover() > 4) return;
+    for (const id of Object.keys(this.suit.slots)) {
+      transfer(this.suit, this.roverStore, id, 99);
+    }
+  }
+  // G: take the heaviest thing back off the deck the suit can hold
+  unloadRover() {
+    if (this.driving || this.distToRover() > 4) return;
+    const ids = Object.keys(this.roverStore.slots)
+      .sort((a, b) => ITEMS[b].kg - ITEMS[a].kg);
+    for (const id of ids) {
+      if (transfer(this.roverStore, this.suit, id, 1) > 0) return;
+    }
   }
 
   // E: mount within reach; dismount to the buggy's left
@@ -283,6 +350,58 @@ class Game {
     this.cam.position.lerp(co, Math.min(1, 8 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 0.95, this.pos.z);
 
+    // ---- salvage: work the selected bolt (stand still, stay close)
+    if (this.unbolt) {
+      if (speed > 0.6 || this.distToLander() > 7) {
+        this.unbolt = null; // walked off the job
+      } else {
+        this.unbolt.t += dt;
+        if (this.unbolt.t >= this.unbolt.need) {
+          const { id } = this.unbolt;
+          this.unbolt = null;
+          const toSuit = canAdd(this.suit, id, 1);
+          const dest = toSuit ? this.suit
+            : (this.distToRover() < 9 ? this.roverStore : null);
+          if (dest && takeOne(this.lander, id) && add(dest, id, 1)) {
+            this.landerLayer.sync(this.lander);
+            this.sayOnce('salvage-first');
+            if (id === 'airlock-ring') this.say('ring-taken');
+          }
+        }
+      }
+    }
+
+    // ---- the gentle start: the lander tops your air back up, free
+    if (this.distToLander() < 7 && this.air < 1) {
+      this.air = Math.min(1, this.air + dt * 0.03);
+    }
+
+    // ---- prompts + bags (the HUD reads the nearest interaction)
+    if (this.unbolt) {
+      const pct = Math.round((this.unbolt.t / this.unbolt.need) * 100);
+      this.hud.setPrompt(`unbolting ${ITEMS[this.unbolt.id].name.toLowerCase()}… ${pct}%`);
+    } else if (this.distToRover() < 3.2) {
+      const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
+      const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
+      this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.distToLander() < 6 && this.salvageTarget()) {
+      const id = this.salvageTarget();
+      this.hud.setPrompt(
+        `|*E| unbolt ${ITEMS[id].name.toLowerCase()} ×${remaining(this.lander, id)}`
+        + ` (${unboltSeconds(id)}s) · |*Q| next part`
+        + (remainingTotal(this.lander) ? '' : ' · stripped'),
+      );
+    } else {
+      this.hud.setPrompt(null);
+    }
+    const chips = Object.entries(this.suit.slots)
+      .map(([id, n]) => `${ITEMS[id].name} ×${n}`).join(' · ');
+    this.hud.setBags(
+      `suit ${loadLabel(this.suit)}${chips ? ' — ' + chips : ''}`,
+      massOf(this.roverStore) > 0 || this.distToRover() < 6
+        ? `rover ${loadLabel(this.roverStore)}` : null,
+    );
+
     // the parked buggy still needs drawing — seated on its wheels
     const pwg = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading);
     this.buggy.y = pwg.h;
@@ -388,6 +507,8 @@ class Game {
     }
 
     this.hud.setSpeed(Math.abs(this.buggy.u) * 3.6);
+    this.hud.setPrompt(`|*E| dismount · |*C| view`);
+    this.hud.setBags(`rover ${loadLabel(this.roverStore)}`);
   }
 
   frameWorld(dt) {

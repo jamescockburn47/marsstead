@@ -81,6 +81,26 @@ await page.waitForTimeout(1200);
 await page.keyboard.up('KeyW');
 await page.keyboard.up('ShiftLeft');
 
+// ---- salvage: stand at the lander, unbolt a panel into the suit
+await page.evaluate(() => {
+  const g = window.marsstead;
+  g.pos.set(g.landerPos.x + 4, g.pos.y, g.landerPos.z);
+  g.vel.set(0, 0, 0);
+});
+await page.waitForTimeout(400);
+await page.keyboard.press('KeyE'); // start the unbolt (4 s standing still)
+let salvaged = 0;
+// the software test renderer runs ~1-2 fps: a 4 s unbolt takes ~35 wall s
+for (let i = 0; i < 100 && !salvaged; i++) {
+  await page.waitForTimeout(500);
+  salvaged = await page.evaluate(() => (window.marsstead.suit.slots['alloy-panel'] || 0));
+}
+check('unbolts a panel into the suit', salvaged >= 1, `panels=${salvaged}`);
+await page.screenshot({ path: 'media/phase2-lander.png' });
+const stock = await page.evaluate(() =>
+  Object.values(window.marsstead.lander.stock).reduce((a, b) => a + b, 0));
+check('the lander stock depleted', stock === 21, `stock=${stock}`);
+
 // ---- the buggy: walk over (teleport — this is a smoke test), mount, drive
 await page.evaluate(() => {
   const g = window.marsstead;
