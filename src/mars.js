@@ -70,9 +70,9 @@ export function elevationReal(lat, lonE) {
 // world position, added in GAME metres at human scale.
 export function detailGame(x, z) {
   let d = 0;
-  d += (ridge2(x * 0.045, z * 0.045) - 0.5) * 1.6;  // dune field, ~20 m wave
+  d += (ridge2(x * 0.045, z * 0.045) - 0.5) * 2.4;  // dune field, ~20 m wave
   d += (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5;       // rubble & pocking
-  d += (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 3.0;  // long soft swells
+  d += (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;  // long soft swells
   return d;
 }
 
