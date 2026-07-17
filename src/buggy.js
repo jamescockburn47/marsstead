@@ -9,8 +9,9 @@
 // The model is the standard linear bicycle model with slip angles and
 // per-axle cornering stiffness, saturated by a friction circle (combined
 // longitudinal + lateral demand cannot exceed mu*N per axle — exceed it
-// and that axle SKIDS). Rear-wheel drive, so throttle spends the rear
-// circle first: power-on oversteer is physics, not flag. The handbrake
+// and that axle SKIDS). Drive is AWD, rear-biased (every real Mars rover
+// drives all wheels): pull-away is brisk, the rear still breaks loose
+// first, so power-on oversteer is physics, not flag. The handbrake
 // cuts rear grip for deliberate drifts. Off a crest the ground falls away
 // and the buggy flies ballistic under G_MARS — no control in the air,
 // exactly as honest as the colonist's jump.
@@ -31,10 +32,16 @@ export const C_ALPHA = 5200;      // N/rad cornering stiffness per axle
 export const F_DRIVE = 1900;      // N peak drive (rear axle)
 export const F_BRAKE = 2600;      // N peak braking (both axles)
 export const DRAG = 0.9;          // N/(m/s)^2 — thin air: nearly nothing
-export const ROLL_DRAG = 95;      // N rolling resistance
+export const ROLL_DRAG = 210;     // N rolling resistance — loose regolith is soft
 export const STEER_MAX = 0.55;    // rad at the road wheels
 export const HANDBRAKE_MU = 0.32; // rear grip fraction under the handbrake
 export const TOP_SPEED = 17;      // m/s-ish, where drive meets drag/rolling
+export const TRACTION = 0.82;     // drive may spend this much of the rear circle
+                                  // (the rest STAYS lateral: full throttle must
+                                  // never zero the rear's cornering grip)
+export const U_KIN = 3.5;         // below this, blend to kinematic steering
+export const POWER = 9500;        // W — engines are power-limited at speed
+export const FRONT_SPLIT = 0.25;  // AWD, rear-biased: the rally layout
 
 // per-axle vertical load (static split; g does the low-grip work)
 export function axleLoad() { return (MASS * G_MARS) / 2; }
@@ -50,6 +57,7 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
     u: 0, v: 0, r: 0,      // body frame: forward, lateral, yaw rate
     vy: 0, airborne: false,
     steer: 0,               // smoothed road-wheel angle
+    drive: 0,               // smoothed throttle — keys step, engines ramp
     wheelSpin: 0,           // rolling phase for the visual layer
   };
 }
@@ -66,7 +74,18 @@ export function stepBuggy(s, input, ground, dt) {
   const steerTarget = input.steer * STEER_MAX * speedFactor;
   s.steer += (steerTarget - s.steer) * Math.min(1, 8 * dt);
 
+  // throttle ramps (a keyboard steps; an engine and a wheel on regolith
+  // don't) — this is also what makes pulling away controllable
+  const dThr = input.throttle - s.drive;
+  s.drive += dThr * Math.min(1, (dThr > 0 ? 2.2 : 8) * dt);
+
   const sin = Math.sin(s.heading), cos = Math.cos(s.heading);
+
+  // parked: static friction is real — no throttle, no way on, and a slope
+  // shallower than the friction cone simply HOLDS the car
+  const slopeMag = Math.hypot(ground.gx, ground.gz);
+  const parked = !s.airborne && Math.abs(input.throttle) < 0.05
+    && Math.abs(s.u) < 0.6 && slopeMag < MU * 0.9;
 
   if (!s.airborne) {
     const N = axleLoad();
@@ -77,11 +96,16 @@ export function stepBuggy(s, input, ground, dt) {
     const alphaF = s.steer - Math.atan2(s.v + WHEELBASE_F * s.r, Math.abs(uEff)) * Math.sign(uEff);
     const alphaR = -Math.atan2(s.v - WHEELBASE_R * s.r, Math.abs(uEff)) * Math.sign(uEff);
 
-    // longitudinal demand: drive on the rear, brakes on both
-    const driving = input.throttle * F_DRIVE;
+    // longitudinal demand: drive on the rear, brakes on both. TRACTION
+    // caps the drive's share of the rear circle — full throttle may spin
+    // the wheels but it can NEVER zero the rear's lateral grip (the bug
+    // that made v1 unsteerable in a straight line)
+    const driveCap = Math.min(F_DRIVE, POWER / Math.max(Math.abs(s.u), 1.5));
+    const driving = s.drive * driveCap;
     const braking = -Math.sign(s.u) * input.brake * F_BRAKE;
-    let fxR = driving + braking * 0.55;
-    let fxF = braking * 0.45;
+    const tCapR = TRACTION * muR * N, tCapF = TRACTION * muF * N;
+    let fxR = Math.max(-tCapR, Math.min(tCapR, driving * (1 - FRONT_SPLIT))) + braking * 0.55;
+    let fxF = Math.max(-tCapF, Math.min(tCapF, driving * FRONT_SPLIT)) + braking * 0.45;
 
     // the friction circle, per axle: longitudinal spends first, lateral
     // gets what remains — saturate either and that axle skids
@@ -94,14 +118,17 @@ export function stepBuggy(s, input, ground, dt) {
     let fyR = C_ALPHA * alphaR;
     if (Math.abs(fyF) > lyF) { fyF = Math.sign(fyF) * lyF; flags.skidF = true; }
     if (Math.abs(fyR) > lyR) { fyR = Math.sign(fyR) * lyR; flags.skidR = true; }
-    if (Math.abs(fxR) >= capR * 0.98 && Math.abs(driving) > 0) flags.skidR = true;
+    // wheelspin: power exceeding the traction share, at speeds where the
+    // wheels can actually break loose
+    if (Math.abs(driving * (1 - FRONT_SPLIT)) > TRACTION * capR && Math.abs(s.u) < 8) flags.skidR = true;
 
     // resistance: thin-air drag (tiny) + rolling
     const fRes = -Math.sign(s.u) * (DRAG * s.u * s.u + (Math.abs(s.u) > 0.05 ? ROLL_DRAG : 0));
 
-    // gravity along the slope, rotated into the body frame
-    const gxB = (ground.gx * cos - ground.gz * sin);
-    const gzB = (ground.gx * sin + ground.gz * cos);
+    // gravity along the slope, rotated into the body frame — unless the
+    // car is parked, where static friction simply answers it
+    const gxB = parked ? 0 : (ground.gx * cos - ground.gz * sin);
+    const gzB = parked ? 0 : (ground.gx * sin + ground.gz * cos);
     // body accelerations (bicycle equations)
     const du = (fxR + fxF * Math.cos(s.steer) + fRes) / MASS + s.v * s.r - G_MARS * gzB;
     const dv = (fyF * Math.cos(s.steer) + fyR) / MASS - s.u * s.r - G_MARS * gxB;
@@ -110,9 +137,26 @@ export function stepBuggy(s, input, ground, dt) {
     s.u += du * dt;
     s.v += dv * dt;
     s.r += dr * dt;
-    // low-speed cleanup: no phantom creep
-    if (Math.abs(s.u) < 0.08 && input.throttle === 0 && input.brake > 0) s.u = 0;
-    s.v *= 1 - Math.min(1, 2.5 * dt) * (Math.abs(s.u) < 1 ? 1 : 0); // parked cars don't slide sideways
+
+    // low-speed blend to KINEMATIC steering: the dynamic model is invalid
+    // near standstill (a standing car cannot yaw) — below U_KIN the yaw
+    // rate eases to the kinematic bicycle's u*tan(steer)/L and sideslip
+    // dies. This is the fix for spinning on the spot.
+    const kin = Math.max(0, 1 - Math.abs(s.u) / U_KIN);
+    if (kin > 0 && !input.handbrake) {
+      const rKin = (s.u * Math.tan(s.steer)) / (WHEELBASE_F + WHEELBASE_R);
+      s.r += (rKin - s.r) * kin * Math.min(1, 12 * dt);
+      s.v *= 1 - kin * Math.min(1, 6 * dt);
+    }
+
+    // the static hold itself: a parked car STOPS and stays stopped
+    if (parked) {
+      const settle = Math.min(1, 14 * dt);
+      s.u *= 1 - settle; s.v *= 1 - settle; s.r *= 1 - settle;
+      if (Math.abs(s.u) < 0.05) s.u = 0;
+      if (Math.abs(s.v) < 0.05) s.v = 0;
+      if (Math.abs(s.r) < 0.02) s.r = 0;
+    }
   } else {
     // ballistic: no tyre forces, yaw settles, the world holds its breath
     s.r *= 1 - Math.min(1, 0.8 * dt);

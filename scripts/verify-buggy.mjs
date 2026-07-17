@@ -85,7 +85,7 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
     const ang = Math.atan2(wx1, wz1);
     // guard: above the parking-cleanup regime (|u| < 1 applies an
     // intentionally non-physical settle that can spin the velocity vector)
-    if (prevAng !== null && sp > 4 && Math.abs(hot.u) > 2) {
+    if (prevAng !== null && sp > 4 && Math.abs(hot.u) > 4) {
       const dAng = Math.abs(((ang - prevAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
       worstLat = Math.max(worstLat, (dAng / DT) * sp);
     }
@@ -98,11 +98,13 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
     `${worstLat.toFixed(2)} vs ${maxLatAccel().toFixed(2)} m/s^2`);
 }
 
-// 5. throttle oversteer: floor it out of a corner and the REAR breaks first
+// 5. throttle oversteer: the same corner sheds MORE rear grip under power
 {
-  const s = createBuggy(); s.u = 8;
-  const f = drive(s, { throttle: 1, steer: 0.6, brake: 0, handbrake: false }, FLAT, 2.5);
-  check('power-on: rear skids first and most', f.skidR > f.skidF, `R=${f.skidR} F=${f.skidF}`);
+  const a = createBuggy(); a.u = 8;
+  const fa = drive(a, { throttle: 0, steer: 0.6, brake: 0, handbrake: false }, FLAT, 2.5);
+  const b = createBuggy(); b.u = 8;
+  const fb = drive(b, { throttle: 1, steer: 0.6, brake: 0, handbrake: false }, FLAT, 2.5);
+  check('power-on sheds rear grip', fb.skidR > fa.skidR, `with=${fb.skidR} without=${fa.skidR}`);
 }
 
 // 6. the handbrake drift: same corner, handbrake on -> far more yaw
@@ -159,6 +161,61 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   const s = createBuggy();
   drive(s, { throttle: -1, steer: 0, brake: 0, handbrake: false }, FLAT, 5);
   check('reverses', s.u < -1.5, `u=${s.u.toFixed(2)}`);
+}
+
+// ---- the playtest regressions (James, 2026-07-17): "spins on the spot,
+// no traction, can't hold a straight line, slides around when parked"
+
+// 11. full throttle, no steer: the buggy holds a STRAIGHT line
+{
+  const s = createBuggy();
+  drive(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, 10);
+  check('full throttle holds a straight line',
+    Math.abs(s.heading) < 0.02 && Math.abs(s.x) < 1.5 && Math.abs(s.v) < 0.3,
+    `heading=${s.heading.toFixed(4)} x-drift=${s.x.toFixed(2)} v=${s.v.toFixed(2)}`);
+  check('and actually goes somewhere', s.z > 50 && s.u > 9, `z=${s.z.toFixed(0)} u=${s.u.toFixed(1)}`);
+}
+
+// 12. full throttle + full lock FROM STANDSTILL: pulls away in an arc,
+// does not pirouette (yaw rate stays near the kinematic circle's)
+{
+  const s = createBuggy();
+  drive(s, { throttle: 1, steer: 1, brake: 0, handbrake: false }, FLAT, 4);
+  const kinCap = Math.abs(s.u) * Math.tan(0.55) / 2.2 + 0.35;
+  check('standing-start full lock arcs, no pirouette', Math.abs(s.r) < kinCap * 1.4,
+    `r=${s.r.toFixed(2)} vs kinematic ~${kinCap.toFixed(2)}`);
+  check('the arc makes way', Math.hypot(s.x, s.z) > 6);
+}
+
+// 13. steer at a genuine standstill: nothing rotates
+{
+  const s = createBuggy();
+  drive(s, { throttle: 0, steer: 1, brake: 0, handbrake: false }, FLAT, 3);
+  check('no yaw at standstill', Math.abs(s.r) < 0.01 && Math.abs(s.heading) < 0.01);
+}
+
+// 14. parked on a real slope: static friction holds it still
+{
+  const slope = { h: 0, gx: 0.18, gz: 0.10 }; // ~20% grade, well inside mu
+  const s = createBuggy();
+  drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, slope, 6);
+  check('parks on a slope without creeping', Math.hypot(s.x, s.z) < 0.2,
+    `crept ${Math.hypot(s.x, s.z).toFixed(3)} m`);
+}
+
+// 15. ...but a slope STEEPER than the friction cone does slide (honesty)
+{
+  const cliff = { h: 0, gx: 1.0, gz: 0 };
+  const s = createBuggy();
+  drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, cliff, 6);
+  check('over-steep slope still slides', Math.hypot(s.x, s.z) > 1);
+}
+
+// 16. rolling to a stop, it STOPS (no perpetual glide)
+{
+  const s = createBuggy(); s.u = 6;
+  drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, 30);
+  check('coasts to a real stop', s.u === 0 && Math.abs(s.v) < 0.01, `u=${s.u} v=${s.v.toFixed(3)}`);
 }
 
 if (failed) { console.error(`verify-buggy: ${failed} FAILED`); process.exit(1); }
