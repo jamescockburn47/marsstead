@@ -183,6 +183,25 @@ export function ttsPlan(mood) {
   return { voice_id: VOICE_ID, vol: 1.0, pitch: 0, ...m };
 }
 
+// ------------------------------------------------- conversation precedence
+// When the settler is actually TALKING to VESPER, the live exchange owns
+// the channel: ambient barks (scenery, driving flourishes, idle chatter)
+// are dropped for FOCUS_SECONDS after the last live activity. Safety and
+// direct action-feedback always land — silence teaches nothing.
+export const FOCUS_SECONDS = 25;
+
+export const AMBIENT_EVENTS = new Set([
+  'wake', 'first-steps', 'first-jump', 'lope', 'sunset', 'night', 'dawn',
+  'devil-near', 'idle', 'fall', 'buggy-drift', 'buggy-air', 'buggy-crash',
+  'buggy-flip', 'buggy-rollover', 'lights-on',
+]);
+
+// secondsSinceTalk may be Infinity (never talked) — that always barks
+export function shouldBark(event, secondsSinceTalk) {
+  if (!AMBIENT_EVENTS.has(event)) return true;
+  return !(secondsSinceTalk < FOCUS_SECONDS);
+}
+
 // ---------------------------------------------------------- reply hygiene
 // The model's reply, made speakable: reasoning stripped, markup stripped,
 // clamped to a radio-sized line at a sentence boundary where possible.

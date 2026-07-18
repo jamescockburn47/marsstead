@@ -52,7 +52,7 @@ import {
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
 import { vesperSay } from './vesper.js';
-import { moodForEvent, sanitizeState } from './vesperbrain.js';
+import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
 import {
@@ -230,6 +230,7 @@ class Game {
     // Session-only history: live speech is the authored non-deterministic
     // thing (invariant 4) and it does not ride the save.
     this.vesperHistory = [];
+    this.lastTalk = -Infinity; // game-time of the last live exchange
     this.voice = new VesperVoice({ onTranscript: (t) => this.talkToVesper(t) });
 
     this.keys = {};
@@ -419,7 +420,10 @@ class Game {
     }
     // V outside build mode: push-to-talk — hold to speak to VESPER
     if (e.code === 'KeyV' && !this.buildMode && !e.repeat) {
-      if (this.voice.startListening()) this.hud.setEar(true);
+      if (this.voice.startListening()) {
+        this.hud.setEar(true);
+        this.lastTalk = this.t; // conversation takes the channel
+      }
     }
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
@@ -913,6 +917,9 @@ class Game {
   }
 
   say(event) {
+    // ambience yields to conversation (safety and feedback always land);
+    // dropped barks don't advance the cycle — no lines burned unheard
+    if (!shouldBark(event, this.t - this.lastTalk)) return;
     const n = this.saidCounts[event] || 0;
     this.saidCounts[event] = n + 1;
     const line = vesperSay(event, n);
@@ -958,6 +965,7 @@ class Game {
     this.hud?.setEar(false);
     const text = (raw || '').trim();
     if (!text) return;
+    this.lastTalk = this.t;
     this.vesperHistory.push({ who: 'you', text });
     while (this.vesperHistory.length > 8) this.vesperHistory.shift();
     const body = JSON.stringify({
@@ -974,9 +982,10 @@ class Game {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
       .then(({ line, mood }) => {
         if (!line) throw new Error('empty reply');
+        this.lastTalk = this.t;
         this.vesperHistory.push({ who: 'vesper', text: line });
         this.hud.say(line, this.t, Math.max(7, line.length / 12));
-        this.voice.speak(line, mood || 'calm');
+        this.voice.speak(line, mood || 'calm', { live: true });
       })
       .catch(() => this.say('radio-static'));
   }

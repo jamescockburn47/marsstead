@@ -46,6 +46,11 @@ partially). Where it's unsupported, V does nothing and the game is unchanged.
 - **Moods** (`calm · wonder · warning · urgent · storm · dark`) are derived
   deterministically from state/event — never by the model — and map to exact
   T2A settings (`ttsPlan`). Whisper rides 2.6 because 2.8 doesn't carry it.
+- **Conversation precedence**: while a live exchange is on (until
+  `FOCUS_SECONDS` after the last activity), `AMBIENT_EVENTS` barks are
+  dropped outright — no text, no audio, no cycle burn — and a live reply
+  clears the audio queue and cuts off any canned line mid-word. Safety and
+  direct action-feedback always land. `shouldBark` is the contract.
 
 To change the voice: edit `VOICE_ID` in `src/vesperbrain.js` and redeploy the
 relay. Accent is not in the name — query the `get_voice` API for the

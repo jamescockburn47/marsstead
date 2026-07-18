@@ -8,6 +8,7 @@ import {
   sanitizeState, stateBrief, buildMessages, cleanStr,
   moodFor, moodForEvent, ttsPlan, clampLine,
   CHAT_PARAMS, VOICE_ID, TTS_MODEL, TTS_MODEL_WHISPER,
+  AMBIENT_EVENTS, FOCUS_SECONDS, shouldBark,
 } from '../src/vesperbrain.js';
 import { EVENTS } from '../src/vesper.js';
 
@@ -86,6 +87,16 @@ for (const mood of MOODS) {
   if (p.emotion === 'whisper') check(`whisper rides ${TTS_MODEL_WHISPER}`, p.model === TTS_MODEL_WHISPER);
 }
 check('unknown mood falls back to calm', ttsPlan('nonsense').emotion === 'calm');
+
+// ---- conversation precedence: ambience yields, safety and feedback land
+check('every ambient event is a real event', [...AMBIENT_EVENTS].every((e) => EVENTS.includes(e)));
+check('focus window is sane', FOCUS_SECONDS >= 10 && FOCUS_SECONDS <= 120);
+check('ambience yields inside the window', !shouldBark('idle', 5) && !shouldBark('sunset', FOCUS_SECONDS - 1));
+check('ambience returns after the window', shouldBark('idle', FOCUS_SECONDS + 1));
+check('never talked means everything barks', shouldBark('idle', Infinity));
+for (const critical of ['air-low', 'cold', 'leak', 'no-shelter', 'not-tired', 'hab-too-small', 'radio-static', 'airlock-cycle', 'sleep']) {
+  check(`${critical} always lands, even mid-conversation`, shouldBark(critical, 0) && !AMBIENT_EVENTS.has(critical));
+}
 
 // ---- reply hygiene
 check('clampLine strips reasoning', clampLine('<think>secret plan</think>Hello, settler.') === 'Hello, settler.');

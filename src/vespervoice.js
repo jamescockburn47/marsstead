@@ -46,14 +46,22 @@ export class VesperVoice {
     return this.ctx;
   }
 
-  // speak a line in a mood; queues at most two so VESPER never backlogs
-  speak(text, mood = 'calm') {
+  // speak a line in a mood. Live conversation owns the channel: a live
+  // reply clears the queue and cuts off any canned line mid-word; a canned
+  // line never queues behind anything — busy channel, dropped bark.
+  speak(text, mood = 'calm', { live = false } = {}) {
     if (!text || this.mutedFlag) return;
     const now = Date.now();
     if (text === this.lastText && now - this.lastAt < 5000) return; // no echoes
+    if (live) {
+      this.queue.length = 0;
+      if (this.speakingNow && !this.currentLive) {
+        try { this.current?.stop(); } catch { /* already ended */ }
+        try { window.speechSynthesis?.cancel(); } catch { /* unsupported */ }
+      }
+    } else if (this.speakingNow || this.queue.length) return;
     this.lastText = text; this.lastAt = now;
-    this.queue.push({ text, mood });
-    while (this.queue.length > 2) this.queue.shift();
+    this.queue.push({ text, mood, live });
     this._pump();
   }
 
@@ -68,7 +76,8 @@ export class VesperVoice {
     this.speakingNow = true;
     try {
       while (this.queue.length) {
-        const { text, mood } = this.queue.shift();
+        const { text, mood, live } = this.queue.shift();
+        this.currentLive = !!live;
         try {
           if (Date.now() < this.relayDown) throw new Error('relay resting');
           await this._playRelay(text, mood);
