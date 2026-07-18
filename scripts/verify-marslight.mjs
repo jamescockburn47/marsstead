@@ -44,6 +44,12 @@ const chans = ['skyZenith', 'skyHorizon', 'sunColour', 'haloBlue', 'ambientColou
   check('day horizon warm-ordered', day.skyHorizon[0] > day.skyHorizon[1] && day.skyHorizon[1] > day.skyHorizon[2]);
   const night = lightState(-25, TAU_CLEAR);
   check('night is dark', Math.max(...night.skyZenith) < 0.06 && night.starVisibility > 0.9);
+  // the playable floor: night ambient keeps the ground legible (a gameplay
+  // number), yet stays well under half the day fill so night still reads
+  const dayA = lightState(45, TAU_CLEAR).ambientIntensity;
+  check('night ambient playable but subordinate',
+    night.ambientIntensity >= 0.12 && night.ambientIntensity < dayA * 0.5,
+    `night=${night.ambientIntensity.toFixed(3)} day=${dayA.toFixed(3)}`);
 }
 
 // 4. the storm: sun dies to a pale coin, stars vanish, fog thickens

@@ -5,3 +5,5 @@ tools/*.img
 tools/*.lbl
 tools/*.csv
 tools/*.nc
+.vercel/
+.claude/

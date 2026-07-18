@@ -16,6 +16,7 @@ export const EVENTS = [
   'wake', 'first-steps', 'first-jump', 'lope', 'sunset', 'night',
   'dawn', 'devil-near', 'cold', 'air-low', 'idle', 'fall',
   'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on', 'salvage-first', 'suit-full', 'ring-taken',
+  'sleep', 'no-shelter', 'first-seal', 'pressurised', 'leak', 'airlock-cycle',
 ];
 
 export const LINES = {
@@ -122,6 +123,32 @@ export const LINES = {
     "Landed. The chassis forgives you. Once.",
     "The suspension logged that one. So did I.",
     "Speed is free here; stopping is expensive. Note taken, I trust.",
+  ],
+  sleep: [
+    "Lights out, settler. I'll idle at one hertz and keep the cold on its side of the hull.",
+    "Sleep. The planet has waited four billion years; it can manage one more night.",
+    "Good night. I'll count Phobos laps — it should manage three before dawn.",
+  ],
+  'no-shelter': [
+    "Not out here. Find a hull between you and the sky and I'll gladly run the night for you.",
+    "Sleeping under the open sky is how the planet wins. The lander's right there, settler.",
+  ],
+  'first-seal': [
+    "That volume is closed. Closed, on Mars, is the whole game — now door it and feed it air.",
+    "I show an enclosed space that isn't the lander. You built the second room on the planet.",
+  ],
+  pressurised: [
+    "Pressure. Holding. You are standing in the only weather on Mars that's on our side.",
+    "The gauges agree: one atmosphere of somewhere else, right here. Welcome home, settler.",
+    "It holds. I've rechecked it four hundred times since you asked. It holds.",
+  ],
+  leak: [
+    "Air's slipping out — I've marked the seam. The planet always finds the honest gap.",
+    "Not sealed yet. Follow my markers; the leak is exactly where I'm pointing.",
+  ],
+  'airlock-cycle': [
+    "Cycling. Thirty seconds of bureaucracy between two worlds. Worth every one.",
+    "Airlock's doing its slow arithmetic. Pressure equalising… there. Through you go.",
   ],
 };
 

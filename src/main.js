@@ -6,6 +6,8 @@
 //
 // Dev keys: WASD move, SHIFT lope, SPACE jump, mouse-drag orbit,
 // L headlamp, [ ] scrub time (the demo's best friend).
+// E interact · Q cycle part · F/G load/unload rover · R sleep (sheltered,
+// at night) · B build mode (E place, X remove, Q part, V wall/roof).
 
 import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
@@ -29,9 +31,16 @@ import { createLander, available, unboltSeconds, takeOne, remaining, remainingTo
 import { LanderLayer } from './landerlayer.js';
 import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
-  transfer, loadLabel, massOf,
+  remove, transfer, loadLabel, massOf,
 } from './inventory.js';
 import { vesperSay } from './vesper.js';
+import { canSleep, wakeMillis } from './sleep.js';
+import {
+  CELL, PART_TYPES, faceKey, parseFaceKey, faceCentre, createStead,
+  canPlace, place, removePart, cardinal, cursorFace,
+} from './build.js';
+import { analyse, volumeAtCell, canPressurise, findLeaks } from './pressure.js';
+import { SteadLayer } from './steadlayer.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
@@ -108,6 +117,24 @@ class Game {
     this.simMillis = Date.now();
     this.calibrateToLocalHour(16.4);
 
+    // sleep: null, or { t, wake, jumped } while the night is skipped
+    this.sleepAnim = null;
+
+    // the stead: pure data (build.js) + its drawn layer. baseY anchors the
+    // grammar's flat y=0 plane to the terrain at the first placement.
+    this.stead = createStead();
+    this.steadLayer = new SteadLayer(this.scene);
+    this.steadBaseY = null;
+    this.buildMode = false;
+    this.buildSel = 0;         // Q cycles part types while building
+    this.buildSlot = 'wall';   // V flips wall/roof
+    this.analysis = { volumes: [], outside: new Set() };
+    this.insidePressurised = false;
+    this.everPressurised = false; // flips once; the gentle start ends with it
+    this.cycling = null;       // { t, tx, tz } while an airlock runs its cycle
+    this.leakCacheKey = '';
+    this.leaks = [];
+
     // the suit
     this.air = 1; this.warm = 1;
     this.saidCounts = {}; this.lamp = false;
@@ -150,11 +177,20 @@ class Game {
       // cycle auto -> on -> off -> auto (auto is the default: dusk decides)
       this.lampMode = this.lampMode === 'auto' ? 'on' : this.lampMode === 'on' ? 'off' : 'auto';
     }
-    if (e.code === 'KeyE') this.interact();
-    if (e.code === 'KeyQ') this.salvageSel++;
+    if (e.code === 'KeyE') this.buildMode ? this.placeCursor() : this.interact();
+    if (e.code === 'KeyR') this.trySleep();
+    if (e.code === 'KeyQ') this.buildMode ? this.buildSel++ : this.salvageSel++;
     if (e.code === 'KeyF') this.loadRover();
     if (e.code === 'KeyG') this.unloadRover();
     if (e.code === 'KeyC' && this.driving) this.fpv = !this.fpv;
+    if (e.code === 'KeyB' && !this.driving && !this.sleepAnim) {
+      this.buildMode = !this.buildMode;
+      if (!this.buildMode) { this.steadLayer.showGhost(null); this.steadLayer.clearLeaks(); }
+    }
+    if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
+    if (e.code === 'KeyV' && this.buildMode) {
+      this.buildSlot = this.buildSlot === 'wall' ? 'roof' : 'wall';
+    }
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
   }
@@ -227,6 +263,138 @@ class Game {
     }
   }
 
+  // shelter, tonight's definition: the lander's hull, or standing inside
+  // a pressurised volume of your own build
+  sheltered() {
+    return this.distToLander() < 7 || this.insidePressurised;
+  }
+
+  // ---- building --------------------------------------------------------
+
+  buildablePart() {
+    const types = Object.keys(PART_TYPES);
+    return types[((this.buildSel % types.length) + types.length) % types.length];
+  }
+
+  canAfford(type) {
+    return PART_TYPES[type].costs.every(([id, n]) => count(this.suit, id) >= n);
+  }
+
+  // the grid anchor: fixed at first placement, previewed before it
+  buildBaseY() {
+    return this.steadBaseY ?? meshGroundHeight(this.pos.x, this.pos.z);
+  }
+
+  buildCursor(forRemove = false) {
+    const { dx, dz } = cardinal(Math.sin(this.camYaw), Math.cos(this.camYaw));
+    const cx = Math.floor(this.pos.x / CELL), cz = Math.floor(this.pos.z / CELL);
+    return cursorFace(this.stead, this.buildSlot, cx, cz, dx, dz, forRemove);
+  }
+
+  // grammar + purse + terrain: ground-level parts must meet ground near
+  // the base plane, or walls float over gullies and bury in banks
+  placementOk(key, type) {
+    if (!canPlace(this.stead, key) || !this.canAfford(type)) return false;
+    const f = parseFaceKey(key);
+    if (f.y === 0) {
+      const c = faceCentre(f.x, f.y, f.z, f.axis);
+      if (Math.abs(meshGroundHeight(c[0], c[2]) - this.buildBaseY()) > 0.75) return false;
+    }
+    return true;
+  }
+
+  placeCursor() {
+    const type = this.buildablePart();
+    const key = this.buildCursor(false);
+    if (!key || !this.placementOk(key, type)) return;
+    if (this.steadBaseY === null) {
+      this.steadBaseY = meshGroundHeight(this.pos.x, this.pos.z);
+      this.steadLayer.setBase(this.steadBaseY);
+    }
+    for (const [id, n] of PART_TYPES[type].costs) remove(this.suit, id, n);
+    place(this.stead, key, type);
+    this.steadLayer.sync(this.stead, meshGroundHeight);
+    this.afterBuildChange();
+  }
+
+  removeCursor() {
+    const key = this.buildCursor(true);
+    if (!key) return;
+    const type = this.stead.parts.get(key).type;
+    const costs = PART_TYPES[type].costs;
+    const refundKg = costs.reduce((kg, [id, n]) => kg + ITEMS[id].kg * n, 0);
+    // the refund needs somewhere to go: suit first, the rover's deck if
+    // it's alongside, otherwise the part stays on the wall
+    let dest = null;
+    if (massOf(this.suit) + refundKg <= SUIT_CAPACITY) dest = this.suit;
+    else if (this.distToRover() < 9 && massOf(this.roverStore) + refundKg <= ROVER_CAPACITY) dest = this.roverStore;
+    if (!dest) { this.say('suit-full'); return; }
+    removePart(this.stead, key);
+    for (const [id, n] of costs) add(dest, id, n);
+    this.steadLayer.sync(this.stead, meshGroundHeight);
+    this.afterBuildChange();
+  }
+
+  // re-judge the air after every change: the flood-fill is the contract
+  afterBuildChange() {
+    this.analysis = analyse(this.stead);
+    this.leakCacheKey = ''; // stale
+    if (this.analysis.volumes.length) this.sayOnce('first-seal');
+    // fed = true for now: the seal is fed from the lander's O2 stock until
+    // the electrolyser closes the loop (PHASE2 step 5)
+    const pressurised = this.analysis.volumes.some((v) => canPressurise(v, true));
+    if (pressurised && !this.everPressurised) {
+      this.everPressurised = true; // the gentle start ends here, for good
+      this.say('pressurised');
+    }
+  }
+
+  // walls are real: crossing a sealed ground-level face stops you; the
+  // airlock instead runs its cycle and hands you through
+  resolveWalls(px, pz) {
+    if (this.stead.parts.size === 0 || this.steadBaseY === null) return;
+    if (Math.abs(this.pos.y - this.steadBaseY) > 2.4) return; // above the walls
+    const c0x = Math.floor(px / CELL), c0z = Math.floor(pz / CELL);
+    let c1x = Math.floor(this.pos.x / CELL), c1z = Math.floor(this.pos.z / CELL);
+    if (c1x !== c0x) {
+      const fk = faceKey(Math.max(c0x, c1x), 0, c0z, 0);
+      const part = this.stead.parts.get(fk);
+      if (part && PART_TYPES[part.type].seals) {
+        if (part.type === 'airlock') this.startCycle(c1x, c0z);
+        this.pos.x = px; c1x = c0x;
+      }
+    }
+    if (c1z !== c0z) {
+      const fk = faceKey(c1x, 0, Math.max(c0z, c1z), 2);
+      const part = this.stead.parts.get(fk);
+      if (part && PART_TYPES[part.type].seals) {
+        if (part.type === 'airlock') this.startCycle(c1x, c1z);
+        this.pos.z = pz;
+      }
+    }
+  }
+
+  startCycle(tx, tz) {
+    if (this.cycling) return;
+    this.cycling = { t: 0, tx, tz };
+    this.say('airlock-cycle');
+  }
+
+  // R: hand the night to VESPER — only with shelter, only at real night
+  trySleep() {
+    if (this.sleepAnim || this.driving) return;
+    if (!canSleep(this.sunEl ?? 90)) return;
+    if (!this.sheltered()) { this.say('no-shelter'); return; }
+    const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
+    const wake = wakeMillis(this.simMillis, lat, lon);
+    if (wake === null) return; // polar night: no dawn to wake into
+    this.sleepAnim = { t: 0, wake, jumped: false };
+    this.say('sleep');
+    this.hud.setVeil(1);
+    this.steadLayer.showGhost(null);
+    this.steadLayer.clearLeaks();
+  }
+
   say(event) {
     const n = this.saidCounts[event] || 0;
     this.saidCounts[event] = n + 1;
@@ -244,7 +412,9 @@ class Game {
     this.t += dt;
     this.simMillis += dt * 1000 * TIME_SCALE;
 
-    if (this.driving) {
+    if (this.sleepAnim) {
+      this.frameSleeping(dt);
+    } else if (this.driving) {
       this.frameDriving(dt);
     } else {
       this.frameOnFoot(dt);
@@ -258,14 +428,26 @@ class Game {
 
   frameOnFoot(dt) {
     this.camDist = 7;
+    // the airlock's slow arithmetic: inputs wait, then you're through
+    if (this.cycling) {
+      this.cycling.t += dt;
+      this.vel.multiplyScalar(Math.max(0, 1 - 8 * dt));
+      if (this.cycling.t >= 1.6) {
+        this.pos.x = (this.cycling.tx + 0.5) * CELL;
+        this.pos.z = (this.cycling.tz + 0.5) * CELL;
+        this.cycling = null;
+      }
+    }
     // ---- movement under 0.38 g
     const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const wish = new THREE.Vector3();
-    if (this.keys.KeyW) wish.add(fwd);
-    if (this.keys.KeyS) wish.sub(fwd);
-    if (this.keys.KeyA) wish.add(right);
-    if (this.keys.KeyD) wish.sub(right);
+    if (!this.cycling) {
+      if (this.keys.KeyW) wish.add(fwd);
+      if (this.keys.KeyS) wish.sub(fwd);
+      if (this.keys.KeyA) wish.add(right);
+      if (this.keys.KeyD) wish.sub(right);
+    }
     const loping = this.keys.ShiftLeft || this.keys.ShiftRight;
     const speed0 = this.vel.length();
     const target = wish.lengthSq() > 0
@@ -275,8 +457,10 @@ class Game {
     // more while airborne (you can't steer off the ground)
     const ease = this.airborne ? 0.4 : 6;
     this.vel.lerp(target, Math.min(1, ease * dt));
+    const px = this.pos.x, pz = this.pos.z;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
+    this.resolveWalls(px, pz);
     if (this.vel.lengthSq() > 0.05) {
       this.heading = Math.atan2(this.vel.x, this.vel.z);
       this.sayOnce('first-steps');
@@ -288,7 +472,7 @@ class Game {
     }
 
     const ground = meshGroundHeight(this.pos.x, this.pos.z);
-    if (!this.airborne && this.keys.Space) {
+    if (!this.airborne && this.keys.Space && !this.cycling) {
       this.vy = JUMP_V0; this.airborne = true;
       this.sayOnce('first-jump');
     } else if (!this.airborne && loping && speed0 > 3.2) {
@@ -371,13 +555,55 @@ class Game {
       }
     }
 
-    // ---- the gentle start: the lander tops your air back up, free
-    if (this.distToLander() < 7 && this.air < 1) {
+    // ---- the gentle start: the lander tops your air back up, free —
+    // until the first volume pressurises and the ledger switches on
+    if (!this.everPressurised && this.distToLander() < 7 && this.air < 1) {
       this.air = Math.min(1, this.air + dt * 0.03);
     }
 
+    // ---- standing in your own weather: the sealed volume feeds the suit
+    {
+      const cx = Math.floor(this.pos.x / CELL), cz = Math.floor(this.pos.z / CELL);
+      const vol = this.steadBaseY !== null ? volumeAtCell(this.analysis, cx, 0, cz) : null;
+      this.insidePressurised = !!(vol && canPressurise(vol, true));
+      if (this.insidePressurised) {
+        this.air = Math.min(1, this.air + dt * 0.06);
+        this.warm = Math.min(1, this.warm + dt * 0.08);
+      }
+    }
+
+    // ---- the build cursor: ghost + the leak finder's markers
+    if (this.buildMode) {
+      const type = this.buildablePart();
+      const key = this.buildCursor(false);
+      this.steadLayer.showGhost(key, key ? this.placementOk(key, type) : false, this.buildBaseY());
+      const cx = Math.floor(this.pos.x / CELL), cz = Math.floor(this.pos.z / CELL);
+      const cacheKey = `${this.stead.parts.size}:${cx},${cz}`;
+      if (cacheKey !== this.leakCacheKey) {
+        this.leakCacheKey = cacheKey;
+        this.leaks = this.stead.parts.size >= 4 ? findLeaks(this.stead, [cx, 0, cz]) : [];
+        if (this.leaks.length) this.sayOnce('leak');
+      }
+      if (this.leaks.length) this.steadLayer.showLeaks(this.leaks, this.buildBaseY(), this.t);
+      else this.steadLayer.clearLeaks();
+    }
+
     // ---- prompts + bags (the HUD reads the nearest interaction)
-    if (this.unbolt) {
+    if (this.cycling) {
+      this.hud.setPrompt('airlock cycling…');
+    } else if (this.buildMode) {
+      const type = this.buildablePart();
+      const t = PART_TYPES[type];
+      const have = t.costs
+        .map(([id, n]) => `${count(this.suit, id)}/${n} ${ITEMS[id].name.toLowerCase()}`)
+        .join(' + ');
+      const seal = this.insidePressurised ? ' · PRESSURISED'
+        : this.leaks.length ? ' · leaking — follow the markers' : '';
+      this.hud.setPrompt(
+        `|*E| place ${t.name.toLowerCase()} (${have}) · |*X| remove`
+        + ` · |*Q| part · |*V| ${this.buildSlot === 'wall' ? 'roof' : 'wall'} · |*B| done${seal}`,
+      );
+    } else if (this.unbolt) {
       const pct = Math.round((this.unbolt.t / this.unbolt.need) * 100);
       this.hud.setPrompt(`unbolting ${ITEMS[this.unbolt.id].name.toLowerCase()}… ${pct}%`);
     } else if (this.distToRover() < 3.2) {
@@ -389,8 +615,11 @@ class Game {
       this.hud.setPrompt(
         `|*E| unbolt ${ITEMS[id].name.toLowerCase()} ×${remaining(this.lander, id)}`
         + ` (${unboltSeconds(id)}s) · |*Q| next part`
-        + (remainingTotal(this.lander) ? '' : ' · stripped'),
+        + (remainingTotal(this.lander) ? '' : ' · stripped')
+        + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''),
       );
+    } else if (canSleep(this.sunEl ?? 90) && this.sheltered()) {
+      this.hud.setPrompt('|*R| sleep till dawn');
     } else {
       this.hud.setPrompt(null);
     }
@@ -407,6 +636,23 @@ class Game {
     this.buggy.y = pwg.h;
     this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
       pwg.h, pwg.pitch, pwg.roll, this.puffs);
+    this.hud.setSpeed(null);
+  }
+
+  // the night, skipped: fade to black, jump the clock to the computed dawn
+  // behind the veil, wake with full bottles. Inputs sit the night out.
+  frameSleeping(dt) {
+    const s = this.sleepAnim;
+    s.t += dt;
+    if (!s.jumped && s.t >= 1.6) {
+      s.jumped = true;
+      this.simMillis = s.wake;
+      this.air = 1; this.warm = 1;
+      this.hud.setVeil(0);
+      this.say('wake');
+    }
+    if (s.t >= 3.2) this.sleepAnim = null;
+    this.hud.setPrompt(null);
     this.hud.setSpeed(null);
   }
 
@@ -570,10 +816,13 @@ class Game {
       this.cam.position, meshGroundHeight(this.cam.position.x, this.cam.position.z));
     if (this.dust.nearestDevil < 220) this.sayOnce('devil-near');
 
-    // ---- the suit's slow arithmetic
+    // ---- the suit's slow arithmetic. The gentle start runs an 8h bottle
+    // and forgiving cold; once the first hab pressurises the full ledger
+    // switches on (PHASE2) — a 5h bottle and a colder night.
     const temp = surfaceTempC(sunEl, tau);
-    this.air = Math.max(0, this.air - dt / (8 * 3600 / TIME_SCALE)); // an 8h EVA bottle
-    const chill = temp < -60 ? ((-60 - temp) / 40) : 0;
+    const bottleHours = this.everPressurised ? 5 : 8;
+    this.air = Math.max(0, this.air - dt / (bottleHours * 3600 / TIME_SCALE));
+    const chill = temp < -60 ? ((-60 - temp) / 40) * (this.everPressurised ? 1.5 : 1) : 0;
     this.warm = Math.max(0, Math.min(1, this.warm + (0.05 - chill * 0.02) * dt));
     if (this.warm < 0.35) this.sayOnce('cold');
     if (this.air < 0.25) this.sayOnce('air-low');

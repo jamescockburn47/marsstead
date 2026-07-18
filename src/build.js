@@ -66,12 +66,15 @@ export function facesTouch(a, b) {
   return d <= 1;                                  // different orientation, same corner
 }
 
-// placement law: the part must ROOT — a ground-level floor face (y=0,
-// horizontal) or edge-contact with an existing part. No floating walls.
+// placement law: the part must ROOT — any ground-level face (a floor plate
+// lying on the regolith, or a wall standing on it: its bottom edge rests on
+// the ground) or edge-contact with an existing part. No floating walls.
+// The regolith itself is a floor — pressure.js seals every cell below y=0 —
+// so floor plates are comfort, not structure.
 export function canPlace(stead, key) {
   if (stead.parts.has(key)) return false;
   const f = parseFaceKey(key);
-  if (f.axis === 1 && f.y === 0) return true;    // on the ground
+  if (f.y === 0) return true;                    // resting on the ground
   for (const existing of stead.parts.keys()) {
     if (facesTouch(key, existing)) return true;
   }
@@ -86,6 +89,42 @@ export function place(stead, key, type) {
 }
 
 export function removePart(stead, key) { return stead.parts.delete(key); }
+
+// ---- the build cursor ------------------------------------------------------
+// No pointer lock in the family camera, so aiming is cellular: the cursor
+// is derived from the cell you stand in and the way you face. Pure, so the
+// verify can hold the aim rules still while the layer draws them.
+
+// snap a facing vector to the dominant cardinal (ties go to x)
+export function cardinal(fx, fz) {
+  return Math.abs(fx) >= Math.abs(fz)
+    ? { dx: fx < 0 ? -1 : 1, dz: 0 }
+    : { dx: 0, dz: fz < 0 ? -1 : 1 };
+}
+
+// the wall face between ground cell (cx,cz) and its neighbour along (dx,dz)
+export function wallFace(cx, cz, dx, dz) {
+  if (dx === 1) return faceKey(cx + 1, 0, cz, 0);
+  if (dx === -1) return faceKey(cx, 0, cz, 0);
+  if (dz === 1) return faceKey(cx, 0, cz + 1, 2);
+  return faceKey(cx, 0, cz, 2);
+}
+
+// the roof of ground cell (cx,cz): its top face
+export function roofFace(cx, cz) { return faceKey(cx, 1, cz, 1); }
+
+// the cursor: from ground cell (cx,cz) facing (dx,dz), walk outward up to
+// two cells and return the first empty face (placing) or the first
+// occupied one (removing). Null when the walk finds nothing to do.
+export function cursorFace(stead, mode, cx, cz, dx, dz, forRemove = false) {
+  for (let i = 0; i < 3; i++) {
+    const x = cx + dx * i, z = cz + dz * i;
+    const key = mode === 'roof' ? roofFace(x, z) : wallFace(x, z, dx, dz);
+    const has = stead.parts.has(key);
+    if (forRemove ? has : !has) return key;
+  }
+  return null;
+}
 
 // serialise / restore — the save's contract
 export function serialize(stead) {

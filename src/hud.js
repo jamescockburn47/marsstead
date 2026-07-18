@@ -28,6 +28,8 @@ const CSS = `
   #hud .prompt b { color: #e8c46a; font-weight: normal; letter-spacing: 2px; }
   #hud .bags { position: absolute; top: 96px; right: 18px; text-align: right;
     font-size: 11px; letter-spacing: 1px; opacity: .85; line-height: 1.8; }
+  #hud .veil { position: absolute; inset: 0; background: #060302;
+    opacity: 0; transition: opacity 1.2s ease; }
 `;
 
 export class Hud {
@@ -53,6 +55,7 @@ export class Hud {
 
     this.prompt = el(this.root, 'div', 'prompt');
     this.bags = el(this.root, 'div', 'bags');
+    this.veil = el(this.root, 'div', 'veil'); // the sleep blackout
 
     this.vesper = el(this.root, 'div', 'vesper');
     el(this.vesper, 'span', 'who').textContent = 'VESPER';
@@ -106,6 +109,11 @@ export class Hud {
       r.textContent = roverLine;
       this.bags.appendChild(r);
     }
+  }
+
+  // the sleep fade: 0 clear, 1 black — CSS eases it over ~a second
+  setVeil(opacity01) {
+    this.veil.style.opacity = String(opacity01);
   }
 
   say(line, now, holdSeconds = 7) {

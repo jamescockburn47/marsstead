@@ -20,12 +20,12 @@ export const TAU_STORM = 5.0;   // brown-out
 // the palette poles (linear-ish RGB 0..1)
 const SKY_ZEN_DAY = [0.48, 0.24, 0.16];   // dusty mauve-brown zenith
 const SKY_HOR_DAY = [0.85, 0.46, 0.23];   // butterscotch horizon, rust-deep
-const SKY_NIGHT = [0.015, 0.012, 0.02];   // near-black, a violet memory
+const SKY_NIGHT = [0.026, 0.024, 0.04];   // near-black, a violet memory
 const SUN_HIGH = [1.0, 0.93, 0.82];       // small pale-gold disc
 const SUN_LOW = [0.95, 0.87, 0.85];       // whiter at dusk (real: dust reddens the SKY, not the disc)
 const HALO_BLUE = [0.45, 0.62, 0.85];     // the famous blue forward-scatter
 const AMB_DAY = [0.58, 0.34, 0.24];       // dust-fill: shadows are dusty rose
-const AMB_NIGHT = [0.05, 0.055, 0.08];    // starlight + a breath of Phobos
+const AMB_NIGHT = [0.11, 0.115, 0.16];    // starlight + a breath of Phobos
 const STORM_TINT = [0.42, 0.27, 0.14];    // the sepia of the brown noon
 
 // daylight factor: 0 deep night -> 1 full day, twilight ramp around -6..8 deg
@@ -61,8 +61,10 @@ export function lightState(sunEl, tau = TAU_CLEAR) {
   const halo = dusk * haloWindow * clamp01(1.2 - storm * 1.2);
 
   // ambient: the dust-fill, rosier by day, storm keeps it surprisingly
-  // bright (light bounces everywhere) but utterly flat
-  const ambI = lerp(0.06, 0.55, day) * (1 - storm * 0.35);
+  // bright (light bounces everywhere) but utterly flat. The night floor is
+  // a GAMEPLAY number, not a physical one — the real Mars night is pitch,
+  // but the drawn one keeps the ground legible a few strides out.
+  const ambI = lerp(0.17, 0.55, day) * (1 - storm * 0.35);
   const amb = mix3(AMB_NIGHT, mix3(AMB_DAY, STORM_TINT, storm), day);
 
   // shadow softness 0 crisp -> 1 gone: rides tau and dies at night

@@ -4,6 +4,7 @@
 import {
   CELL, PART_TYPES, faceKey, parseFaceKey, faceCells, cellFaces, faceCentre,
   createStead, canPlace, place, removePart, partAt, serialize, deserialize,
+  cardinal, wallFace, roofFace, cursorFace,
 } from '../src/build.js';
 import { ITEMS } from '../src/inventory.js';
 
@@ -36,6 +37,7 @@ function check(name, ok, detail = '') {
 {
   const s = createStead();
   check('floor on the ground places', place(s, faceKey(0, 0, 0, 1), 'panel'));
+  check('wall standing on the ground places', place(s, faceKey(5, 0, 5, 0), 'panel'));
   check('floating wall refuses', canPlace(s, faceKey(10, 3, 10, 0)) === false);
   check('wall touching the floor places', place(s, faceKey(0, 0, 0, 0), 'panel'));
   check('double placement refuses', place(s, faceKey(0, 0, 0, 1), 'panel') === false);
@@ -60,6 +62,27 @@ function check(name, ok, detail = '') {
 {
   const c = faceCentre(0, 0, 0, 1);
   check('face centre on the cell floor', c[0] === CELL / 2 && c[1] === 0 && c[2] === CELL / 2, `${c}`);
+}
+
+// 6. the build cursor: cardinal snap, canonical walls, the outward walk
+{
+  check('cardinal snaps to x', cardinal(0.9, 0.3).dx === 1 && cardinal(0.9, 0.3).dz === 0);
+  check('cardinal snaps to -z', cardinal(0.2, -0.8).dz === -1);
+  // the wall between (0,0) and (1,0) carries the same key seen from both sides
+  check('wall face canonical both sides',
+    wallFace(0, 0, 1, 0) === wallFace(1, 0, -1, 0));
+  check('roof sits on top of the cell', roofFace(2, 3) === faceKey(2, 1, 3, 1));
+
+  const s = createStead();
+  const first = cursorFace(s, 'wall', 0, 0, 1, 0);
+  check('empty stead: cursor is the near wall', first === wallFace(0, 0, 1, 0));
+  place(s, first, 'panel');
+  check('occupied: cursor walks outward',
+    cursorFace(s, 'wall', 0, 0, 1, 0) === wallFace(1, 0, 1, 0));
+  check('remove cursor finds the occupied face',
+    cursorFace(s, 'wall', 0, 0, 1, 0, true) === first);
+  check('remove cursor null on empty walk',
+    cursorFace(createStead(), 'wall', 0, 0, 1, 0, true) === null);
 }
 
 if (failed) { console.error(`verify-build: ${failed} FAILED`); process.exit(1); }
