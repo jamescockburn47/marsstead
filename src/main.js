@@ -39,16 +39,23 @@ import { canSleep, wakeMillis, bedworthy } from './sleep.js';
 import {
   CELL, PART_TYPES, faceKey, parseFaceKey, faceCentre, createStead,
   canPlace, place, removePart, cardinal, cursorFace,
+  serialize as steadSerialize, deserialize as steadDeserialize,
 } from './build.js';
+import {
+  snapshotSave, acceptSave, saveGame, loadGame, clearSave,
+} from './save.js';
 import { analyse, volumeAtCell, canPressurise, findLeaks } from './pressure.js';
 import { SteadLayer, BED_DEPTH } from './steadlayer.js';
-import { createExploration, visit } from './explore.js';
+import {
+  createExploration, visit,
+  serialize as fogSerialize, deserialize as fogDeserialize,
+} from './explore.js';
 import { MarsMap } from './marsmap.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
 class Game {
-  constructor() {
+  constructor(save = null) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -169,11 +176,77 @@ class Game {
       this.renderer.setSize(innerWidth, innerHeight);
     });
 
+    if (save) this.applySave(save);
+    this.lastPersist = 0;
+    // best-effort parting save: the planet keeps what it was given
+    addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.persist();
+    });
+    addEventListener('beforeunload', () => this.persist());
+
     this.say('wake');
     this.t = 0;
     this.last = performance.now();
     this.ready = true;
     requestAnimationFrame((n) => this.frame(n));
+  }
+
+  // restore an accepted save: only authored facts — the world re-derives
+  applySave(s) {
+    this.simMillis = s.simMillis;
+    this.heading = s.heading;
+    this.air = s.air; this.warm = s.warm;
+    this.buggy.x = s.buggy.x; this.buggy.z = s.buggy.z;
+    this.buggy.heading = s.buggy.heading;
+    this.buggy.y = meshGroundHeight(this.buggy.x, this.buggy.z);
+    this.pos.set(s.pos.x, 0, s.pos.z);
+    // a save taken from the saddle wakes you standing beside the machine
+    if (Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z) < 1.5) {
+      this.pos.x += 2;
+    }
+    this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+    this.suit.slots = s.suit;
+    this.roverStore.slots = s.rover;
+    this.lander.stock = s.lander;
+    this.landerLayer.sync(this.lander);
+    if (s.steadBaseY !== null && s.stead.length) {
+      this.stead = steadDeserialize(s.stead);
+      this.steadBaseY = s.steadBaseY;
+      this.steadLayer.setBase(this.steadBaseY);
+      this.steadLayer.sync(this.stead, meshGroundHeight);
+      this.analysis = analyse(this.stead);
+    }
+    this.steadOrigin = s.steadOrigin;
+    this.exploration = fogDeserialize(s.exploration);
+    visit(this.exploration, this.pos.x, this.pos.z);
+    this.lastVisit = { x: this.pos.x, z: this.pos.z };
+    this.everPressurised = s.everPressurised;
+    this.saidFirsts = new Set(s.saidFirsts);
+  }
+
+  // fire-and-forget: a failed save must never cost a frame, let alone a run
+  persist() {
+    if (this.resetting) return; // the parting save must not resurrect a wiped slate
+    saveGame(snapshotSave({
+      simMillis: this.simMillis,
+      pos: this.pos, heading: this.heading,
+      air: this.air, warm: this.warm,
+      buggy: this.buggy,
+      suit: this.suit.slots, rover: this.roverStore.slots,
+      lander: this.lander.stock,
+      stead: steadSerialize(this.stead),
+      steadBaseY: this.steadBaseY, steadOrigin: this.steadOrigin,
+      exploration: fogSerialize(this.exploration),
+      everPressurised: this.everPressurised,
+      saidFirsts: this.saidFirsts,
+    })).catch(() => {});
+  }
+
+  // wipe the slate and start the landing again (the live handle's lever)
+  async reset() {
+    this.resetting = true;
+    await clearSave();
+    location.reload();
   }
 
   // shift the sim clock so local true solar time at HOME reads `hour`
@@ -671,6 +744,7 @@ class Game {
       this.air = 1; this.warm = 1;
       this.hud.setVeil(0);
       this.say('wake');
+      this.persist(); // the morning is worth keeping
     }
     if (s.t >= 3.2) this.sleepAnim = null;
     this.hud.setPrompt(null);
@@ -862,6 +936,11 @@ class Game {
     if (this.warm < 0.35) this.sayOnce('cold');
     if (this.air < 0.25) this.sayOnce('air-low');
     this.hud.setVitals(this.air, this.warm, temp);
+    // the ledger writes itself every so often
+    if (this.t - this.lastPersist > 15) {
+      this.lastPersist = this.t;
+      this.persist();
+    }
     this.hud.setClock(
       solClock(this.simMillis),
       `Ls ${solarLongitude(this.simMillis).toFixed(1)}° · ${season(this.simMillis)} · Jezero`,
@@ -870,5 +949,7 @@ class Game {
   }
 }
 
-const game = new Game();
-window.marsstead = game; // the live handle, the family way
+// boot: carry the save if one is willing, land fresh if not
+loadGame().catch(() => null).then((save) => {
+  window.marsstead = new Game(save); // the live handle, the family way
+});
