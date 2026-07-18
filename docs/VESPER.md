@@ -14,8 +14,8 @@ a six-turn history, and a **whitelisted** state snapshot go to the same-origin
 `src/vesperbrain.js` and calls **MiniMax-M3** (thinking disabled: radio
 speed). The reply is clamped to a radio-sized line, shown on the HUD, and
 sent to `/brain/tts`, where the relay calls **MiniMax T2A** (`speech-2.8-hd`,
-voice `English_CalmWoman`; whisper register on `speech-2.6-hd`) and streams
-back MP3, played through WebAudio. Every canned line is spoken through the
+voice `English_Wiselady` — a genial middle-aged **British** voice; whisper
+register on `speech-2.6-hd`) and streams back MP3, played through WebAudio. Every canned line is spoken through the
 same TTS path (relay-cached, so repeats are free).
 
 **MiniMax sends voice but does not receive it** — there is no MiniMax ASR
@@ -48,8 +48,9 @@ partially). Where it's unsupported, V does nothing and the game is unchanged.
   T2A settings (`ttsPlan`). Whisper rides 2.6 because 2.8 doesn't carry it.
 
 To change the voice: edit `VOICE_ID` in `src/vesperbrain.js` and redeploy the
-relay (candidates: `English_SereneWoman`, `English_Graceful_Lady`,
-`English_Wise_Lady`, `English_MaturePartner`).
+relay. Accent is not in the name — query the `get_voice` API for the
+descriptions. Verified-British female candidates: `English_Graceful_Lady`,
+`English_SentimentalLady`, `English_compelling_lady1`.
 
 ## Ops (the EVO)
 

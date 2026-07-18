@@ -13,8 +13,12 @@
 
 // ---------------------------------------------------------------- the voice
 // One place to change VESPER's voice. MiniMax system voices; the whisper
-// register rides speech-2.6 because 2.8 doesn't carry whisper.
-export const VOICE_ID = 'English_CalmWoman';
+// register rides speech-2.6 because 2.8 doesn't carry whisper. Accent is
+// NOT in the voice name — the get_voice API's descriptions are the truth
+// (English_CalmWoman turned out American). Verified-British female
+// alternatives: English_Graceful_Lady, English_SentimentalLady,
+// English_compelling_lady1.
+export const VOICE_ID = 'English_Wiselady';
 export const TTS_MODEL = 'speech-2.8-hd';
 export const TTS_MODEL_WHISPER = 'speech-2.6-hd';
 
