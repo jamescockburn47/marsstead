@@ -17,7 +17,7 @@ const TYRE = 0x2c2620;    // mesh wheels
 const CELL = 0x232a33;    // solar deck — the cool tech accent (colour law)
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 8 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 8 });
 }
 function box(w, h, d, colour) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));
@@ -70,7 +70,7 @@ export class BuggyLayer {
       [-TRACK, -WHEELBASE, false], [TRACK, -WHEELBASE, false]]) {
       const wheel = new THREE.Group();
       const drum = new THREE.Mesh(rimGeo, new THREE.MeshPhongMaterial({
-        color: TYRE, flatShading: true, shininess: 4,
+        color: TYRE, shininess: 4,
         transparent: true, opacity: 0.92,
       }));
       wheel.add(drum);

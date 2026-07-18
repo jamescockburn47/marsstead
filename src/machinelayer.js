@@ -9,7 +9,7 @@ import { MACHINE_TYPES } from './machines.js';
 const FRAME = 0x3a3430, STEEL = 0x9aa2ab, FROST = 0xb8cfd8;
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 10 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 10 });
 }
 function box(w, h, d, colour) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));

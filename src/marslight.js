@@ -29,7 +29,8 @@ const AMB_NIGHT = [0.11, 0.115, 0.16];    // starlight + a breath of Phobos
 const STORM_TINT = [0.42, 0.27, 0.14];    // the sepia of the brown noon
 
 // daylight factor: 0 deep night -> 1 full day, twilight ramp around -6..8 deg
-function dayFactor(sunEl) { return clamp01((sunEl + 6) / 14); }
+// (exported: the exposure drive and the post stack hang off the same number)
+export function dayFactor(sunEl) { return clamp01((sunEl + 6) / 14); }
 
 // how "dusk" it is: peaks when the sun sits on the horizon
 function duskFactor(sunEl) {

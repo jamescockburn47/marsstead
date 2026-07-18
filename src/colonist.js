@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { strideBob } from './physics.js';
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 6 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 6 });
 }
 
 const SUIT = 0xdfd5c5;   // dust-white shell

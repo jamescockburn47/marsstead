@@ -6,19 +6,7 @@
 import * as THREE from 'three';
 import { windAt, swirl, devilState, devilSpin, hazeDensity, DEVIL_COUNT } from './dust.js';
 import { hash2 } from './noise.js';
-
-// shared GLSL: the landing page's fbm, the family's fractal workhorse
-const FBM_GLSL = /* glsl */`
-  float h21(vec2 p){ p = fract(p * vec2(234.34, 435.345));
-    p += dot(p, p + 34.23); return fract(p.x * p.y); }
-  float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(h21(i), h21(i + vec2(1,0)), f.x),
-               mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
-  float fbm(vec2 p){ float a = .5, s = 0.;
-    for (int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; a *= .5; }
-    return s; }
-`;
+import { FBM_GLSL } from './glsl.js';
 
 // the dust dome: an inverted sphere around the lens whose alpha is scrolling
 // fbm weighted to the horizon — the whole sky-to-ground air gains a moving

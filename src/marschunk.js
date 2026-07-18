@@ -19,7 +19,22 @@ export function resForRing(r) {
   return r <= 3 ? RES_NEAR : r <= 6 ? RES_MID : RES_FAR;
 }
 
-// elevation + position -> flat-shaded palette (RGB 0..1). Deterministic.
+// analytic ground normal at (x, z) — a function of POSITION ONLY (fixed
+// epsilon, no chunk or LOD terms), so adjacent chunks and different rings
+// compute the SAME normal at a shared vertex: no lighting seams at chunk
+// borders, no pop at ring transitions. Skirt verts clamp x/z to the rim,
+// so they inherit the rim's normal by construction.
+export function groundNormal(x, z) {
+  const e = 1.0;
+  const gx = (groundHeight(x + e, z) - groundHeight(x - e, z)) / (2 * e);
+  const gz = (groundHeight(x, z + e) - groundHeight(x, z - e)) / (2 * e);
+  const inv = 1 / Math.hypot(gx, 1, gz);
+  return [-gx * inv, inv, -gz * inv];
+}
+
+// elevation + position -> the low-frequency vertex palette (RGB 0..1).
+// Deterministic. Per-pixel shader detail modulates this base multiplicatively,
+// so the law below survives the smooth-shaded look untouched.
 // Mars owns the warm colours (DESIGN.md, the colour law): no green, ever.
 export function colourFor(h, x, z, steep) {
   // basalt shows through where the ground is steep or scoured
@@ -30,15 +45,18 @@ export function colourFor(h, x, z, steep) {
   return [0.56 + dustier, 0.27, 0.13];               // the rust plain
 }
 
-// positions (world-space), colours, and indices for chunk (cx, cz) at a
-// given resolution, with a one-vert skirt ring dropped SKIRT_DROP below.
+// positions (world-space), colours, NORMALS and indices for chunk (cx, cz)
+// at a given resolution, with a one-vert skirt ring dropped SKIRT_DROP below.
 // Deterministic: same chunk + res, same mesh, every client (invariant 4).
+// Normals are analytic (groundNormal), not computed from the triangles —
+// that is what keeps lighting seamless across borders and LOD rings.
 export function buildChunkData(cx, cz, res) {
   const x0 = cx * CHUNK, z0 = cz * CHUNK;
   const n = res + 1;          // interior verts per side
   const N = n + 2;            // + skirt ring
   const pos = new Float32Array(N * N * 3);
   const col = new Float32Array(N * N * 3);
+  const nrm = new Float32Array(N * N * 3);
   const step = CHUNK / res;
 
   for (let j = 0; j < N; j++) {
@@ -53,6 +71,8 @@ export function buildChunkData(cx, cz, res) {
       pos[k] = x;
       pos[k + 1] = onSkirt ? h - SKIRT_DROP : h;
       pos[k + 2] = z;
+      const nv = groundNormal(x, z);
+      nrm[k] = nv[0]; nrm[k + 1] = nv[1]; nrm[k + 2] = nv[2];
       // slope from a short forward difference (cheap, deterministic)
       const hx = groundHeight(x + step, z), hz = groundHeight(x, z + step);
       const steep = Math.min(1, Math.hypot(hx - h, hz - h) / step);
@@ -69,7 +89,7 @@ export function buildChunkData(cx, cz, res) {
     }
   }
 
-  return { pos, col, idx: new Uint32Array(idx), n: N };
+  return { pos, col, nrm, idx: new Uint32Array(idx), n: N };
 }
 
 // which latitudes get seasonal frost tint (Phase 1 wires season in)

@@ -16,7 +16,7 @@ const ORE_COLOURS = {
 };
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 8 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 8 });
 }
 function box(w, h, d, colour) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));

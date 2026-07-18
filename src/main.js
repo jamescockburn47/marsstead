@@ -16,7 +16,12 @@ import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
 import { sunElevation, sunAzimuth, solClock, solarLongitude, season } from './marstime.js';
-import { lightState, surfaceTempC } from './marslight.js';
+import { lightState, surfaceTempC, dayFactor } from './marslight.js';
+import {
+  EXPOSURE_BASE, exposureTarget, decideTier, fpsVerdict, median,
+  SETTLE_S, WINDOW_S,
+} from './gfx.js';
+import { buildComposer, resizeComposer, disposeComposer } from './post.js';
 import { tauAt, windAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
@@ -71,6 +76,15 @@ import { MachineLayer } from './machinelayer.js';
 import { LanderConsole } from './console.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
+
+// the GL renderer string (feeds the software-GL floor in the pure probe)
+function glRendererString(renderer) {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+  } catch { return ''; }
+}
 
 class Game {
   constructor(save = null) {
@@ -207,6 +221,7 @@ class Game {
       this.cam.aspect = innerWidth / innerHeight;
       this.cam.updateProjectionMatrix();
       this.renderer.setSize(innerWidth, innerHeight);
+      if (this.post) resizeComposer(this.post, innerWidth, innerHeight, this.renderer.getPixelRatio());
     });
 
     if (save) this.applySave(save);
@@ -219,6 +234,31 @@ class Game {
       if (document.visibilityState === 'hidden') this.persist();
     });
     addEventListener('beforeunload', () => this.persist());
+
+    // ---- the graphics rig: the pure probe decides the opening tier
+    // (?gfx=fine|plain overrides, for the dev loop and the shot rig)
+    const urlGfx = new URLSearchParams(location.search).get('gfx');
+    let storedGfx = null;
+    try { storedGfx = localStorage.getItem('marsstead-gfx'); } catch { /* private mode */ }
+    this.gfxManual = urlGfx === 'fine' || urlGfx === 'plain'
+      || storedGfx === 'fine' || storedGfx === 'plain';
+    this.gfxWatch = { t: 0, frames: [], span: 0, pixelDropped: false };
+    this.post = null;
+    const gfxSig = {
+      stored: urlGfx || storedGfx,
+      touchPrimary: matchMedia('(pointer: coarse)').matches,
+      webgpu: null,
+      rendererStr: glRendererString(this.renderer),
+      deviceMemory: navigator.deviceMemory ?? null,
+      cores: navigator.hardwareConcurrency ?? null,
+    };
+    this.applyQuality(decideTier(gfxSig).tier);
+    // the async half of the probe: the WebGPU adapter answers late
+    if (!this.gfxManual && navigator.gpu?.requestAdapter) {
+      navigator.gpu.requestAdapter().then((a) => {
+        this.applyQuality(decideTier({ ...gfxSig, webgpu: !!a }).tier);
+      }).catch(() => { /* the optimistic opening stands */ });
+    }
 
     this.say('wake');
     this.t = 0;
@@ -864,8 +904,77 @@ class Game {
 
     // ---- the light of Mars
     this.frameWorld(dt);
-    this.renderer.render(this.scene, this.cam);
+    this.watchFrame(dt);
+    this.renderFrame(dt);
     requestAnimationFrame((n) => this.frame(n));
+  }
+
+  // ---- the graphics rig (gfx.js decides; this merely applies) ------------
+
+  applyQuality(tier) {
+    if (this.gfxQuality === tier) return;
+    this.gfxQuality = tier;
+    const fine = tier === 'fine';
+    this.renderer.toneMapping = fine ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = fine ? EXPOSURE_BASE : 1;
+    this.renderer.shadowMap.type = fine ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.terrain.setDetail(fine);
+    // tone-mapping and shadow-type changes only land after a recompile
+    this.scene.traverse((o) => {
+      if (o.isMesh && o.material && !Array.isArray(o.material)) o.material.needsUpdate = true;
+    });
+    if (fine && !this.post) this.post = buildComposer(this.renderer, this.scene, this.cam);
+    else if (!fine && this.post) { disposeComposer(this.post); this.post = null; }
+  }
+
+  // the fps watchdog: only ever eases DOWN (fine -> plain -> fewer pixels);
+  // upgrades — and manual choices — are the player's alone
+  watchFrame(rawDt) {
+    const gw = this.gfxWatch;
+    gw.t += rawDt;
+    if (gw.t < SETTLE_S || rawDt <= 0 || rawDt > 0.5) return;
+    gw.frames.push(1 / rawDt);
+    gw.span += rawDt;
+    if (gw.span < WINDOW_S) return;
+    const verdict = fpsVerdict(this.gfxQuality, median(gw.frames));
+    gw.frames.length = 0; gw.span = 0;
+    if (verdict === 'drop-plain' && !this.gfxManual) {
+      this.applyQuality('plain');
+      // remembered as auto-plain: the next boot opens easy WITHOUT locking
+      // the player out of choosing fine again
+      try { localStorage.setItem('marsstead-gfx', 'auto-plain'); } catch { /* session only */ }
+    } else if (verdict === 'drop-pixels' && !gw.pixelDropped) {
+      gw.pixelDropped = true;
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(innerWidth, innerHeight);
+      if (this.post) resizeComposer(this.post, innerWidth, innerHeight, 1);
+    }
+  }
+
+  // one render call: through the post stack under fine, direct under plain.
+  // Every drive is a deterministic function of light state already in hand —
+  // no luminance readback, the family rule.
+  renderFrame(dt) {
+    if (this.post && this.gfxQuality === 'fine') {
+      const day = dayFactor(this.sunEl ?? 45);
+      const night = 1 - day;
+      const halo = this.L ? this.L.haloStrength : 0;
+      // deterministic eye adaptation; pressurised interiors read brighter
+      let target = exposureTarget(day);
+      if (this.inLander || this.insidePressurised) target += 0.12;
+      this.renderer.toneMappingExposure
+        += (target - this.renderer.toneMappingExposure) * Math.min(1, dt * 0.4);
+      // living bloom: swells at night for the lamps, flares with the halo
+      this.post.bloom.strength = 0.3 + night * 0.16 + halo * 0.12;
+      this.post.bloom.threshold = 0.85 - night * 0.06;
+      const gu = this.post.grade.uniforms;
+      gu.uTime.value = (gu.uTime.value + dt) % 64;
+      gu.uWarmth.value = halo;
+      // gu.uDread stays 0 until the mystery reaches for it
+      this.post.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.cam);
+    }
   }
 
   frameOnFoot(dt) {
@@ -1329,6 +1438,7 @@ class Game {
     this.sunAz = sunAz;
     const tau = tauAt(mtc(this.simMillis));
     const L = lightState(sunEl, tau);
+    this.L = L; // renderFrame's drives read the same state this frame set
 
     const sunDir = new THREE.Vector3(
       Math.sin(sunAz * Math.PI / 180) * Math.cos(sunEl * Math.PI / 180),

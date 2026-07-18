@@ -25,7 +25,7 @@ const SKIRT_MAX = 1.1;   // how far a wall reaches down to meet the dirt
 export const BED_DEPTH = 0.3;
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 10 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 10 });
 }
 function bar(w, h, d, colour) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));
@@ -77,7 +77,7 @@ export class SteadLayer {
       const glass = new THREE.Mesh(
         new THREE.BoxGeometry(inner, inner, 0.05),
         new THREE.MeshPhongMaterial({
-          color: GLASS, flatShading: true, shininess: 60,
+          color: GLASS, shininess: 60,
           transparent: true, opacity: 0.42,
         }));
       const mull = bar(0.09, inner, THICK * 0.9, FRAME);

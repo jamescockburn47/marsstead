@@ -5,7 +5,7 @@
 import { groundHeight } from '../src/mars.js';
 import {
   CHUNK, RES_NEAR, RES_FAR, SKIRT_DROP, buildChunkData, resForRing, colourFor,
-  meshGroundHeight,
+  meshGroundHeight, groundNormal,
 } from '../src/marschunk.js';
 
 let failed = 0;
@@ -114,6 +114,70 @@ check('chunk size sane', CHUNK >= 32 && CHUNK <= 128);
   const e = 3 * step;
   const a = meshGroundHeight(e - 1e-7, 10.3), b = meshGroundHeight(e + 1e-7, 10.3);
   check('mesh surface continuous at edges', Math.abs(a - b) < 1e-3, `${Math.abs(a - b)}`);
+}
+
+// 8. analytic normals: unit length, true to the height gradient, a function
+//    of POSITION ONLY — so chunk borders and LOD rings can never disagree —
+//    and skirts inherit the rim's normal (they clamp x/z to the rim).
+{
+  let unit = true, grad = true;
+  for (let s = 0; s < 200; s++) {
+    const x = ((s * 61.3) % 700) - 350, z = ((s * 47.9) % 700) - 350;
+    const nv = groundNormal(x, z);
+    if (Math.abs(Math.hypot(nv[0], nv[1], nv[2]) - 1) > 1e-9) unit = false;
+    const e = 1.0;
+    const gx = (groundHeight(x + e, z) - groundHeight(x - e, z)) / (2 * e);
+    const gz = (groundHeight(x, z + e) - groundHeight(x, z - e)) / (2 * e);
+    const inv = 1 / Math.hypot(gx, 1, gz);
+    if (Math.abs(nv[0] + gx * inv) > 1e-9 || Math.abs(nv[1] - inv) > 1e-9
+      || Math.abs(nv[2] + gz * inv) > 1e-9) grad = false;
+  }
+  check('normals unit length', unit);
+  check('normals match the height gradient', grad);
+
+  // every mesh normal IS the analytic normal (skirts included: clamped x/z
+  // hands them the rim's normal with no special case to get wrong)
+  const { pos, nrm } = buildChunkData(2, -1, RES_NEAR);
+  let match = true;
+  for (let k = 0; k < pos.length; k += 3) {
+    const nv = groundNormal(pos[k], pos[k + 2]);
+    if (Math.abs(nrm[k] - nv[0]) > 1e-6 || Math.abs(nrm[k + 1] - nv[1]) > 1e-6
+      || Math.abs(nrm[k + 2] - nv[2]) > 1e-6) { match = false; break; }
+  }
+  check('mesh normals are the analytic normals (skirts inherit rim)', match);
+
+  // LOD tiers agree byte-for-byte where their lattices share a position
+  const near = buildChunkData(0, 0, RES_NEAR), far = buildChunkData(0, 0, RES_FAR);
+  const at = new Map();
+  for (let k = 0; k < near.pos.length; k += 3) at.set(`${near.pos[k]},${near.pos[k + 2]}`, k);
+  let lodOk = true, lodShared = 0;
+  for (let k = 0; k < far.pos.length; k += 3) {
+    const nk = at.get(`${far.pos[k]},${far.pos[k + 2]}`);
+    if (nk === undefined) continue;
+    lodShared++;
+    if (near.nrm[nk] !== far.nrm[k] || near.nrm[nk + 1] !== far.nrm[k + 1]
+      || near.nrm[nk + 2] !== far.nrm[k + 2]) lodOk = false;
+  }
+  check('normals agree across LOD tiers (byte-identical)', lodOk && lodShared > 0,
+    `shared=${lodShared}`);
+
+  // neighbouring chunks agree byte-for-byte along their shared rim
+  const west = buildChunkData(0, 0, RES_NEAR), east = buildChunkData(1, 0, RES_NEAR);
+  const rim = new Map();
+  for (let k = 0; k < west.pos.length; k += 3) {
+    if (west.pos[k] === CHUNK) rim.set(`${west.pos[k + 2]}`, k);
+  }
+  let borderOk = true, borderShared = 0;
+  for (let k = 0; k < east.pos.length; k += 3) {
+    if (east.pos[k] !== CHUNK) continue;
+    const wk = rim.get(`${east.pos[k + 2]}`);
+    if (wk === undefined) continue;
+    borderShared++;
+    if (west.nrm[wk] !== east.nrm[k] || west.nrm[wk + 1] !== east.nrm[k + 1]
+      || west.nrm[wk + 2] !== east.nrm[k + 2]) borderOk = false;
+  }
+  check('normals agree across chunk borders (byte-identical)', borderOk && borderShared > 0,
+    `shared=${borderShared}`);
 }
 
 if (failed) { console.error(`verify-marschunk: ${failed} FAILED`); process.exit(1); }

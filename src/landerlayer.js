@@ -12,7 +12,7 @@ const HULL = 0xcfc5b6, RUST = 0xb34a2a, FRAME = 0x3a3430, GOLD = 0xc9974a;
 const CELLBLUE = 0x232a33;
 
 function mat(color) {
-  return new THREE.MeshPhongMaterial({ color, flatShading: true, shininess: 8 });
+  return new THREE.MeshPhongMaterial({ color, shininess: 8 });
 }
 function box(w, h, d, colour) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));
