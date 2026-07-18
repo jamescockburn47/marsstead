@@ -8,7 +8,8 @@
 // L headlamp, [ ] scrub time (the demo's best friend).
 // E interact · Q cycle part · F/G load/unload rover · R sleep (sheltered,
 // at night) · B build mode (E place, X remove, Q part, V wall/roof) ·
-// M the surveyor's map (fog clears where you walk).
+// M the surveyor's map (fog clears where you walk) · H hitch/unhitch the
+// rig from the buggy · T work the lander's fabricator · X pack up the rig.
 
 import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
@@ -51,6 +52,15 @@ import {
   serialize as fogSerialize, deserialize as fogDeserialize,
 } from './explore.js';
 import { MarsMap } from './marsmap.js';
+import {
+  PROSPECT_RADIUS, HOPPER_CAP, depositById, depositsNear, createRig,
+  canDeploy, deploy, packUp, drillTick, hopperCount, hopperTake,
+} from './mine.js';
+import { stepTrailer } from './trailer.js';
+import {
+  createFab, fabFeed, fabTick, fabTake, fabOutCount, RECIPES,
+} from './refine.js';
+import { RigLayer } from './riglayer.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
@@ -153,6 +163,15 @@ class Game {
     this.lastVisit = { x: 0, z: 0 };
     this.map = new MarsMap(meshGroundHeight);
 
+    // the expedition: the rig sleeps by the lander until it's towed out
+    this.rig = createRig(-16, -1, 0.6);
+    this.rigLayer = new RigLayer(this.scene);
+    this.prospected = new Set(); // deposit ids the ground has admitted to
+    this.fab = createFab();      // the lander's ISRU bench
+    this.anchoring = null;       // { t, need } while planting the rig
+    this.swayTimer = 0;
+    this.prevHopper = 0;
+
     // the suit
     this.air = 1; this.warm = 1;
     this.saidCounts = {}; this.lamp = false;
@@ -177,6 +196,9 @@ class Game {
     });
 
     if (save) this.applySave(save);
+    this.booted = true; // until now, persist() must stay silent — a page
+    // interrupted mid-boot must never write half-applied state over a
+    // good save (the unload handlers below register with the page alive)
     this.lastPersist = 0;
     // best-effort parting save: the planet keeps what it was given
     addEventListener('visibilitychange', () => {
@@ -222,11 +244,19 @@ class Game {
     this.lastVisit = { x: this.pos.x, z: this.pos.z };
     this.everPressurised = s.everPressurised;
     this.saidFirsts = new Set(s.saidFirsts);
+    this.rig = createRig(s.rig.x, s.rig.z, s.rig.heading);
+    this.rig.deployed = s.rig.deployed;
+    this.rig.depositId = s.rig.depositId;
+    this.rig.hopper = s.rig.hopper;
+    this.prospected = new Set(s.prospected);
+    this.fab = { queue: s.fab.queue, t: s.fab.t, out: s.fab.out };
+    this.prevHopper = hopperCount(this.rig);
   }
 
   // fire-and-forget: a failed save must never cost a frame, let alone a run
   persist() {
-    if (this.resetting) return; // the parting save must not resurrect a wiped slate
+    if (this.resetting || !this.booted) return; // never resurrect a wiped
+    // slate; never write from a page that hasn't fully woken up
     saveGame(snapshotSave({
       simMillis: this.simMillis,
       pos: this.pos, heading: this.heading,
@@ -239,6 +269,9 @@ class Game {
       exploration: fogSerialize(this.exploration),
       everPressurised: this.everPressurised,
       saidFirsts: this.saidFirsts,
+      rig: this.rig,
+      prospected: this.prospected,
+      fab: this.fab,
     })).catch(() => {});
   }
 
@@ -273,6 +306,13 @@ class Game {
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
     if (e.code === 'KeyM') this.map.toggle();
+    if (e.code === 'KeyH') this.toggleHitch();
+    if (e.code === 'KeyT') this.workFab();
+    if (e.code === 'KeyX' && !this.buildMode && !this.driving
+      && this.rig.deployed && this.distToRig() < 4) {
+      packUp(this.rig);
+      this.say('pack-up');
+    }
     if (e.code === 'KeyV' && this.buildMode) {
       this.buildSlot = this.buildSlot === 'wall' ? 'roof' : 'wall';
     }
@@ -286,16 +326,129 @@ class Game {
   distToRover() {
     return Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
   }
+  distToRig() {
+    return Math.hypot(this.pos.x - this.rig.x, this.pos.z - this.rig.z);
+  }
+
+  // the buggy's hitch pin, just behind the rear axle
+  hitchPin() {
+    return {
+      x: this.buggy.x - Math.sin(this.buggy.heading) * 1.9,
+      z: this.buggy.z - Math.cos(this.buggy.heading) * 1.9,
+    };
+  }
+
+  // H: pin in, pin out
+  toggleHitch() {
+    if (this.rig.hitched) {
+      this.rig.hitched = false;
+      return;
+    }
+    if (!this.driving || this.rig.deployed) return;
+    const pin = this.hitchPin();
+    if (Math.hypot(pin.x - this.rig.x, pin.z - this.rig.z) < 4.5) {
+      this.rig.hitched = true;
+      this.sayOnce('hitch');
+    }
+  }
+
+  // slope under the rig, rise over run — the anchor law reads it
+  rigSlope() {
+    const e = 1.2;
+    const gx = (meshGroundHeight(this.rig.x + e, this.rig.z)
+      - meshGroundHeight(this.rig.x - e, this.rig.z)) / (2 * e);
+    const gz = (meshGroundHeight(this.rig.x, this.rig.z + e)
+      - meshGroundHeight(this.rig.x, this.rig.z - e)) / (2 * e);
+    return Math.hypot(gx, gz);
+  }
+
+  nearestDepositToRig() {
+    const near = depositsNear(this.rig.x, this.rig.z, 40);
+    near.sort((a, b) => Math.hypot(a.x - this.rig.x, a.z - this.rig.z)
+      - Math.hypot(b.x - this.rig.x, b.z - this.rig.z));
+    return near[0] || null;
+  }
+
+  // E at a deployed rig: the hopper hands over — suit first, deck alongside
+  takeOre() {
+    let moved = 0;
+    for (let guard = 0; guard < HOPPER_CAP * 2; guard++) {
+      const peek = Object.keys(this.rig.hopper)[0];
+      if (!peek) break;
+      const dest = canAdd(this.suit, peek, 1) ? this.suit
+        : (this.distToRover() < 9 && canAdd(this.roverStore, peek, 1) ? this.roverStore : null);
+      if (!dest) { if (!moved) this.say('suit-full'); break; }
+      const got = hopperTake(this.rig, peek, 1);
+      if (!got) break;
+      add(dest, got.id, 1);
+      moved++;
+    }
+  }
+
+  // the rig's one-line state for the HUD (null when there's nothing to say)
+  rigPrompt() {
+    const r = this.rig;
+    if (r.deployed) {
+      const n = hopperCount(r);
+      const take = n > 0 ? `|*E| take ore ×${n} · ` : 'drilling… · ';
+      return `${take}|*X| pack up`;
+    }
+    if (canDeploy(r, this.nearestDepositToRig(), this.rigSlope())) {
+      return '|*E| anchor the rig (5s)';
+    }
+    const dep = this.nearestDepositToRig();
+    if (dep) return 'rig — tow it onto the ore body (|*H| from the buggy)';
+    return 'the drill rig — tow it to marked ore (|*H| hitch from the buggy)';
+  }
+
+  // the fabricator's one-line state (empty string when it has none)
+  fabLabel() {
+    const q = this.fab.queue.length, o = fabOutCount(this.fab);
+    const carryRaw = Object.keys(RECIPES).some((raw) => count(this.suit, raw) > 0
+      || (this.distToRover() < 9 && count(this.roverStore, raw) > 0));
+    if (!q && !o && !carryRaw) return '';
+    const bits = [];
+    if (o) bits.push(`${o} ready`);
+    if (q) bits.push(`${q} cooking`);
+    return ` · |*T| fabricator${bits.length ? ` (${bits.join(', ')})` : ''}`;
+  }
+
+  // T at the lander: clear the out-tray into the bags, then feed it raw
+  workFab() {
+    if (this.driving || this.distToLander() > 7) return;
+    for (const id of Object.keys(this.fab.out)) {
+      while (this.fab.out[id] && canAdd(this.suit, id, 1)) {
+        fabTake(this.fab, id, 1);
+        add(this.suit, id, 1);
+      }
+    }
+    const roverClose = this.distToRover() < 9;
+    for (const raw of Object.keys(RECIPES)) {
+      // fabFeed reports what the queue accepted; only THAT leaves the bag
+      remove(this.suit, raw, fabFeed(this.fab, raw, count(this.suit, raw)));
+      if (roverClose) {
+        remove(this.roverStore, raw, fabFeed(this.fab, raw, count(this.roverStore, raw)));
+      }
+    }
+  }
   salvageTarget() {
     const opts = available(this.lander);
     if (!opts.length) return null;
     return opts[((this.salvageSel % opts.length) + opts.length) % opts.length];
   }
 
-  // E is THE doing key: rover first if in reach, else the lander's bolts
+  // E is THE doing key: rover, then the rig's work, then the lander's bolts
   interact() {
     if (this.driving) { this.toggleBuggy(); return; }
     if (this.distToRover() < 3.2) { this.toggleBuggy(); return; }
+    if (this.distToRig() < 4 && !this.rig.hitched) {
+      if (this.rig.deployed && hopperCount(this.rig) > 0) { this.takeOre(); return; }
+      if (!this.rig.deployed && !this.anchoring
+        && canDeploy(this.rig, this.nearestDepositToRig(), this.rigSlope())) {
+        this.anchoring = { t: 0, need: 5 };
+        return;
+      }
+    }
     if (this.distToLander() < 6 && !this.unbolt) {
       const id = this.salvageTarget();
       if (!id) return;
@@ -648,6 +801,23 @@ class Game {
       }
     }
 
+    // ---- anchoring the rig: stand by it while the legs go down
+    if (this.anchoring) {
+      if (speed > 0.6 || this.distToRig() > 5) {
+        this.anchoring = null; // walked off the job
+      } else {
+        this.anchoring.t += dt;
+        if (this.anchoring.t >= this.anchoring.need) {
+          this.anchoring = null;
+          const dep = this.nearestDepositToRig();
+          if (canDeploy(this.rig, dep, this.rigSlope())) {
+            deploy(this.rig, dep);
+            this.say('deploy');
+          }
+        }
+      }
+    }
+
     // ---- the gentle start: the lander tops your air back up, free —
     // until the first volume pressurises and the ledger switches on
     if (!this.everPressurised && this.distToLander() < 7 && this.air < 1) {
@@ -700,18 +870,26 @@ class Game {
     } else if (this.unbolt) {
       const pct = Math.round((this.unbolt.t / this.unbolt.need) * 100);
       this.hud.setPrompt(`unbolting ${ITEMS[this.unbolt.id].name.toLowerCase()}… ${pct}%`);
+    } else if (this.anchoring) {
+      const pct = Math.round((this.anchoring.t / this.anchoring.need) * 100);
+      this.hud.setPrompt(`anchoring the rig… ${pct}%`);
     } else if (this.distToRover() < 3.2) {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.distToRig() < 4 && !this.rig.hitched && this.rigPrompt()) {
+      this.hud.setPrompt(this.rigPrompt());
     } else if (this.distToLander() < 6 && this.salvageTarget()) {
       const id = this.salvageTarget();
       this.hud.setPrompt(
         `|*E| unbolt ${ITEMS[id].name.toLowerCase()} ×${remaining(this.lander, id)}`
         + ` (${unboltSeconds(id)}s) · |*Q| next part`
         + (remainingTotal(this.lander) ? '' : ' · stripped')
+        + this.fabLabel()
         + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''),
       );
+    } else if (this.distToLander() < 6 && this.fabLabel()) {
+      this.hud.setPrompt(this.fabLabel().replace(/^ · /, ''));
     } else if (canSleep(this.sunEl ?? 90) && this.sheltered()) {
       this.hud.setPrompt('|*R| sleep till dawn');
     } else {
@@ -801,6 +979,22 @@ class Game {
       };
     }
     this.buggyFlags = flags;
+
+    // ---- the tow: the rig chases the pin; geometry raises the flags
+    if (this.rig.hitched) {
+      const pin = this.hitchPin();
+      const tf = stepTrailer(this.rig, pin.x, pin.z, this.buggy.heading, this.buggy.u, dt);
+      if (tf.jackknife) {
+        this.rig.hitched = false; // the pin shears to save the chassis
+        this.say('jackknife');
+      } else if (tf.sway) {
+        this.swayTimer += dt;
+        if (this.swayTimer > 0.6) { this.swayTimer = -8; this.say('trailer-sway'); }
+      } else if (this.swayTimer > 0) {
+        this.swayTimer = 0;
+      }
+    }
+
     this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll, this.puffs);
 
     // VESPER reads the same flags the physics raises
@@ -848,7 +1042,11 @@ class Game {
     }
 
     this.hud.setSpeed(Math.abs(this.buggy.u) * 3.6);
-    this.hud.setPrompt(`|*E| dismount · |*C| view`);
+    const pin = this.hitchPin();
+    const hitchable = !this.rig.hitched && !this.rig.deployed
+      && Math.hypot(pin.x - this.rig.x, pin.z - this.rig.z) < 4.5;
+    this.hud.setPrompt(`|*E| dismount · |*C| view`
+      + (this.rig.hitched ? ' · |*H| unhitch' : hitchable ? ' · |*H| hitch the rig' : ''));
     this.hud.setBags(`rover ${loadLabel(this.roverStore)}`);
   }
 
@@ -898,10 +1096,17 @@ class Game {
     if (sunEl > 4 && this.lastSunEl < sunEl && this.saidFirsts.has('night')) this.sayOnce('dawn');
     this.lastSunEl = sunEl;
 
-    // ---- the earned map: stamp ground as it's actually covered
+    // ---- the earned map: stamp ground as it's actually covered — and
+    // read it for ore while we're down there (prospecting IS being there)
     if (Math.hypot(this.pos.x - this.lastVisit.x, this.pos.z - this.lastVisit.z) > 12) {
       this.lastVisit = { x: this.pos.x, z: this.pos.z };
       visit(this.exploration, this.pos.x, this.pos.z);
+      for (const d of depositsNear(this.pos.x, this.pos.z, PROSPECT_RADIUS)) {
+        if (!this.prospected.has(d.id)) {
+          this.prospected.add(d.id);
+          this.say('prospect');
+        }
+      }
     }
     if (this.map.visible) {
       this.map.update(this.exploration, {
@@ -909,8 +1114,19 @@ class Game {
         lander: this.landerPos,
         buggy: { x: this.buggy.x, z: this.buggy.z },
         stead: this.steadOrigin,
+        rig: { x: this.rig.x, z: this.rig.z },
+        deposits: [...this.prospected].map(depositById).filter(Boolean),
       });
     }
+
+    // ---- the expedition's slow machines
+    if (drillTick(this.rig, dt)) this.sayOnce('drill-first-ore');
+    const hopperNow = hopperCount(this.rig);
+    if (hopperNow >= HOPPER_CAP && this.prevHopper < HOPPER_CAP) this.say('hopper-full');
+    this.prevHopper = hopperNow;
+    if (fabTick(this.fab, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
+    this.rigLayer.update(this.rig, meshGroundHeight(this.rig.x, this.rig.z));
+    this.rigLayer.syncOre(this.pos.x, this.pos.z, meshGroundHeight);
 
     // ---- the world layers
     this.terrain.update(this.pos.x, this.pos.z);

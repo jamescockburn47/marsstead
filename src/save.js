@@ -13,6 +13,8 @@ import { ITEMS } from './inventory.js';
 import { LANDER_STOCK } from './salvage.js';
 import { PART_TYPES } from './build.js';
 import { EVENTS } from './vesper.js';
+import { depositById, HOPPER_CAP } from './mine.js';
+import { RECIPES, QUEUE_CAP } from './refine.js';
 
 const clamp01 = (v, dflt) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : dflt);
 const fin = (v, dflt) => (Number.isFinite(v) ? v : dflt);
@@ -51,6 +53,17 @@ export function snapshotSave(state) {
     exploration: state.exploration,   // ["cx,cz", ...] from explore.js
     everPressurised: !!state.everPressurised,
     saidFirsts: [...state.saidFirsts],
+    // the expedition (additive fields, version stays 1: an older save just
+    // wakes with the rig parked by the lander and a cold fabricator)
+    rig: {
+      x: state.rig.x, z: state.rig.z, heading: state.rig.heading,
+      deployed: state.rig.deployed, depositId: state.rig.depositId,
+      hopper: { ...state.rig.hopper },
+    },
+    prospected: [...state.prospected],
+    fab: {
+      queue: [...state.fab.queue], t: state.fab.t, out: { ...state.fab.out },
+    },
     savedAt: Date.now(),
   };
 }
@@ -92,6 +105,38 @@ export function acceptSave(meta) {
     ? meta.saidFirsts.filter((e) => EVENTS.includes(e))
     : [];
 
+  // the rig: park it by the lander unless the save carries a sane one; a
+  // deployment only stands if its deposit actually exists in this world
+  const rigM = meta.rig || {};
+  const hopper = {};
+  for (const [id, n] of Object.entries(rigM.hopper || {})) {
+    const k = Math.round(n);
+    if (RECIPES[id] && Number.isFinite(k) && k > 0) hopper[id] = Math.min(HOPPER_CAP, k);
+  }
+  const rigDeposit = rigM.deployed ? depositById(rigM.depositId) : null;
+  const rig = {
+    x: fin(rigM.x, -16), z: fin(rigM.z, -1), heading: fin(rigM.heading, 0.6),
+    deployed: !!rigDeposit, depositId: rigDeposit ? rigDeposit.id : null,
+    hopper,
+  };
+
+  const prospected = Array.isArray(meta.prospected)
+    ? meta.prospected.slice(0, 4096)
+      .filter((id) => typeof id === 'string' && depositById(id))
+    : [];
+
+  const fabOut = {};
+  for (const [id, n] of Object.entries(meta.fab?.out || {})) {
+    const k = Math.round(n);
+    if (ITEMS[id] && Number.isFinite(k) && k > 0) fabOut[id] = Math.min(999, k);
+  }
+  const fab = {
+    queue: Array.isArray(meta.fab?.queue)
+      ? meta.fab.queue.filter((id) => RECIPES[id]).slice(0, QUEUE_CAP) : [],
+    t: Math.max(0, fin(meta.fab?.t, 0)),
+    out: fabOut,
+  };
+
   return {
     version: meta.version,
     simMillis: meta.simMillis,
@@ -113,6 +158,9 @@ export function acceptSave(meta) {
     exploration,
     everPressurised: !!meta.everPressurised,
     saidFirsts,
+    rig,
+    prospected,
+    fab,
     savedAt: meta.savedAt || 0,
   };
 }
@@ -127,14 +175,28 @@ function openDB() {
   });
 }
 
-export async function saveGame(meta) {
-  const db = await openDB();
-  await new Promise((res, rej) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(meta, KEY);
-    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
-  });
-  db.close();
+// Writes are SERIALISED and COALESCED through one chain: parallel
+// saveGame calls each open their own connection, and separate IndexedDB
+// connections do not commit in call order — a burst of autosaves could
+// land a stale snapshot last and win. One chain, latest snapshot only.
+let writeQueue = Promise.resolve();
+let pendingMeta = null;
+
+export function saveGame(meta) {
+  pendingMeta = meta;
+  writeQueue = writeQueue.then(async () => {
+    if (pendingMeta === null) return;
+    const m = pendingMeta;
+    pendingMeta = null;
+    const db = await openDB();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(m, KEY);
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  }).catch(() => {}); // a failed write must not wedge the chain
+  return writeQueue;
 }
 
 export async function loadGame() {

@@ -18,6 +18,8 @@ export const EVENTS = [
   'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on', 'salvage-first', 'suit-full', 'ring-taken',
   'sleep', 'no-shelter', 'first-seal', 'pressurised', 'leak', 'airlock-cycle',
   'hab-too-small',
+  'prospect', 'hitch', 'jackknife', 'trailer-sway', 'deploy',
+  'drill-first-ore', 'hopper-full', 'pack-up', 'fab-first-steel',
 ];
 
 export const LINES = {
@@ -155,6 +157,43 @@ export const LINES = {
     "It holds air, and I'm proud of it — but it's a closet, settler. The lander keeps the bed until you build bigger than it.",
     "The thermal mass isn't there. A night in this and I'd be reading you the cold ledger by 03:00. Sleep in the lander; build bigger.",
     "Cosy is not a rating. Mine the steel, raise a real hab, and I'll happily run your nights from in here.",
+  ],
+  prospect: [
+    "Reading the ground… there's a body under this. I've marked it on your map. The planet does pay, it just pays in rock.",
+    "Ore signature, right where the colour changes. Marked. Now it's a logistics problem, which is my favourite kind.",
+    "That's a deposit. Four billion years of geology, and you found it by driving past. Marked on the map.",
+  ],
+  hitch: [
+    "Pin's in. You are now a road train, settler — brake early, turn wide, and never, ever reverse in a hurry.",
+    "Hitched. The rig adds three metres you have to think for. The thinking is the cargo.",
+  ],
+  jackknife: [
+    "And that's a jackknife. The pin sheared to save the chassis. Straighten up, back to it, and we don't speak of this.",
+    "The trailer just overtook you sideways. Pin's out. Physics sends its regards; re-hitch when you're level.",
+  ],
+  'trailer-sway': [
+    "Sway. Ease off — let the drawbar breathe or it'll choose a ditch for you.",
+    "The rig's wagging. Speed down, settler; a trailer argues at exactly the speed you can't win.",
+  ],
+  deploy: [
+    "Anchors set, mast up. The drill knows its one job and has started doing it. We are, officially, a mining concern.",
+    "Rig anchored and level. It'll chew quietly; come back with deck space.",
+  ],
+  'drill-first-ore': [
+    "First unit in the hopper. That noise is the planet becoming your house, slowly.",
+    "The hopper has ore in it. I've updated your net worth: one rock. It compounds.",
+  ],
+  'hopper-full': [
+    "Hopper's full — the drill's idling. Haul it home, settler; wealth doesn't count until it crosses your threshold.",
+    "Full hopper. Eight units of planet, ready to ride. The rover earns its keep now.",
+  ],
+  'pack-up': [
+    "Mast down, anchors up. The rig travels; the hole stays. Mars won't miss what it kept for four billion years.",
+    "Packed. Leave the site tidy — the next visitor is probably us.",
+  ],
+  'fab-first-steel': [
+    "The fabricator just handed you a steel panel that was gravel this morning. THIS is the whole homestead, in one object.",
+    "First steel off the bench. The lander brought ten panels across space; you just made the eleventh out of Mars.",
   ],
 };
 

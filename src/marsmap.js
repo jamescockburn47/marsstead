@@ -168,6 +168,12 @@ export class MarsMap {
     if (pois.lander) this.marker(ctx, pois.lander.x, pois.lander.z, '#cfc5b6', 'LANDER');
     if (pois.buggy) this.marker(ctx, pois.buggy.x, pois.buggy.z, '#8fb6d8', 'ROVER');
     if (pois.stead) this.marker(ctx, pois.stead.x, pois.stead.z, '#e8c46a', 'HAB');
+    if (pois.rig) this.marker(ctx, pois.rig.x, pois.rig.z, '#c9974a', 'RIG');
+    const ORE = { 'iron-ore': ['#d1685a', 'IRON'], ice: ['#cfe0e8', 'ICE'], silica: ['#d8c9a8', 'SILICA'] };
+    for (const d of pois.deposits || []) {
+      const [colour, label] = ORE[d.type] || ['#d1685a', 'ORE'];
+      this.marker(ctx, d.x, d.z, colour, label);
+    }
 
     // the walker: a gold arrow nosing their heading
     const p = pois.player;

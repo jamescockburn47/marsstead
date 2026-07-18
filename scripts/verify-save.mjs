@@ -24,6 +24,9 @@ const state = {
   exploration: ['0,0', '1,0', '-3,2'],
   everPressurised: true,
   saidFirsts: new Set(['wake', 'first-steps', 'pressurised']),
+  rig: { x: -16, z: -1, heading: 0.6, deployed: false, depositId: null, hopper: {} },
+  prospected: new Set(),
+  fab: { queue: [], t: 0, out: {} },
 };
 
 // 1. round-trip: what was lived is what wakes up
@@ -67,6 +70,44 @@ const state = {
   check('event junk dropped', back.saidFirsts.length === 1);
   check('air clamped', back.air === 1);
   check('lame buggy re-parked', Number.isFinite(back.buggy.x));
+}
+
+// 4. the expedition rides (additive): rig, prospected ore, the fabricator —
+//    and an OLD save without them wakes with sane defaults, not a crash
+{
+  const { depositsNear } = await import('../src/mine.js');
+  const dep = depositsNear(0, 0, 2500)[0];
+  const rich = {
+    ...state,
+    rig: { x: dep.x, z: dep.z, heading: 0.2, deployed: true, depositId: dep.id, hopper: { [dep.type]: 3 } },
+    prospected: [dep.id],
+    fab: { queue: ['iron-ore', 'ice'], t: 4, out: { 'steel-panel': 2 } },
+  };
+  const back = acceptSave(snapshotSave(rich));
+  check('rig survives deployed on real ore', back.rig.deployed && back.rig.depositId === dep.id
+    && back.rig.hopper[dep.type] === 3);
+  check('prospects survive', back.prospected.length === 1);
+  check('fab survives mid-cook', back.fab.queue.length === 2 && back.fab.out['steel-panel'] === 2);
+
+  // laundering: a deployment on ore that doesn't exist stands down
+  const meta = snapshotSave(rich);
+  meta.rig.depositId = '9999,9999';
+  meta.rig.hopper = { 'steel-panel': 4, [dep.type]: 99 };
+  meta.prospected = [dep.id, 'not-ore', '8888,8888'];
+  meta.fab.queue = ['iron-ore', 'alloy-panel', 'nonsense'];
+  const clean = acceptSave(meta);
+  check('phantom deployment stands down', clean.rig.deployed === false && clean.rig.depositId === null);
+  check('hopper laundered to raw ore', !('steel-panel' in clean.rig.hopper)
+    && clean.rig.hopper[dep.type] <= 8);
+  check('phantom prospects dropped', clean.prospected.length === 1);
+  check('fab queue laundered', clean.fab.queue.length === 1);
+
+  // a pre-expedition save: no rig fields at all
+  const old = snapshotSave(state);
+  delete old.rig; delete old.prospected; delete old.fab;
+  const woke = acceptSave(old);
+  check('old save parks the rig by the lander', woke.rig.x === -16 && !woke.rig.deployed);
+  check('old save has cold fab, no prospects', woke.fab.queue.length === 0 && woke.prospected.length === 0);
 }
 
 if (failed) { console.error(`verify-save: ${failed} FAILED`); process.exit(1); }
