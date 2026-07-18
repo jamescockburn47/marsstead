@@ -5,6 +5,7 @@
 // ?play in the query skips it (live checks and the dev loop want the game).
 
 import { marsSolDate } from './marstime.js';
+import { cleanName } from './vesper.js';
 
 const CSS = `
   #title { position: fixed; inset: 0; z-index: 60; display: flex;
@@ -24,6 +25,15 @@ const CSS = `
   #title button:hover { background: rgba(232,196,106,.18); }
   #title button.warn { color: #d1685a; border-color: rgba(209,104,90,.6);
     background: rgba(209,104,90,.08); }
+  #title .namelabel { font-size: 11px; letter-spacing: 3px; opacity: .6;
+    margin: 10px 0 4px; }
+  #title input { display: block; width: 300px; margin: 0 0 12px;
+    padding: 11px 14px; box-sizing: border-box; text-align: center;
+    font-family: inherit; font-size: 15px; letter-spacing: 3px;
+    color: #f6ede2; background: rgba(246,237,226,.06); outline: none;
+    border: 1px solid rgba(246,237,226,.3); border-radius: 3px; }
+  #title input:focus { border-color: rgba(232,196,106,.6); }
+  #title input::placeholder { color: rgba(246,237,226,.32); }
   #title .keys { position: fixed; bottom: 20px; left: 0; width: 100%;
     font-size: 11px; letter-spacing: 1px; opacity: .55; line-height: 1.9; }
 `;
@@ -44,10 +54,25 @@ export class TitleScreen {
     sub.textContent = 'the tide went out four billion years ago';
     this.root.append(h1, sub);
 
+    // the settler's name: VESPER uses it, the save keeps it. Prefilled
+    // from the save; laundered (cleanName) before it goes anywhere.
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'namelabel';
+    nameLabel.textContent = "SETTLER'S NAME";
+    const nameInput = document.createElement('input');
+    nameInput.maxLength = 16;
+    nameInput.placeholder = 'settler';
+    nameInput.value = save?.settlerName || '';
+    this.root.append(nameLabel, nameInput);
+
     const choose = (choice) => {
       this.root.remove();
-      onChoice(choice);
+      onChoice(choice, cleanName(nameInput.value));
     };
+    // Enter in the field takes the door you'd expect
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') choose(save ? 'continue' : 'new');
+    });
 
     if (save) {
       const cont = document.createElement('button');

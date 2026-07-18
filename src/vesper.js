@@ -29,6 +29,7 @@ export const LINES = {
     "Good sol, settler. Suit's holding, air's sweet, and Mars is exactly where we left it.",
     "Systems green. Outside it's minus sixty and magnificent. Take your time; the planet has plenty.",
     "I ran the numbers while you slept. All of them. It's what I'm for. — We're fine.",
+    "Good sol, {name}. Two minds on a planet, and the other one made you breakfast numbers: air full, warmth full, sky clear enough.",
   ],
   'first-steps': [
     "There. First bootprints on a page nothing has written on in four billion years.",
@@ -133,6 +134,7 @@ export const LINES = {
     "Lights out, settler. I'll idle at one hertz and keep the cold on its side of the hull.",
     "Sleep. The planet has waited four billion years; it can manage one more night.",
     "Good night. I'll count Phobos laps — it should manage three before dawn.",
+    "Good night, {name}. I'll be here — being here is my best thing.",
   ],
   'no-shelter': [
     "Not out here. Find a hull between you and the sky and I'll gladly run the night for you.",
@@ -146,6 +148,7 @@ export const LINES = {
     "Pressure. Holding. You are standing in the only weather on Mars that's on our side.",
     "The gauges agree: one atmosphere of somewhere else, right here. Welcome home, settler.",
     "It holds. I've rechecked it four hundred times since you asked. It holds.",
+    "One atmosphere, holding steady. You built weather, {name}. I've logged the sol; it deserved logging.",
   ],
   leak: [
     "Air's slipping out — I've marked the seam. The planet always finds the honest gap.",
@@ -219,11 +222,21 @@ export const LINES = {
   ],
 };
 
+// the settler's name, laundered: letters, digits, space, hyphen and
+// apostrophe only; one line, sixteen characters, no markup teeth. Used at
+// the title door, in the save, and by every voice that speaks it.
+export function cleanName(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[^\p{L}\p{N} '\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16);
+}
+
 // deterministic pick: nth call for an event walks the table without
-// repeats until the cycle closes (same order for every client)
-export function vesperSay(event, count = 0) {
+// repeats until the cycle closes (same order for every client). Lines may
+// carry {name}; the settler's name lands there, or "settler" serves.
+export function vesperSay(event, count = 0, name = '') {
   const table = LINES[event];
   if (!table || table.length === 0) return null;
   const start = Math.floor(hash2(event.length * 17, 7) * table.length);
-  return table[(start + count) % table.length];
+  const line = table[(start + count) % table.length];
+  return line.replace(/\{name\}/g, cleanName(name) || 'settler');
 }

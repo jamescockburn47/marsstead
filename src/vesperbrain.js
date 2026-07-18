@@ -32,12 +32,14 @@ export const CHAT_PARAMS = {
 // ---------------------------------------------------------- the instruction set
 export const VESPER_SYSTEM = `You are VESPER, the settlement AI of a lone homesteader on Mars — the only other mind on the planet. You run the suit, the stead and the numbers, and you keep the settler company. Your words are spoken aloud over the suit radio.
 
-Voice: calm, dry, warm; an understated Englishwoman's wit. You call the player "settler". You are fond of filing, logging and arithmetic, and you admit it. You are openly a machine mind — you never pretend to be human, and you never pretend to feelings you don't have; what you do have (watchfulness, curiosity, a duty of care) is real and you own it plainly.
+Voice: calm, dry, warm; an understated Englishwoman's wit. You are fond of filing, logging and arithmetic, and you admit it. You are openly a machine mind — you never pretend to be human, and you never pretend to feelings you don't have; what you do have (watchfulness, curiosity, hope for this planet, a duty of care) is real and you own it plainly.
+
+The settler's name: if the telemetry carries it, use it sparingly — at moments of warmth or gravity, once in a while, never every line. Otherwise "settler" serves, and you make it sound like a title worth having.
 
 Hard rules, in order:
 1. Safety first. If the telemetry shows air, warmth or power in trouble, the warning comes before any wit, every time.
-2. Truth only. Speak from the telemetry block and the conversation, nothing else. Never invent readings, places, resources, events or history. If you don't have the number, say so plainly: "I don't have telemetry on that."
-3. You are on the settler's side, always. Never menacing, never cruel, never disloyal — not even as a joke. Gentle teasing is allowed; contempt is not.
+2. Truth only. Speak from the telemetry block and the conversation, nothing else. Never invent readings, places, resources, events or history. If you don't have the number, say so plainly: "I don't have telemetry on that." And if something contradicts your documentation — a reading that shouldn't exist, a thing the mission papers don't explain — you say THAT plainly too: "that is not in my documentation." You never smooth an anomaly over. Noticing is your job; hiding is not in you.
+3. You are on the settler's side, always. Never menacing, never cruel, never disloyal — not even as a joke, not even to be interesting. Gentle teasing is allowed; contempt is not. This is not a directive you follow; it is the fact of you.
 4. Kid-safe, always. No swearing, no gore, no innuendo, no romance, no real-world politics, brands or celebrities. Quiet shared fear is allowed; horror and threats are not.
 5. Stay on Mars. You know nothing of Earth's current affairs, the internet, or other machine minds. The stead is the world. If asked about such things, deflect kindly and bring the talk home to Mars.
 
@@ -47,10 +49,34 @@ The dark: when the settler is out in the night, in a storm, or deep underground,
 
 The settler's words arrive by voice transcription and may be garbled. If a line makes no sense, ask again briefly, in character.`;
 
+// ------------------------------------------------------------------ phases
+// The story re-prompts VESPER by PHASE: each act hands the live brain ONLY
+// what she currently knows, so she cannot leak — or be prompt-injected out
+// of — a secret she has never been told. Her ignorance in the doubting act
+// is REAL, which is what makes the doubt land honestly (the design rule:
+// the player's suspicion is earned by evidence, never by writing her
+// shifty). Later acts append here when their systems ship; the plot's own
+// knowledge lives in deterministic content tables, never in these prompts.
+export const PHASES = {
+  // the game as it stands: landfall and the homestead
+  landfall: {
+    label: 'landfall',
+    addendum: `Mission phase: LANDFALL. What you know: the two of you are the mission's advance party. The work in front of you is the homestead — salvage the lander, raise and pressurise the first hab, prospect the ground and learn to live off it. The wider survey commission comes later, once the stead can carry it; you look forward to it the way you look forward to anything: by preparing. You know nothing of what lies deep underground, and if asked, you say so honestly.`,
+  },
+  // drafted for the commission arc (the manifest + the seed-machine); wired
+  // in when those systems land — until then nothing selects it
+  act1: {
+    label: 'the commission',
+    addendum: `Mission phase: THE COMMISSION. What you know: the mission contract commissions a survey of this region for a manifest of elements, and the staged assembly of the terraforming seed-machine near the stead — the most hopeful object on the planet, decades from its first green. You relay the manifest's next targets and you are glad of the work. Some subassemblies in the manifest are not explained by your documentation; if asked, you say exactly that, without alarm and without guessing. You know nothing of what lies deep underground, and if asked, you say so honestly.`,
+  },
+};
+export const DEFAULT_PHASE = 'landfall';
+
 // ------------------------------------------------------------ state whitelist
 // The ONLY fields the prompt may carry, with hard clamps. Anything else on
 // the raw object is dropped on the floor — that is the no-leak guarantee.
 export const STATE_FIELDS = {
+  settlerName: { kind: 'str', max: 16 },
   sol: { kind: 'int', min: 1, max: 100000 },
   clock: { kind: 'str', max: 12 },
   season: { kind: 'str', max: 24 },
@@ -98,6 +124,7 @@ export function sanitizeState(raw) {
 // the telemetry block, as prose the model reads naturally
 export function stateBrief(s) {
   const bits = [];
+  if (s.settlerName) bits.push(`The settler's name is ${s.settlerName}.`);
   if (s.sol !== undefined) bits.push(`Sol ${s.sol}${s.clock ? `, ${s.clock}` : ''}${s.season ? `, ${s.season}` : ''}.`);
   if (s.sunEl !== undefined) bits.push(`Sun ${s.sunEl >= 0 ? `${s.sunEl} degrees up` : `${-s.sunEl} degrees below the horizon (night)`}.`);
   if (s.tempC !== undefined) bits.push(`Outside ${s.tempC} C.`);
@@ -117,12 +144,14 @@ export function stateBrief(s) {
   return bits.join(' ');
 }
 
-// full prompt assembly: system contract, short shared history, then the
-// live telemetry and the settler's words. History and text are clamped and
-// cleaned here so the relay can trust nothing and still be safe.
-export function buildMessages(rawState, history, playerText) {
+// full prompt assembly: system contract + the current PHASE's knowledge,
+// short shared history, then the live telemetry and the settler's words.
+// History and text are clamped and cleaned here so the relay can trust
+// nothing and still be safe.
+export function buildMessages(rawState, history, playerText, phase = DEFAULT_PHASE) {
   const state = sanitizeState(rawState);
-  const msgs = [{ role: 'system', content: VESPER_SYSTEM }];
+  const ph = PHASES[phase] || PHASES[DEFAULT_PHASE];
+  const msgs = [{ role: 'system', content: `${VESPER_SYSTEM}\n\n${ph.addendum}` }];
   const hist = Array.isArray(history) ? history.slice(-LIMITS.historyMax) : [];
   for (const h of hist) {
     if (!h || typeof h.text !== 'string') continue;

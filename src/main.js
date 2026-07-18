@@ -51,7 +51,7 @@ import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
-import { vesperSay } from './vesper.js';
+import { vesperSay, cleanName } from './vesper.js';
 import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
@@ -99,7 +99,10 @@ function glRendererString(renderer) {
 }
 
 class Game {
-  constructor(save = null) {
+  constructor(save = null, settlerName = '') {
+    // the settler's name: fresh entry at the title door wins; otherwise
+    // the save's (applySave); VESPER falls back to "settler" gracefully
+    this.settlerName = cleanName(settlerName);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -342,6 +345,7 @@ class Game {
     this.sleptOnce = s.sleptOnce;
     this.missionStart = s.missionStart ?? this.simMillis;
     this.trail = deserializeTrail(s.trail); // the old marks still stand
+    if (!this.settlerName) this.settlerName = s.settlerName || '';
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -369,6 +373,7 @@ class Game {
       fab: this.fab,
       machines: this.machines,
       trail: serializeTrail(this.trail),
+      settlerName: this.settlerName,
     })).catch(() => {});
   }
 
@@ -922,7 +927,7 @@ class Game {
     if (!shouldBark(event, this.t - this.lastTalk)) return;
     const n = this.saidCounts[event] || 0;
     this.saidCounts[event] = n + 1;
-    const line = vesperSay(event, n);
+    const line = vesperSay(event, n, this.settlerName);
     if (!line) return;
     this.hud.say(line, this.t);
     this.voice.speak(line, moodForEvent(event, sanitizeState(this.brainState())));
@@ -941,6 +946,7 @@ class Game {
       Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
     const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
     return {
+      settlerName: this.settlerName,
       sol: missionSol,
       clock: solClock(this.simMillis),
       season: season(this.simMillis),
@@ -1712,9 +1718,9 @@ class Game {
 // boot: the title fronts the save — CONTINUE carries it, NEW LANDING wipes
 // it, ?play skips the ceremony (live checks, the dev loop)
 loadGame().catch(() => null).then((save) => {
-  const start = async (choice) => {
+  const start = async (choice, name = '') => {
     if (choice === 'new' && save) await clearSave();
-    window.marsstead = new Game(choice === 'continue' ? save : null);
+    window.marsstead = new Game(choice === 'continue' ? save : null, name);
   };
   if (new URLSearchParams(location.search).has('play')) {
     start(save ? 'continue' : 'new');

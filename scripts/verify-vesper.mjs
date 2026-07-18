@@ -52,5 +52,32 @@ check('unknown event is silence', vesperSay('no-such-event', 0) === null);
   check('the register holds', ok);
 }
 
+// ---- the settler's name: laundered at the door, landed in the lines ----
+{
+  const { cleanName, vesperSay, LINES } = await import('../src/vesper.js');
+  check('cleanName strips markup teeth', cleanName('<b>Ada</b>{x}$`\\') === 'bAdabx');
+  check('cleanName caps at sixteen', cleanName('A'.repeat(40)).length === 16);
+  check('cleanName keeps honest names', cleanName("Mary-Ann O'Hara") === "Mary-Ann O'Hara");
+  check('cleanName of garbage is empty', cleanName('<>{}') === '' && cleanName(42) === '');
+  // {name} lands, and "settler" serves when there is no name
+  const named = [];
+  for (const [event, table] of Object.entries(LINES)) {
+    table.forEach((line, i) => { if (line.includes('{name}')) named.push([event, i]); });
+  }
+  check('some lines carry {name}', named.length >= 3);
+  let subOk = true, fallOk = true;
+  for (const [event] of named) {
+    const t = LINES[event].length;
+    for (let n = 0; n < t; n++) {
+      const withName = vesperSay(event, n, 'Ada');
+      const without = vesperSay(event, n, '');
+      if (withName.includes('{name}') || without.includes('{name}')) subOk = false;
+      if (/\{name\}/.test(without) || (without.includes('Ada'))) fallOk = false;
+    }
+  }
+  check('{name} always lands', subOk);
+  check('"settler" serves when unnamed', fallOk);
+}
+
 if (failed) { console.error(`verify-vesper: ${failed} FAILED`); process.exit(1); }
 console.log('verify-vesper: all green');

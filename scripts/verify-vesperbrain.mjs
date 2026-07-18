@@ -50,7 +50,9 @@ const msgs = buildMessages({}, Array.from({ length: 40 }, (_, i) => ({ who: i % 
 check('history clamped', msgs.length <= 2 + LIMITS.historyMax);
 check('player text clamped', msgs[msgs.length - 1].content.length < LIMITS.playerMax + 200);
 check('turns clamped', msgs.slice(1, -1).every((m) => m.content.length <= LIMITS.turnMax));
-check('first message is the system contract', msgs[0].role === 'system' && msgs[0].content === VESPER_SYSTEM);
+check('first message is the system contract + the phase',
+  msgs[0].role === 'system' && msgs[0].content.startsWith(VESPER_SYSTEM)
+  && msgs[0].content.length > VESPER_SYSTEM.length);
 check('last message is the settler', msgs[msgs.length - 1].role === 'user');
 check('cleanStr pulls markup teeth', cleanStr('<b>${x}</b> {a} `q` \\', 100) === 'bx/b a q');
 
@@ -110,6 +112,39 @@ check('clampLine of nothing is null', clampLine('   ') === null && clampLine(und
 check('brain model is MiniMax-M3', CHAT_PARAMS.model === 'MiniMax-M3');
 check('completion budget is radio-sized', CHAT_PARAMS.max_completion_tokens <= 200);
 check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['int', 'num', 'str', 'bool'].includes(s.kind)));
+
+// ---- the phases: knowledge is scoped, and the plot CANNOT leak ----------
+{
+  const { PHASES, DEFAULT_PHASE } = await import('../src/vesperbrain.js');
+  check('phases exist with a default', !!PHASES[DEFAULT_PHASE]);
+  check('landfall is the standing phase', DEFAULT_PHASE === 'landfall');
+  check('the commission act is drafted', !!PHASES.act1 && PHASES.act1.addendum.length > 200);
+  // the no-plot-leak gate: the weaver plot's words must NEVER appear in
+  // anything the live brain is told — she cannot leak what she was never
+  // given, and this line asserts she is never given it
+  const PLOT_WORDS = /weaver|murderbot|replicat|betray|possess|infect|panspermia|vault|the deep signal|take over|reprogram/i;
+  const everything = [VESPER_SYSTEM, ...Object.values(PHASES).map((p) => p.addendum)].join(' ');
+  check('no plot word reaches any prompt', !PLOT_WORDS.test(everything));
+  // each phase admits ignorance of the underground honestly
+  check('every phase owns its ignorance of the deep',
+    Object.values(PHASES).every((p) => /nothing of what lies deep underground/i.test(p.addendum)));
+  // the anomaly-honesty register (the story's breadcrumb engine) is present
+  check('anomaly honesty is in the contract', /not in my documentation/i.test(VESPER_SYSTEM));
+  check('loyalty is the fact of her', /fact of you/i.test(VESPER_SYSTEM));
+  // buildMessages carries the phase addendum and the name
+  const { buildMessages } = await import('../src/vesperbrain.js');
+  const msgs = buildMessages({ settlerName: 'Ada', sol: 3 }, [], 'hello');
+  check('prompt carries the phase addendum', msgs[0].content.includes('LANDFALL'));
+  check('prompt carries the settler\'s name', msgs[msgs.length - 1].content.includes('Ada'));
+  const msgsAct1 = buildMessages({}, [], 'hi', 'act1');
+  check('act1 selects the commission', msgsAct1[0].content.includes('THE COMMISSION'));
+  const msgsBad = buildMessages({}, [], 'hi', 'no-such-phase');
+  check('unknown phase falls back to the default', msgsBad[0].content.includes('LANDFALL'));
+  // the name is whitelisted and clamped
+  const { sanitizeState } = await import('../src/vesperbrain.js');
+  check('settlerName whitelisted + clamped',
+    sanitizeState({ settlerName: 'A'.repeat(40) }).settlerName.length <= 16);
+}
 
 if (failed) { console.error(`verify-vesperbrain: ${failed} failure(s)`); process.exit(1); }
 console.log('verify-vesperbrain: all green');

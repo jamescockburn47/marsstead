@@ -12,7 +12,7 @@ const DB = 'marsstead', STORE = 'meta', KEY = 'game';
 import { ITEMS } from './inventory.js';
 import { LANDER_STOCK } from './salvage.js';
 import { PART_TYPES } from './build.js';
-import { EVENTS } from './vesper.js';
+import { EVENTS, cleanName } from './vesper.js';
 import { depositById, HOPPER_CAP } from './mine.js';
 import { RECIPES, QUEUE_CAP } from './refine.js';
 import { MACHINE_TYPES, MACHINE_QUEUE_CAP } from './machines.js';
@@ -75,6 +75,7 @@ export function snapshotSave(state) {
     // the trail (additive, version stays 1: an older save just wakes on
     // unmarked ground) — already flat-encoded by tracks.serializeTrail
     trail: Array.isArray(state.trail) ? state.trail : [],
+    settlerName: cleanName(state.settlerName || ''),
     savedAt: Date.now(),
   };
 }
@@ -203,6 +204,7 @@ export function acceptSave(meta) {
     machines,
     // bounded pass-through: tracks.deserializeTrail launders the quads
     trail: Array.isArray(meta.trail) ? meta.trail.slice(0, 48000) : [],
+    settlerName: cleanName(meta.settlerName || ''),
     savedAt: meta.savedAt || 0,
   };
 }
