@@ -600,13 +600,17 @@ class Game {
     }
   }
 
-  // E: mount within reach; dismount to the buggy's left
+  // E: mount within reach; dismount to the buggy's left. The settler is
+  // VISIBLE in the seat: the figure reparents onto the buggy's frame and
+  // takes the seated pose, so it rides every bounce the chassis takes.
   toggleBuggy() {
     if (this.driving) {
       this.driving = false;
       const sin = Math.sin(this.buggy.heading), cos = Math.cos(this.buggy.heading);
       this.pos.set(this.buggy.x - cos * 1.6, 0, this.buggy.z + sin * 1.6);
       this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+      this.scene.add(this.colonist.group); // back to the world's frame
+      this.colonist.group.position.copy(this.pos);
       this.colonist.group.visible = true;
       this.colonist.setLamp(this.lamp);
       this.buggyLayer.setLamps(false);
@@ -614,7 +618,10 @@ class Game {
       const d = Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
       if (d < 3.2) {
         this.driving = true;
-        this.colonist.group.visible = false;
+        this.buggyLayer.group.add(this.colonist.group);
+        this.colonist.group.position.set(0, -0.02, -0.12);
+        this.colonist.group.rotation.y = 0; // face the nose
+        this.colonist.poseSeated();
         this.colonist.setLamp(false);
         this.buggyLayer.setLamps(this.lamp);
         this.sayOnce('buggy-first');
@@ -1273,10 +1280,13 @@ class Game {
     // the settler rides the seat
     this.pos.set(this.buggy.x, this.buggy.y, this.buggy.z);
 
+    // the rider shows in chase view; in first person YOU are the rider
+    this.colonist.group.visible = !this.fpv;
+
     if (this.fpv) {
       // first person: the driver's eye — rigid to the body (no lerp; a
       // laggy FP camera is a seasick FP camera), attitude included
-      const eye = this.buggyLayer.group.localToWorld(new THREE.Vector3(0, 1.32, -0.05));
+      const eye = this.buggyLayer.group.localToWorld(new THREE.Vector3(0, 1.58, -0.12));
       this.cam.position.copy(eye);
       let dy = this.buggy.heading - this.camYaw;
       dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
