@@ -61,6 +61,12 @@ import {
   createFab, fabFeed, fabTick, fabTake, fabOutCount, RECIPES,
 } from './refine.js';
 import { RigLayer } from './riglayer.js';
+import { TitleScreen } from './title.js';
+import {
+  MACHINE_TYPES, createMachine, canPlaceMachine, machineFeed, machineTick,
+  machineTake, machineOutCount,
+} from './machines.js';
+import { MachineLayer } from './machinelayer.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
@@ -168,6 +174,8 @@ class Game {
     this.rigLayer = new RigLayer(this.scene);
     this.prospected = new Set(); // deposit ids the ground has admitted to
     this.fab = createFab();      // the lander's ISRU bench
+    this.machines = [];          // the built refinery (step 5)
+    this.machineLayer = new MachineLayer(this.scene);
     this.anchoring = null;       // { t, need } while planting the rig
     this.swayTimer = 0;
     this.prevHopper = 0;
@@ -250,6 +258,8 @@ class Game {
     this.rig.hopper = s.rig.hopper;
     this.prospected = new Set(s.prospected);
     this.fab = { queue: s.fab.queue, t: s.fab.t, out: s.fab.out };
+    this.machines = s.machines;
+    this.machineLayer.sync(this.machines, meshGroundHeight);
     this.prevHopper = hopperCount(this.rig);
   }
 
@@ -272,6 +282,7 @@ class Game {
       rig: this.rig,
       prospected: this.prospected,
       fab: this.fab,
+      machines: this.machines,
     })).catch(() => {});
   }
 
@@ -302,7 +313,11 @@ class Game {
     if (e.code === 'KeyC' && this.driving) this.fpv = !this.fpv;
     if (e.code === 'KeyB' && !this.driving && !this.sleepAnim) {
       this.buildMode = !this.buildMode;
-      if (!this.buildMode) { this.steadLayer.showGhost(null); this.steadLayer.clearLeaks(); }
+      if (!this.buildMode) {
+        this.steadLayer.showGhost(null);
+        this.steadLayer.clearLeaks();
+        this.machineLayer.showGhost(null);
+      }
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
     if (e.code === 'KeyM') this.map.toggle();
@@ -352,15 +367,8 @@ class Game {
     }
   }
 
-  // slope under the rig, rise over run — the anchor law reads it
-  rigSlope() {
-    const e = 1.2;
-    const gx = (meshGroundHeight(this.rig.x + e, this.rig.z)
-      - meshGroundHeight(this.rig.x - e, this.rig.z)) / (2 * e);
-    const gz = (meshGroundHeight(this.rig.x, this.rig.z + e)
-      - meshGroundHeight(this.rig.x, this.rig.z - e)) / (2 * e);
-    return Math.hypot(gx, gz);
-  }
+  // slope under the rig — the anchor law reads it
+  rigSlope() { return this.slopeAt(this.rig.x, this.rig.z); }
 
   nearestDepositToRig() {
     const near = depositsNear(this.rig.x, this.rig.z, 40);
@@ -413,16 +421,42 @@ class Game {
     return ` · |*T| fabricator${bits.length ? ` (${bits.join(', ')})` : ''}`;
   }
 
-  // T at the lander: clear the out-tray into the bags, then feed it raw
+  // the machine you're standing at, if any
+  nearestMachine(radius = 3.5) {
+    let best = null, bestD = radius;
+    for (const m of this.machines) {
+      const d = Math.hypot(m.x - this.pos.x, m.z - this.pos.z);
+      if (d < bestD) { best = m; bestD = d; }
+    }
+    return best;
+  }
+
+  // T works the nearest bench: a built machine first, else the lander's
+  // fabricator — clear the out-tray into the bags, then feed it raw
   workFab() {
-    if (this.driving || this.distToLander() > 7) return;
+    if (this.driving) return;
+    const roverClose = this.distToRover() < 9;
+    const m = this.nearestMachine();
+    if (m) {
+      for (const id of Object.keys(m.out)) {
+        while (m.out[id] && canAdd(this.suit, id, 1)) {
+          machineTake(m, id, 1);
+          add(this.suit, id, 1);
+        }
+      }
+      for (const raw of Object.keys(MACHINE_TYPES[m.type].recipes)) {
+        remove(this.suit, raw, machineFeed(m, raw, count(this.suit, raw)));
+        if (roverClose) remove(this.roverStore, raw, machineFeed(m, raw, count(this.roverStore, raw)));
+      }
+      return;
+    }
+    if (this.distToLander() > 7) return;
     for (const id of Object.keys(this.fab.out)) {
       while (this.fab.out[id] && canAdd(this.suit, id, 1)) {
         fabTake(this.fab, id, 1);
         add(this.suit, id, 1);
       }
     }
-    const roverClose = this.distToRover() < 9;
     for (const raw of Object.keys(RECIPES)) {
       // fabFeed reports what the queue accepted; only THAT leaves the bag
       remove(this.suit, raw, fabFeed(this.fab, raw, count(this.suit, raw)));
@@ -510,13 +544,61 @@ class Game {
 
   // ---- building --------------------------------------------------------
 
+  // the catalogue Q cycles: face parts first, then the machines
   buildablePart() {
-    const types = Object.keys(PART_TYPES);
+    const types = [...Object.keys(PART_TYPES), ...Object.keys(MACHINE_TYPES)];
     return types[((this.buildSel % types.length) + types.length) % types.length];
   }
 
+  isMachine(type) { return !!MACHINE_TYPES[type]; }
+  costsOf(type) { return (MACHINE_TYPES[type] ?? PART_TYPES[type]).costs; }
+
   canAfford(type) {
-    return PART_TYPES[type].costs.every(([id, n]) => count(this.suit, id) >= n);
+    return this.costsOf(type).every(([id, n]) => count(this.suit, id) >= n);
+  }
+
+  // slope of the drawn ground at (x, z), rise over run
+  slopeAt(x, z) {
+    const e = 1.2;
+    const gx = (meshGroundHeight(x + e, z) - meshGroundHeight(x - e, z)) / (2 * e);
+    const gz = (meshGroundHeight(x, z + e) - meshGroundHeight(x, z - e)) / (2 * e);
+    return Math.hypot(gx, gz);
+  }
+
+  // a machine goes down at the centre of the cell you face
+  machineTargetCell() {
+    const { dx, dz } = cardinal(Math.sin(this.camYaw), Math.cos(this.camYaw));
+    const cx = Math.floor(this.pos.x / CELL) + dx;
+    const cz = Math.floor(this.pos.z / CELL) + dz;
+    return { x: (cx + 0.5) * CELL, z: (cz + 0.5) * CELL };
+  }
+
+  placeMachine(type) {
+    const { x, z } = this.machineTargetCell();
+    if (!canPlaceMachine(type, this.slopeAt(x, z), this.machines, x, z)
+      || !this.canAfford(type)) return;
+    for (const [id, n] of this.costsOf(type)) remove(this.suit, id, n);
+    this.machines.push(createMachine(type, x, z, this.camYaw));
+    this.machineLayer.sync(this.machines, meshGroundHeight);
+  }
+
+  removeMachine() {
+    let best = -1, bestD = 4;
+    this.machines.forEach((m, i) => {
+      const d = Math.hypot(m.x - this.pos.x, m.z - this.pos.z);
+      if (d < bestD) { best = i; bestD = d; }
+    });
+    if (best < 0) return;
+    const m = this.machines[best];
+    const costs = MACHINE_TYPES[m.type].costs;
+    const refundKg = costs.reduce((kg, [id, n]) => kg + ITEMS[id].kg * n, 0);
+    let dest = null;
+    if (massOf(this.suit) + refundKg <= SUIT_CAPACITY) dest = this.suit;
+    else if (this.distToRover() < 9 && massOf(this.roverStore) + refundKg <= ROVER_CAPACITY) dest = this.roverStore;
+    if (!dest) { this.say('suit-full'); return; }
+    this.machines.splice(best, 1);
+    for (const [id, n] of costs) add(dest, id, n);
+    this.machineLayer.sync(this.machines, meshGroundHeight);
   }
 
   // the grid anchor: fixed at first placement, previewed before it —
@@ -546,6 +628,7 @@ class Game {
 
   placeCursor() {
     const type = this.buildablePart();
+    if (this.isMachine(type)) { this.placeMachine(type); return; }
     const key = this.buildCursor(false);
     if (!key || !this.placementOk(key, type)) return;
     if (this.steadBaseY === null) {
@@ -560,6 +643,7 @@ class Game {
   }
 
   removeCursor() {
+    if (this.isMachine(this.buildablePart())) { this.removeMachine(); return; }
     const key = this.buildCursor(true);
     if (!key) return;
     const type = this.stead.parts.get(key).type;
@@ -593,9 +677,23 @@ class Game {
 
   // walls are real: crossing a sealed ground-level face stops you; the
   // airlock instead runs its cycle and hands you through
+  // the drawn surface plus your own roofs: a roof plate is a floor once
+  // your boots are at or above it (jump up; walk off the edge honestly)
+  groundAt(x, z) {
+    let g = meshGroundHeight(x, z);
+    if (this.steadBaseY !== null && this.stead.parts.size) {
+      const roof = this.stead.parts.get(
+        faceKey(Math.floor(x / CELL), 1, Math.floor(z / CELL), 1));
+      const top = this.steadBaseY + CELL;
+      if (roof && this.pos.y >= top - 0.4) g = Math.max(g, top);
+    }
+    return g;
+  }
+
   resolveWalls(px, pz) {
     if (this.stead.parts.size === 0 || this.steadBaseY === null) return;
-    if (Math.abs(this.pos.y - this.steadBaseY) > 2.4) return; // above the walls
+    // feet above the wall tops (roof-walking) pass over freely
+    if (this.pos.y > this.steadBaseY + CELL - 0.3) return;
     const c0x = Math.floor(px / CELL), c0z = Math.floor(pz / CELL);
     let c1x = Math.floor(this.pos.x / CELL), c1z = Math.floor(this.pos.z / CELL);
     if (c1x !== c0x) {
@@ -639,6 +737,7 @@ class Game {
     this.hud.setVeil(1);
     this.steadLayer.showGhost(null);
     this.steadLayer.clearLeaks();
+    this.machineLayer.showGhost(null);
   }
 
   say(event) {
@@ -717,7 +816,7 @@ class Game {
       if (this.idleTimer > 45) { this.idleTimer = 0; this.say('idle'); }
     }
 
-    const ground = meshGroundHeight(this.pos.x, this.pos.z);
+    const ground = this.groundAt(this.pos.x, this.pos.z);
     if (!this.airborne && this.keys.Space && !this.cycling) {
       this.vy = JUMP_V0; this.airborne = true;
       this.sayOnce('first-jump');
@@ -839,8 +938,17 @@ class Game {
     // ---- the build cursor: ghost + the leak finder's markers
     if (this.buildMode) {
       const type = this.buildablePart();
-      const key = this.buildCursor(false);
-      this.steadLayer.showGhost(key, key ? this.placementOk(key, type) : false, this.buildBaseY());
+      if (this.isMachine(type)) {
+        const { x, z } = this.machineTargetCell();
+        const ok = canPlaceMachine(type, this.slopeAt(x, z), this.machines, x, z)
+          && this.canAfford(type);
+        this.machineLayer.showGhost(x, meshGroundHeight(x, z), z, ok);
+        this.steadLayer.showGhost(null);
+      } else {
+        this.machineLayer.showGhost(null);
+        const key = this.buildCursor(false);
+        this.steadLayer.showGhost(key, key ? this.placementOk(key, type) : false, this.buildBaseY());
+      }
       const cx = Math.floor(this.pos.x / CELL), cz = Math.floor(this.pos.z / CELL);
       const cacheKey = `${this.stead.parts.size}:${cx},${cz}`;
       if (cacheKey !== this.leakCacheKey) {
@@ -857,7 +965,7 @@ class Game {
       this.hud.setPrompt('airlock cycling…');
     } else if (this.buildMode) {
       const type = this.buildablePart();
-      const t = PART_TYPES[type];
+      const t = MACHINE_TYPES[type] ?? PART_TYPES[type];
       const have = t.costs
         .map(([id, n]) => `${count(this.suit, id)}/${n} ${ITEMS[id].name.toLowerCase()}`)
         .join(' + ');
@@ -877,6 +985,14 @@ class Game {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.nearestMachine()) {
+      const m = this.nearestMachine();
+      const bits = [];
+      const o = machineOutCount(m);
+      if (o) bits.push(`${o} ready`);
+      if (m.queue.length) bits.push(`${m.queue.length} cooking`);
+      this.hud.setPrompt(`|*T| ${MACHINE_TYPES[m.type].name.toLowerCase()}`
+        + (bits.length ? ` (${bits.join(', ')})` : ''));
     } else if (this.distToRig() < 4 && !this.rig.hitched && this.rigPrompt()) {
       this.hud.setPrompt(this.rigPrompt());
     } else if (this.distToLander() < 6 && this.salvageTarget()) {
@@ -957,6 +1073,7 @@ class Game {
     // ground: height + attitude from the four wheel contacts, gradient
     // from central differences (drives the slope forces)
     const e = 0.7, bx = this.buggy.x, bz = this.buggy.z;
+    const bx0 = bx, bz0 = bz; // pre-step, for the wall check below
     const wg = this.wheelGround(bx, bz, this.buggy.heading);
     const h = wg.h;
     const ground = {
@@ -979,6 +1096,26 @@ class Game {
       };
     }
     this.buggyFlags = flags;
+
+    // ---- walls stop the buggy too: no vehicle fits an airlock, so every
+    // sealing face is a wall to the chassis (centre-point, ground level)
+    if (this.stead.parts.size && this.steadBaseY !== null
+      && Math.abs(this.buggy.y - this.steadBaseY) < 2.4) {
+      const c0x = Math.floor(bx0 / CELL), c0z = Math.floor(bz0 / CELL);
+      let c1x = Math.floor(this.buggy.x / CELL), c1z = Math.floor(this.buggy.z / CELL);
+      const wall = (fk) => {
+        const p = this.stead.parts.get(fk);
+        return p && PART_TYPES[p.type].seals;
+      };
+      let blocked = false;
+      if (c1x !== c0x && wall(faceKey(Math.max(c0x, c1x), 0, c0z, 0))) {
+        this.buggy.x = bx0; c1x = c0x; blocked = true;
+      }
+      if (c1z !== c0z && wall(faceKey(c1x, 0, Math.max(c0z, c1z), 2))) {
+        this.buggy.z = bz0; blocked = true;
+      }
+      if (blocked) { this.buggy.u *= -0.2; this.buggy.v = 0; }
+    }
 
     // ---- the tow: the rig chases the pin; geometry raises the flags
     if (this.rig.hitched) {
@@ -1125,6 +1262,10 @@ class Game {
     if (hopperNow >= HOPPER_CAP && this.prevHopper < HOPPER_CAP) this.say('hopper-full');
     this.prevHopper = hopperNow;
     if (fabTick(this.fab, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
+    for (const m of this.machines) {
+      if (machineTick(m, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
+    }
+    this.machineLayer.update(this.machines, this.t);
     this.rigLayer.update(this.rig, meshGroundHeight(this.rig.x, this.rig.z));
     this.rigLayer.syncOre(this.pos.x, this.pos.z, meshGroundHeight);
 
@@ -1165,7 +1306,39 @@ class Game {
   }
 }
 
-// boot: carry the save if one is willing, land fresh if not
+// the muster book: one visitor beacon per load to the harbourmaster's
+// ledger (vercel rewrites /dash/* to the family's EVO door). Fire-and-
+// forget — if the ledger is unreachable the game never notices.
+(function musterBook() {
+  try {
+    let pid;
+    try {
+      pid = localStorage.getItem('marsstead-pid');
+      if (!pid) {
+        pid = crypto.randomUUID ? crypto.randomUUID()
+          : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem('marsstead-pid', pid);
+      }
+    } catch { pid = ''; }
+    fetch('/dash/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site: 'marsstead', kind: 'visit', pid }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch { /* the muster book only ever undercounts */ }
+})();
+
+// boot: the title fronts the save — CONTINUE carries it, NEW LANDING wipes
+// it, ?play skips the ceremony (live checks, the dev loop)
 loadGame().catch(() => null).then((save) => {
-  window.marsstead = new Game(save); // the live handle, the family way
+  const start = async (choice) => {
+    if (choice === 'new' && save) await clearSave();
+    window.marsstead = new Game(choice === 'continue' ? save : null);
+  };
+  if (new URLSearchParams(location.search).has('play')) {
+    start(save ? 'continue' : 'new');
+  } else {
+    new TitleScreen(save, start);
+  }
 });

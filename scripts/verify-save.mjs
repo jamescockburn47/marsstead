@@ -27,6 +27,7 @@ const state = {
   rig: { x: -16, z: -1, heading: 0.6, deployed: false, depositId: null, hopper: {} },
   prospected: new Set(),
   fab: { queue: [], t: 0, out: {} },
+  machines: [{ type: 'smelter', x: 10, z: 8, heading: 0.3, queue: ['iron-ore'], t: 2, out: { glass: 1 } }],
 };
 
 // 1. round-trip: what was lived is what wakes up
@@ -104,10 +105,25 @@ const state = {
 
   // a pre-expedition save: no rig fields at all
   const old = snapshotSave(state);
-  delete old.rig; delete old.prospected; delete old.fab;
+  delete old.rig; delete old.prospected; delete old.fab; delete old.machines;
   const woke = acceptSave(old);
   check('old save parks the rig by the lander', woke.rig.x === -16 && !woke.rig.deployed);
   check('old save has cold fab, no prospects', woke.fab.queue.length === 0 && woke.prospected.length === 0);
+  check('old save has no machines', woke.machines.length === 0);
+
+  // machines round-trip and launder
+  const rt = acceptSave(snapshotSave(state));
+  check('machine survives mid-smelt', rt.machines.length === 1
+    && rt.machines[0].queue[0] === 'iron-ore' && rt.machines[0].out.glass === 1);
+  const mm = snapshotSave(state);
+  mm.machines = [
+    { type: 'smelter', x: 1, z: 1, queue: ['ice', 'iron-ore'], out: { junk: 4 } },
+    { type: 'replicator', x: 2, z: 2 },
+    { type: 'smelter', x: NaN, z: 3 },
+  ];
+  const mc = acceptSave(mm);
+  check('machine junk laundered', mc.machines.length === 1
+    && mc.machines[0].queue.join() === 'iron-ore' && !('junk' in mc.machines[0].out));
 }
 
 if (failed) { console.error(`verify-save: ${failed} FAILED`); process.exit(1); }

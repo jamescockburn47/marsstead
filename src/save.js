@@ -15,6 +15,7 @@ import { PART_TYPES } from './build.js';
 import { EVENTS } from './vesper.js';
 import { depositById, HOPPER_CAP } from './mine.js';
 import { RECIPES, QUEUE_CAP } from './refine.js';
+import { MACHINE_TYPES, MACHINE_QUEUE_CAP } from './machines.js';
 
 const clamp01 = (v, dflt) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : dflt);
 const fin = (v, dflt) => (Number.isFinite(v) ? v : dflt);
@@ -64,6 +65,10 @@ export function snapshotSave(state) {
     fab: {
       queue: [...state.fab.queue], t: state.fab.t, out: { ...state.fab.out },
     },
+    machines: state.machines.map((m) => ({
+      type: m.type, x: m.x, z: m.z, heading: m.heading,
+      queue: [...m.queue], t: m.t, out: { ...m.out },
+    })),
     savedAt: Date.now(),
   };
 }
@@ -137,6 +142,28 @@ export function acceptSave(meta) {
     out: fabOut,
   };
 
+  // the built refinery: known types on finite ground, queues laundered
+  // against each machine's own recipe book
+  const machines = [];
+  if (Array.isArray(meta.machines)) {
+    for (const m of meta.machines.slice(0, 32)) {
+      if (!m || !MACHINE_TYPES[m.type] || ![m.x, m.z].every(Number.isFinite)) continue;
+      const out = {};
+      for (const [id, n] of Object.entries(m.out || {})) {
+        const k = Math.round(n);
+        if (ITEMS[id] && Number.isFinite(k) && k > 0) out[id] = Math.min(999, k);
+      }
+      machines.push({
+        type: m.type, x: m.x, z: m.z, heading: fin(m.heading, 0),
+        queue: Array.isArray(m.queue)
+          ? m.queue.filter((id) => MACHINE_TYPES[m.type].recipes[id]).slice(0, MACHINE_QUEUE_CAP)
+          : [],
+        t: Math.max(0, fin(m.t, 0)),
+        out,
+      });
+    }
+  }
+
   return {
     version: meta.version,
     simMillis: meta.simMillis,
@@ -161,6 +188,7 @@ export function acceptSave(meta) {
     rig,
     prospected,
     fab,
+    machines,
     savedAt: meta.savedAt || 0,
   };
 }
