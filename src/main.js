@@ -560,7 +560,7 @@ class Game {
   interact() {
     if (this.inLander) { this.exitLander(); return; }
     if (this.driving) { this.toggleBuggy(); return; }
-    if (this.distToLadder() < 2.4) { this.enterLander(); return; }
+    if (this.distToLadder() < 3.6) { this.enterLander(); return; }
     if (this.distToRover() < 3.2) { this.toggleBuggy(); return; }
     if (this.distToRig() < 4 && !this.rig.hitched) {
       if (this.rig.deployed && hopperCount(this.rig) > 0) { this.takeOre(); return; }
@@ -1071,7 +1071,7 @@ class Game {
     } else if (this.anchoring) {
       const pct = Math.round((this.anchoring.t / this.anchoring.need) * 100);
       this.hud.setPrompt(`anchoring the rig… ${pct}%`);
-    } else if (this.distToLadder() < 2.4) {
+    } else if (this.distToLadder() < 3.6) {
       this.hud.setPrompt('|*E| climb into the lander'
         + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''));
     } else if (this.distToRover() < 3.2) {
@@ -1137,7 +1137,7 @@ class Game {
     co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.8);
     this.cam.position.lerp(co, Math.min(1, 4 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 3.2, this.pos.z);
-    this.hud.setPrompt('LANDER — cabin · |*E| step out · |*C| console'
+    this.hud.setPrompt('LANDER — cabin · |*E| step out · |*C| console · |*M| map'
       + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : '')
       + this.fabLabel());
     this.hud.setBags(`suit ${loadLabel(this.suit)}`);

@@ -136,6 +136,7 @@ export class LanderConsole {
     this.lRig.textContent = md.rig;
     this.lOre.textContent = md.ore;
     this.vLine.textContent = md.vesper || '…all quiet. I like quiet; it files easily.';
-    this.foot.textContent = this.expanded ? 'C COLLAPSE · E STEP OUT' : 'C FULL BOARD · E STEP OUT';
+    this.foot.textContent = this.expanded
+      ? 'C COLLAPSE · M MAP · E STEP OUT' : 'C FULL BOARD · M MAP · E STEP OUT';
   }
 }
