@@ -42,6 +42,10 @@ export class Hud {
     this.root.id = 'hud';
     document.body.appendChild(this.root);
 
+    // first child: the veil dims the SCENE (sleep, the lander's cabin)
+    // while every HUD reading painted after it stays bright
+    this.veil = el(this.root, 'div', 'veil');
+
     this.clock = el(this.root, 'div', 'clock');
     this.clockMain = el(this.clock, 'div');
     this.clockSub = el(this.clock, 'div', 'sub');
@@ -55,7 +59,6 @@ export class Hud {
 
     this.prompt = el(this.root, 'div', 'prompt');
     this.bags = el(this.root, 'div', 'bags');
-    this.veil = el(this.root, 'div', 'veil'); // the sleep blackout
 
     this.vesper = el(this.root, 'div', 'vesper');
     el(this.vesper, 'span', 'who').textContent = 'VESPER';

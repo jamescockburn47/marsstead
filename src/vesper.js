@@ -20,6 +20,7 @@ export const EVENTS = [
   'hab-too-small',
   'prospect', 'hitch', 'jackknife', 'trailer-sway', 'deploy',
   'drill-first-ore', 'hopper-full', 'pack-up', 'fab-first-steel',
+  'lander-in', 'not-tired',
 ];
 
 export const LINES = {
@@ -194,6 +195,16 @@ export const LINES = {
   'fab-first-steel': [
     "The fabricator just handed you a steel panel that was gravel this morning. THIS is the whole homestead, in one object.",
     "First steel off the bench. The lander brought ten panels across space; you just made the eleventh out of Mars.",
+  ],
+  'lander-in': [
+    "Hatch sealed behind you. One atmosphere, plus sentiment. This cabin flew two hundred million kilometres to be your spare room.",
+    "Inside. Warm air, real pressure, and every gauge where I can see it. The planet can knock all it likes.",
+    "Welcome back aboard. She's a warehouse now, but she still keeps the cold out better than anything you'll build this month.",
+  ],
+  'not-tired': [
+    "The sun's still up, settler. Beds are for the dark — Mars runs a strict household.",
+    "Not yet. Sleep is a night instrument. Plenty of sol left to spend first.",
+    "I could dim the windows, but the planet would still know. Wait for dusk.",
   ],
 };
 
