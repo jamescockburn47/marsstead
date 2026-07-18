@@ -35,7 +35,12 @@ import { TerrainLayer } from './terrain.js';
 import { RockLayer } from './rocklayer.js';
 import { collidersNear } from './rocks.js';
 import { SkyDome } from './sky.js';
-import { DustLayer, Footprints } from './dustlayer.js';
+import { DustLayer } from './dustlayer.js';
+import {
+  createTrail, appendTrack, serializeTrail, deserializeTrail,
+} from './tracks.js';
+import { TrackLayer } from './tracklayer.js';
+import { WakeLayer } from './wakelayer.js';
 import { Colonist } from './colonist.js';
 import { createBuggy, stepBuggy } from './buggy.js';
 import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
@@ -129,8 +134,11 @@ class Game {
     this.rocks = new RockLayer(this.scene);
     this.sky = new SkyDome(this.scene);
     this.dust = new DustLayer(this.scene, meshGroundHeight);
-    this.footprints = new Footprints(this.scene, 240);
-    this.prevStridePhase = 0; this.footSide = 1; this.wasAirborne = false;
+    // the permanent trail: the store persists (rides the save); the layer
+    // instances the marks near the lens; the wake is dust-as-a-field
+    this.trail = createTrail();
+    this.trackLayer = new TrackLayer(this.scene);
+    this.wake = new WakeLayer(this.scene);
     this.colonist = new Colonist(this.scene);
     this.hud = new Hud(IS_PLACEHOLDER);
 
@@ -319,6 +327,7 @@ class Game {
     this.prevHopper = hopperCount(this.rig);
     this.sleptOnce = s.sleptOnce;
     this.missionStart = s.missionStart ?? this.simMillis;
+    this.trail = deserializeTrail(s.trail); // the old marks still stand
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -345,6 +354,7 @@ class Game {
       prospected: this.prospected,
       fab: this.fab,
       machines: this.machines,
+      trail: serializeTrail(this.trail),
     })).catch(() => {});
   }
 
@@ -1067,20 +1077,12 @@ class Game {
     this.colonist.pose(dt, speed, this.airborne, this.heading,
       loping ? STRIDE_HZ_LOPE : STRIDE_HZ_WALK);
 
-    // ---- footfalls: prints in the sand + little poofs of dust.
-    // Walking: each half stride-cycle plants a boot. Bounding/jumping:
-    // the LANDING is the footfall (both boots, bigger poof).
-    const stridePhase = this.colonist.phase % Math.PI;
-    const landedNow = this.wasAirborne && !this.airborne;
-    if (landedNow || (!this.airborne && speed > 0.5 && stridePhase < this.prevStridePhase)) {
-      this.footSide = -this.footSide;
-      this.footprints.stamp(this.pos.x, this.pos.z, this.heading, this.footSide, meshGroundHeight);
-      if (landedNow) this.footprints.stamp(this.pos.x, this.pos.z, this.heading, -this.footSide, meshGroundHeight);
-      // (footfall dust poofs retired: particle spray read as noise — the
-      // fractal registers carry the dust now, per the no-particles verdict)
+    // ---- the trail: bootprints land as ground is covered (the pure store
+    // enforces the stride spacing and alternates the feet) — and they
+    // PERSIST: the way home is always marked
+    if (!this.airborne && speed > 0.5) {
+      appendTrack(this.trail, this.pos.x, this.pos.z, this.heading, 'boot');
     }
-    this.prevStridePhase = stridePhase;
-    this.wasAirborne = this.airborne;
 
     // ---- camera: soft third-person orbit
     const co = new THREE.Vector3(
@@ -1344,6 +1346,11 @@ class Game {
     }
     this.buggyFlags = flags;
 
+    // wheel ruts: paired marks land behind the axles as ground is covered
+    if (Math.abs(this.buggy.u) > 0.5) {
+      appendTrack(this.trail, this.buggy.x, this.buggy.z, this.buggy.heading, 'wheel');
+    }
+
     // ---- walls stop the buggy too: no vehicle fits an airlock, so every
     // sealing face is a wall to the chassis (centre-point, ground level)
     if (this.stead.parts.size && this.steadBaseY !== null
@@ -1557,6 +1564,8 @@ class Game {
     // ---- the world layers
     this.terrain.update(this.pos.x, this.pos.z);
     this.rocks.update(this.pos.x, this.pos.z);
+    this.trackLayer.update(this.pos.x, this.pos.z, this.trail, meshGroundHeight);
+    this.wake.update(dt, this.buggy, this.buggyFlags, L.sunIntensity);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
     // dust is sunlit matter: it fades with the light (never glows at night).
     // Motes retired to 0 — particle floaters read as noise; the fractal

@@ -72,6 +72,9 @@ export function snapshotSave(state) {
       type: m.type, x: m.x, z: m.z, heading: m.heading,
       queue: [...m.queue], t: m.t, out: { ...m.out },
     })),
+    // the trail (additive, version stays 1: an older save just wakes on
+    // unmarked ground) — already flat-encoded by tracks.serializeTrail
+    trail: Array.isArray(state.trail) ? state.trail : [],
     savedAt: Date.now(),
   };
 }
@@ -198,6 +201,8 @@ export function acceptSave(meta) {
     prospected,
     fab,
     machines,
+    // bounded pass-through: tracks.deserializeTrail launders the quads
+    trail: Array.isArray(meta.trail) ? meta.trail.slice(0, 48000) : [],
     savedAt: meta.savedAt || 0,
   };
 }
