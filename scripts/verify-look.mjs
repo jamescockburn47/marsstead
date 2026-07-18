@@ -44,6 +44,16 @@ function check(name, ok, detail = '') {
     owners.join(','));
 }
 
+// 3b. no reserved GLSL words declared as identifiers in any shader string —
+//     'patch' broke the whole sky dome silently once (Node can't compile
+//     GLSL, so the gate greps for the trap instead)
+{
+  const RESERVED = /\b(?:float|int|vec[234])\s+(patch|sample|filter|input|output|buffer)\b/;
+  const offenders = readdirSync(SRC).filter((f) => f.endsWith('.js')
+    && RESERVED.test(src(f)));
+  check('no reserved GLSL words as identifiers', offenders.length === 0, offenders.join(','));
+}
+
 // 4. the tier rig in main.js: ACES + adaptive exposure on fine, the legacy
 //    pipeline untouched on plain, the watchdog remembered as auto-plain
 {

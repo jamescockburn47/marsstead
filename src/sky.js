@@ -48,11 +48,15 @@ const FS = /* glsl */`
     if (uStars > 0.01 && d.y > -0.05) {
       float g = dot(d, uMWPole);
       float core = exp(-g * g * 90.0);
-      float glow = exp(-g * g * 14.0);
-      vec2 along = vec2(atan(d.x, d.z) * 2.2, d.y * 3.6);
+      float glow = exp(-g * g * 18.0);
+      // seam-free fractal coords: projected direction components, never
+      // atan — the azimuth wrap put a hard vertical seam in the sky
+      vec2 along = vec2(d.x * 2.6 + d.y * 1.7, d.z * 2.6 - d.y * 0.9);
       float mottle = 0.30 + 0.85 * fbm(along + 7.0);
       float rift = 1.0 - 0.75 * core * smoothstep(0.45, 0.75, fbm(along * 1.6 + 31.0));
-      sky += (vec3(0.95, 0.93, 1.0) * core * 0.5 + vec3(0.55, 0.62, 0.85) * glow * 0.22)
+      // levels: a band you can SEE STRUCTURE in, never a floodlight —
+      // the night ground stays lit by the stars, not by the galaxy alone
+      sky += (vec3(0.95, 0.93, 1.0) * core * 0.13 + vec3(0.55, 0.62, 0.85) * glow * 0.05)
         * mottle * rift * uStars;
     }
 
