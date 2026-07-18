@@ -22,6 +22,9 @@ import {
   SETTLE_S, WINDOW_S,
 } from './gfx.js';
 import { buildComposer, resizeComposer, disposeComposer } from './post.js';
+import {
+  phobosWorld, deimosWorld, earthElongation, marsEqToWorld,
+} from './marsheavens.js';
 import { tauAt, windAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
@@ -32,7 +35,7 @@ import { TerrainLayer } from './terrain.js';
 import { RockLayer } from './rocklayer.js';
 import { collidersNear } from './rocks.js';
 import { SkyDome } from './sky.js';
-import { DustLayer, PuffCloud, Footprints } from './dustlayer.js';
+import { DustLayer, Footprints } from './dustlayer.js';
 import { Colonist } from './colonist.js';
 import { createBuggy, stepBuggy } from './buggy.js';
 import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
@@ -116,12 +119,16 @@ class Game {
     this.scene.add(this.sun, this.sun.target);
     this.fill = new THREE.HemisphereLight(0xcf9a72, 0x4a2a1c, 0.5);
     this.scene.add(this.fill);
+    // Phobos-light: a faint, cool, FAST-moving second key after dark — a
+    // light source that visibly crosses the sky in hours (no shadow; the
+    // drama is in the moving highlights, not a second shadow rig)
+    this.phobosLight = new THREE.DirectionalLight(0x9fb4d8, 0);
+    this.scene.add(this.phobosLight, this.phobosLight.target);
 
     this.terrain = new TerrainLayer(this.scene);
     this.rocks = new RockLayer(this.scene);
     this.sky = new SkyDome(this.scene);
     this.dust = new DustLayer(this.scene, meshGroundHeight);
-    this.puffs = new PuffCloud(this.scene, 2400, 0.05);
     this.footprints = new Footprints(this.scene, 240);
     this.prevStridePhase = 0; this.footSide = 1; this.wasAirborne = false;
     this.colonist = new Colonist(this.scene);
@@ -1069,18 +1076,8 @@ class Game {
       this.footSide = -this.footSide;
       this.footprints.stamp(this.pos.x, this.pos.z, this.heading, this.footSide, meshGroundHeight);
       if (landedNow) this.footprints.stamp(this.pos.x, this.pos.z, this.heading, -this.footSide, meshGroundHeight);
-      const n = landedNow ? 10 : 4;
-      for (let i = 0; i < n; i++) {
-        const j = (this.puffSeed = ((this.puffSeed || 0) + 1) % 4096);
-        const a = (j * 2.399) % (Math.PI * 2); // golden-angle spread
-        this.puffs.spawn(
-          this.pos.x + Math.cos(a) * 0.15, this.pos.y + 0.06,
-          this.pos.z + Math.sin(a) * 0.15,
-          Math.cos(a) * (0.3 + (j % 7) * 0.06) + this.vel.x * 0.15,
-          0.35 + (j % 5) * 0.08,
-          Math.sin(a) * (0.3 + (j % 7) * 0.06) + this.vel.z * 0.15,
-        );
-      }
+      // (footfall dust poofs retired: particle spray read as noise — the
+      // fractal registers carry the dust now, per the no-particles verdict)
     }
     this.prevStridePhase = stridePhase;
     this.wasAirborne = this.airborne;
@@ -1246,7 +1243,7 @@ class Game {
     const pwg = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading);
     this.buggy.y = pwg.h;
     this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
-      pwg.h, pwg.pitch, pwg.roll, this.puffs);
+      pwg.h, pwg.pitch, pwg.roll);
     this.hud.setSpeed(null);
   }
 
@@ -1394,7 +1391,9 @@ class Game {
       }
     }
 
-    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll, this.puffs);
+    // no puffs handed over: the rover's spray particles are retired — the
+    // wake belongs to the fractal dust registers (no-particles verdict)
+    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll);
 
     // VESPER reads the same flags the physics raises
     if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {
@@ -1477,12 +1476,30 @@ class Game {
     this.scene.fog.color.setRGB(...L.fogColour);
     this.scene.fog.density = L.fogDensity;
 
-    // Phobos: period 7.65 h, rises WEST sets east — the backwards moon
-    const pAng = (this.simMillis / (7.65 * 3600000)) * Math.PI * 2;
-    const phobosDir = new THREE.Vector3(
-      -Math.cos(pAng), Math.sin(pAng) * 0.8, 0.35,
-    ).normalize();
-    this.sky.set(L, sunDir, phobosDir, this.cam.position);
+    // ---- the heavens: both moons and Earth from the pure frame — Phobos
+    // rises west BECAUSE its period beats the sidereal sol, nothing scripted
+    const pd = phobosWorld(this.simMillis, lat);
+    const dd = deimosWorld(this.simMillis, lat);
+    const phobosDir = new THREE.Vector3(...pd);
+    const eEl = earthElongation(this.simMillis);
+    const poleW = new THREE.Vector3(...marsEqToWorld([0, 1, 0], this.simMillis, lat));
+    const earthDir = sunDir.clone()
+      .applyAxisAngle(poleW, eEl.evening ? eEl.rad : -eEl.rad);
+    const day = dayFactor(sunEl);
+    this.sky.set(L, {
+      sunDir, phobosDir,
+      deimosDir: new THREE.Vector3(...dd),
+      earthDir,
+      earthI: Math.min(1, L.starVisibility * 1.5 + L.haloStrength * 0.25),
+      cirrus: (1 - L.storm) * (0.1 + 0.5 * L.haloStrength),
+      millis: this.simMillis, lat, t: this.t,
+      camPos: this.cam.position,
+    });
+
+    // Phobos-light: the moving second key, night only, storm-doused
+    this.phobosLight.position.copy(this.pos).addScaledVector(phobosDir, 90);
+    this.phobosLight.target.position.copy(this.pos);
+    this.phobosLight.intensity = Math.max(0, pd[1]) * 0.09 * (1 - day) * (1 - L.storm);
 
     // automatic lights: dusk switches them on, dawn off; L overrides
     const wantLit = this.lampMode === 'on' || (this.lampMode === 'auto' && sunEl < 4);
@@ -1539,10 +1556,11 @@ class Game {
     this.terrain.update(this.pos.x, this.pos.z);
     this.rocks.update(this.pos.x, this.pos.z);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
-    // dust is sunlit matter: it fades with the light (never glows at night)
-    this.dust.moteMat.opacity = 0.06 + 0.44 * L.sunIntensity;
+    // dust is sunlit matter: it fades with the light (never glows at night).
+    // Motes retired to 0 — particle floaters read as noise; the fractal
+    // dome/sheet registers carry suspension now (no-particles verdict)
+    this.dust.moteMat.opacity = 0;
     this.dust.devilMat.opacity = 0.05 + 0.3 * L.sunIntensity;
-    this.puffs.update(dt, meshGroundHeight);
     // the fractal atmosphere: dome + haze sheets read the same pure envelopes
     const wind = windAt(this.pos.x, this.pos.z, this.t);
     this.dust.setAtmos(L, sunDir, tau, wind.x, wind.z, this.t,

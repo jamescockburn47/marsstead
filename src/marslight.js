@@ -25,7 +25,8 @@ const SUN_HIGH = [1.0, 0.93, 0.82];       // small pale-gold disc
 const SUN_LOW = [0.95, 0.87, 0.85];       // whiter at dusk (real: dust reddens the SKY, not the disc)
 const HALO_BLUE = [0.45, 0.62, 0.85];     // the famous blue forward-scatter
 const AMB_DAY = [0.58, 0.34, 0.24];       // dust-fill: shadows are dusty rose
-const AMB_NIGHT = [0.11, 0.115, 0.16];    // starlight + a breath of Phobos
+const AMB_NIGHT = [0.11, 0.115, 0.16];    // the overcast-night floor (gameplay)
+const STARLIT_NIGHT = [0.14, 0.155, 0.22]; // a CLEAR night: the sky is the lantern
 const STORM_TINT = [0.42, 0.27, 0.14];    // the sepia of the brown noon
 
 // daylight factor: 0 deep night -> 1 full day, twilight ramp around -6..8 deg
@@ -63,17 +64,19 @@ export function lightState(sunEl, tau = TAU_CLEAR) {
 
   // ambient: the dust-fill, rosier by day, storm keeps it surprisingly
   // bright (light bounces everywhere) but utterly flat. The night floor is
-  // a GAMEPLAY number, not a physical one — the real Mars night is pitch,
-  // but the drawn one keeps the ground legible a few strides out.
-  const ambI = lerp(0.17, 0.55, day) * (1 - storm * 0.35);
-  const amb = mix3(AMB_NIGHT, mix3(AMB_DAY, STORM_TINT, storm), day);
+  // a GAMEPLAY number, not a physical one — and on a CLEAR night the stars
+  // themselves raise it: the vivid sky is what makes Mars walkable after
+  // dark (with the headlamps), and only a dust storm takes it away.
+  const stars = clamp01(1 - day * 1.4) * (1 - storm);
+  const ambI = lerp(lerp(0.17, 0.26, stars), 0.55, day) * (1 - storm * 0.35);
+  const amb = mix3(mix3(AMB_NIGHT, STARLIT_NIGHT, stars),
+    mix3(AMB_DAY, STORM_TINT, storm), day);
 
   // shadow softness 0 crisp -> 1 gone: rides tau and dies at night
   const soft = clamp01(0.15 + (tau - TAU_CLEAR) / (TAU_STORM - TAU_CLEAR)) * day;
 
   // fog: aerial perspective — colour follows the horizon, density follows tau
   const fogDensity = 0.0015 + tau * 0.0022 + storm * 0.02;
-  const stars = clamp01(1 - day * 1.4) * (1 - storm);
 
   return {
     skyZenith: zen, skyHorizon: hor,
