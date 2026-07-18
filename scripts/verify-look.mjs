@@ -52,7 +52,6 @@ function check(name, ok, detail = '') {
   check('plain is NoToneMapping', /NoToneMapping/.test(m));
   check('exposure eases toward the pure target', /exposureTarget\(day\)/.test(m));
   check('watchdog remembers auto-plain', /'marsstead-gfx', 'auto-plain'/.test(m));
-  check('fine soft shadows, plain legacy', /PCFSoftShadowMap/.test(m) && /PCFShadowMap/.test(m));
   check('plain renders direct', /this\.renderer\.render\(this\.scene, this\.cam\)/.test(m));
 }
 

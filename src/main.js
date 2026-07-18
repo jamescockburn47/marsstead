@@ -917,7 +917,6 @@ class Game {
     const fine = tier === 'fine';
     this.renderer.toneMapping = fine ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
     this.renderer.toneMappingExposure = fine ? EXPOSURE_BASE : 1;
-    this.renderer.shadowMap.type = fine ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.terrain.setDetail(fine);
     // tone-mapping and shadow-type changes only land after a recompile
     this.scene.traverse((o) => {

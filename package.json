@@ -18,6 +18,7 @@
     "verify:marslight": "node scripts/verify-marslight.mjs",
     "verify:dust": "node scripts/verify-dust.mjs",
     "verify:vesper": "node scripts/verify-vesper.mjs && node scripts/verify-buggy.mjs && node scripts/verify-inventory.mjs && node scripts/verify-build.mjs && node scripts/verify-pressure.mjs && node scripts/verify-salvage.mjs",
+    "shots": "node scripts/shots-mars.mjs",
     "build-marsdata": "node scripts/build-marsdata.mjs",
     "deploy": "node scripts/deploy.mjs"
   },
