@@ -54,6 +54,7 @@ export function snapshotSave(state) {
     exploration: state.exploration,   // ["cx,cz", ...] from explore.js
     everPressurised: !!state.everPressurised,
     saidFirsts: [...state.saidFirsts],
+    inLander: !!state.inLander, // saved in the cabin, wake in the cabin
     // the expedition (additive fields, version stays 1: an older save just
     // wakes with the rig parked by the lander and a cold fabricator)
     rig: {
@@ -185,6 +186,7 @@ export function acceptSave(meta) {
     exploration,
     everPressurised: !!meta.everPressurised,
     saidFirsts,
+    inLander: !!meta.inLander,
     rig,
     prospected,
     fab,

@@ -6,10 +6,11 @@
 //
 // Dev keys: WASD move, SHIFT lope, SPACE jump, mouse-drag orbit,
 // L headlamp, [ ] scrub time (the demo's best friend).
-// E interact · Q cycle part · F/G load/unload rover · R sleep (sheltered,
-// at night) · B build mode (E place, X remove, Q part, V wall/roof) ·
-// M the surveyor's map (fog clears where you walk) · H hitch/unhitch the
-// rig from the buggy · T work the lander's fabricator · X pack up the rig.
+// E interact (the lander's hatch is at the LADDER; E inside steps out) ·
+// Q cycle part · F/G load/unload rover · R sleep (sheltered, at night) ·
+// B build mode (E place, X remove, Q part, V wall/roof) · M the
+// surveyor's map (fog clears where you walk) · H hitch/unhitch the rig
+// from the buggy · T work the nearest bench · X pack up the rig.
 
 import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
@@ -128,6 +129,7 @@ class Game {
     this.roverStore = createStore(ROVER_CAPACITY);
     this.salvageSel = 0;      // Q cycles the target type
     this.unbolt = null;       // { id, t, need } while working a bolt
+    this.inLander = false;    // in the cabin: warm, pressurised, home
 
     // the walker's state — spawned at HOME (the Jezero delta)
     this.pos = new THREE.Vector3(0, 0, 0);
@@ -261,6 +263,7 @@ class Game {
     this.machines = s.machines;
     this.machineLayer.sync(this.machines, meshGroundHeight);
     this.prevHopper = hopperCount(this.rig);
+    if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
   // fire-and-forget: a failed save must never cost a frame, let alone a run
@@ -279,6 +282,7 @@ class Game {
       exploration: fogSerialize(this.exploration),
       everPressurised: this.everPressurised,
       saidFirsts: this.saidFirsts,
+      inLander: this.inLander,
       rig: this.rig,
       prospected: this.prospected,
       fab: this.fab,
@@ -337,6 +341,31 @@ class Game {
 
   distToLander() {
     return Math.hypot(this.pos.x - this.landerPos.x, this.pos.z - this.landerPos.z);
+  }
+  // the hatch is up the ladder, on the lander's +z face
+  distToLadder() {
+    return Math.hypot(this.pos.x - this.landerPos.x,
+      this.pos.z - (this.landerPos.z + 2.6));
+  }
+
+  enterLander() {
+    this.inLander = true;
+    this.unbolt = null;
+    this.vel.set(0, 0, 0);
+    this.colonist.group.visible = false;
+    this.colonist.setLamp(false);
+    this.pos.set(this.landerPos.x, 0, this.landerPos.z);
+    this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+    this.hud.setVeil(0.55); // the cabin: the planet, dimmed to a porthole
+    this.sayOnce('lander-in');
+  }
+
+  exitLander() {
+    this.inLander = false;
+    this.colonist.group.visible = true;
+    this.pos.set(this.landerPos.x, 0, this.landerPos.z + 2.9);
+    this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+    this.hud.setVeil(0);
   }
   distToRover() {
     return Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
@@ -471,9 +500,11 @@ class Game {
     return opts[((this.salvageSel % opts.length) + opts.length) % opts.length];
   }
 
-  // E is THE doing key: rover, then the rig's work, then the lander's bolts
+  // E is THE doing key: the cabin door, the rover, the rig, the bolts
   interact() {
+    if (this.inLander) { this.exitLander(); return; }
     if (this.driving) { this.toggleBuggy(); return; }
+    if (this.distToLadder() < 2.4) { this.enterLander(); return; }
     if (this.distToRover() < 3.2) { this.toggleBuggy(); return; }
     if (this.distToRig() < 4 && !this.rig.hitched) {
       if (this.rig.deployed && hopperCount(this.rig) > 0) { this.takeOre(); return; }
@@ -720,10 +751,11 @@ class Game {
     this.say('airlock-cycle');
   }
 
-  // R: hand the night to VESPER — only with shelter, only at real night
+  // R: hand the night to VESPER — only with shelter, only at real night.
+  // Every refusal says WHY: silence teaches nothing.
   trySleep() {
     if (this.sleepAnim || this.driving) return;
-    if (!canSleep(this.sunEl ?? 90)) return;
+    if (!canSleep(this.sunEl ?? 90)) { this.say('not-tired'); return; }
     if (!this.sheltered()) {
       // a sealed-but-small hab earns its own refusal
       this.say(this.insidePressurised ? 'hab-too-small' : 'no-shelter');
@@ -759,6 +791,8 @@ class Game {
 
     if (this.sleepAnim) {
       this.frameSleeping(dt);
+    } else if (this.inLander) {
+      this.frameInside(dt);
     } else if (this.driving) {
       this.frameDriving(dt);
     } else {
@@ -981,6 +1015,9 @@ class Game {
     } else if (this.anchoring) {
       const pct = Math.round((this.anchoring.t / this.anchoring.need) * 100);
       this.hud.setPrompt(`anchoring the rig… ${pct}%`);
+    } else if (this.distToLadder() < 2.4) {
+      this.hud.setPrompt('|*E| climb into the lander'
+        + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''));
     } else if (this.distToRover() < 3.2) {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
@@ -1002,7 +1039,8 @@ class Game {
         + ` (${unboltSeconds(id)}s) · |*Q| next part`
         + (remainingTotal(this.lander) ? '' : ' · stripped')
         + this.fabLabel()
-        + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''),
+        + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : '')
+        + ' · hatch at the ladder',
       );
     } else if (this.distToLander() < 6 && this.fabLabel()) {
       this.hud.setPrompt(this.fabLabel().replace(/^ · /, ''));
@@ -1027,6 +1065,27 @@ class Game {
     this.hud.setSpeed(null);
   }
 
+  // the cabin: the suit drinks the lander's stores while the camera holds
+  // a slow watch outside. E steps out; R takes the night when it's night.
+  frameInside(dt) {
+    this.air = Math.min(1, this.air + dt * 0.08);
+    this.warm = Math.min(1, this.warm + dt * 0.1);
+    this.camYaw += dt * 0.04; // the porthole drifts
+    const co = new THREE.Vector3(
+      Math.sin(this.camYaw) * -9 * Math.cos(0.3),
+      9 * Math.sin(0.3) + 3.4,
+      Math.cos(this.camYaw) * -9 * Math.cos(0.3),
+    ).add(this.pos);
+    co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.8);
+    this.cam.position.lerp(co, Math.min(1, 4 * dt));
+    this.cam.lookAt(this.pos.x, this.pos.y + 3.2, this.pos.z);
+    this.hud.setPrompt('LANDER — cabin · |*E| step out'
+      + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : '')
+      + this.fabLabel());
+    this.hud.setBags(`suit ${loadLabel(this.suit)}`);
+    this.hud.setSpeed(null);
+  }
+
   // the night, skipped: fade to black, jump the clock to the computed dawn
   // behind the veil, wake with full bottles. Inputs sit the night out.
   frameSleeping(dt) {
@@ -1036,7 +1095,7 @@ class Game {
       s.jumped = true;
       this.simMillis = s.wake;
       this.air = 1; this.warm = 1;
-      this.hud.setVeil(0);
+      this.hud.setVeil(this.inLander ? 0.55 : 0); // the cabin keeps its dim
       this.say('wake');
       this.persist(); // the morning is worth keeping
     }

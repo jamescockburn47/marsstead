@@ -41,6 +41,8 @@ const state = {
   check('stead survives', back.stead.length === 3 && back.stead[2][1] === 'airlock');
   check('fog survives', back.exploration.length === 3);
   check('flags survive', back.everPressurised === true && back.saidFirsts.includes('wake'));
+  const aboard = acceptSave(snapshotSave({ ...state, inLander: true }));
+  check('the cabin survives', aboard.inLander === true && back.inLander === false);
 }
 
 // 2. forward-refuse: a newer client's save is politely declined
