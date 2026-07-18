@@ -23,6 +23,9 @@ const CSS = `
     opacity: .6; display: block; margin-bottom: 4px; }
   #hud .badge { position: absolute; bottom: 12px; right: 14px; font-size: 9px;
     letter-spacing: 2px; opacity: .4; }
+  #hud .ear { position: absolute; bottom: 14px; left: 0; width: 100%;
+    text-align: center; font-size: 10px; letter-spacing: 4px; color: #e8c46a;
+    opacity: 0; transition: opacity .25s; }
   #hud .prompt { position: absolute; bottom: 86px; left: 0; width: 100%;
     text-align: center; font-size: 13px; letter-spacing: 1px; opacity: .95; }
   #hud .prompt b { color: #e8c46a; font-weight: normal; letter-spacing: 2px; }
@@ -64,6 +67,10 @@ export class Hud {
     el(this.vesper, 'span', 'who').textContent = 'VESPER';
     this.vesperLine = el(this.vesper, 'span');
     this.vesperUntil = 0;
+
+    // push-to-talk indicator: lit while the mic is keyed (V held)
+    this.ear = el(this.root, 'div', 'ear');
+    this.ear.textContent = '● LISTENING';
 
     if (placeholderBadge) {
       el(this.root, 'div', 'badge').textContent =
@@ -118,6 +125,8 @@ export class Hud {
   setVeil(opacity01) {
     this.veil.style.opacity = String(opacity01);
   }
+
+  setEar(on) { this.ear.style.opacity = on ? '0.9' : '0'; }
 
   say(line, now, holdSeconds = 7) {
     if (!line) return;

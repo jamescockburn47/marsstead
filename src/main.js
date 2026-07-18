@@ -52,6 +52,8 @@ import {
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
 import { vesperSay } from './vesper.js';
+import { moodForEvent, sanitizeState } from './vesperbrain.js';
+import { VesperVoice } from './vespervoice.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
 import {
   CELL, PART_TYPES, faceKey, parseFaceKey, faceCentre, createStead,
@@ -224,9 +226,20 @@ class Game {
     this.lampMode = 'auto'; this.lampLit = false; // auto: dusk switches them
     this.idleTimer = 0; this.saidFirsts = new Set();
 
+    // VESPER's voice and ears — the audio layer over the canned floor.
+    // Session-only history: live speech is the authored non-deterministic
+    // thing (invariant 4) and it does not ride the save.
+    this.vesperHistory = [];
+    this.voice = new VesperVoice({ onTranscript: (t) => this.talkToVesper(t) });
+
     this.keys = {};
-    addEventListener('keydown', (e) => { this.keys[e.code] = true; this.devKeys(e); });
-    addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+    addEventListener('keydown', (e) => {
+      this.keys[e.code] = true; this.voice.poke(); this.devKeys(e);
+    });
+    addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+      if (e.code === 'KeyV') { this.voice.stopListening(); this.hud?.setEar(false); }
+    });
     let dragging = false;
     addEventListener('mousedown', () => { dragging = true; });
     addEventListener('mouseup', () => { dragging = false; });
@@ -403,6 +416,10 @@ class Game {
     }
     if (e.code === 'KeyV' && this.buildMode) {
       this.buildSlot = this.buildSlot === 'wall' ? 'roof' : 'wall';
+    }
+    // V outside build mode: push-to-talk — hold to speak to VESPER
+    if (e.code === 'KeyV' && !this.buildMode && !e.repeat) {
+      if (this.voice.startListening()) this.hud.setEar(true);
     }
     if (e.code === 'BracketLeft') this.simMillis -= 3698968.5 * 0.5;  // -30 Mars min
     if (e.code === 'BracketRight') this.simMillis += 3698968.5 * 0.5; // +30
@@ -898,12 +915,70 @@ class Game {
   say(event) {
     const n = this.saidCounts[event] || 0;
     this.saidCounts[event] = n + 1;
-    this.hud.say(vesperSay(event, n), this.t);
+    const line = vesperSay(event, n);
+    if (!line) return;
+    this.hud.say(line, this.t);
+    this.voice.speak(line, moodForEvent(event, sanitizeState(this.brainState())));
   }
   sayOnce(event) {
     if (this.saidFirsts.has(event)) return;
     this.saidFirsts.add(event);
     this.say(event);
+  }
+
+  // the whitelisted live state the brain layer may see. vesperbrain.js
+  // clamps it again on both ends; STATE_FIELDS is the contract, this is
+  // merely its reader — never hand it anything you wouldn't broadcast.
+  brainState() {
+    const missionSol = Math.max(1,
+      Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
+    const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
+    return {
+      sol: missionSol,
+      clock: solClock(this.simMillis),
+      season: season(this.simMillis),
+      sunEl: this.sunEl ?? 0,
+      tempC: surfaceTempC(this.sunEl ?? 0, tau),
+      tau,
+      air: Math.round(this.air * 100),
+      warm: Math.round(this.warm * 100),
+      sheltered: this.sheltered(),
+      inside: !!(this.inLander || this.insidePressurised),
+      driving: !!this.driving,
+      lamp: !!this.lampLit,
+      steadParts: this.stead.parts.size,
+      oreSites: this.prospected.size,
+      lastLine: this.hud.vesperLine.textContent,
+    };
+  }
+
+  // the live brain: settler speech in, VESPER's reply out — async, off the
+  // render path, and every failure lands on the canned floor (radio-static)
+  talkToVesper(raw) {
+    this.hud?.setEar(false);
+    const text = (raw || '').trim();
+    if (!text) return;
+    this.vesperHistory.push({ who: 'you', text });
+    while (this.vesperHistory.length > 8) this.vesperHistory.shift();
+    const body = JSON.stringify({
+      state: sanitizeState(this.brainState()),
+      history: this.vesperHistory.slice(-6),
+      text,
+    });
+    fetch('/brain/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(20000),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
+      .then(({ line, mood }) => {
+        if (!line) throw new Error('empty reply');
+        this.vesperHistory.push({ who: 'vesper', text: line });
+        this.hud.say(line, this.t, Math.max(7, line.length / 12));
+        this.voice.speak(line, mood || 'calm');
+      })
+      .catch(() => this.say('radio-static'));
   }
 
   frame(now) {

@@ -47,12 +47,14 @@ patch-bumps, commits, pushes, ships to Vercel. Domain: marsstead.app → www.mar
 
 ## The EVO (home server) and VESPER
 
-VESPER rides the family's EVO X2 (AMD Ryzen AI MAX+ 395, 128 GB unified memory).
-Either share `llama-server-moorstead` (Gemma, `--parallel 32`) or give VESPER its
-own model from UMA headroom if contention shows. The relay follows Moorstead's
-`worldsvc` shape (rate-limited, per-pid queues, canned-fallback pass-through); the
-Admiralty Board (`:8099`) gets a Marsstead "brain" card like Moorstead's. The CSP
-already whitelists the family tunnel pattern. Reachable via `ssh evo-tailscale`.
+**VESPER is live** — see [docs/VESPER.md](docs/VESPER.md). Unlike the siblings'
+local-Gemma brains, VESPER speaks through the MiniMax cloud API (M3 chat +
+speech-2.8-hd TTS): `marsstead-brain.service` on the EVO (`:8012`, the relay in
+`server/vesper-relay.mjs`) holds the key (`~/marsstead/brain/brain.env`, never
+in git), Caddy `:8092` fronts it, the tunnel serves `marsstead.sovren.xyz`.
+Player voice input is the browser's own SpeechRecognition (MiniMax has no ASR).
+The Admiralty Board (`:8099`) still wants a Marsstead "brain" card like
+Moorstead's. Reachable via `ssh evo-tailscale`.
 
 ## Identity invariants (inherited, non-negotiable)
 

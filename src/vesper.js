@@ -21,6 +21,7 @@ export const EVENTS = [
   'prospect', 'hitch', 'jackknife', 'trailer-sway', 'deploy',
   'drill-first-ore', 'hopper-full', 'pack-up', 'fab-first-steel',
   'lander-in', 'not-tired', 'salvage-unlocked',
+  'radio-static',
 ];
 
 export const LINES = {
@@ -209,6 +210,12 @@ export const LINES = {
   'salvage-unlocked': [
     "Good sol. Shakedown's complete — new mission phase: CONSTRUCTION. The hull is inventory now; every bolt on her is yours to spend.",
     "You slept, the ship held, and mission rules say she's a warehouse from this morning. Unbolt gently — she flew well.",
+  ],
+  // the live brain's own failure line: relay down, the canned half answers
+  'radio-static': [
+    "I heard you, settler, but my long thoughts live on the relay and it isn't answering. You get the short-wave me for now.",
+    "Static on the uplink. The canned half of me is still here, and it says: carry on.",
+    "The sky ate that one. Say it again later — the numbers half of me never left.",
   ],
 };
 
