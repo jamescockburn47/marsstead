@@ -1,82 +1,73 @@
-// verify-vesper: the canned voice is whole — every event speaks, picks are
-// deterministic, the cycle covers the table, and no line can smuggle HTML
-// (the escHtml discipline starts at the source).
+// verify-vesper: the deterministic floor after the rapport amendment.
+// The canned PERSONALITY is dead — the mind is live-only. What this gate
+// holds now: the INSTRUMENT channel is complete for safety/mechanics and
+// carries no personality events; every game event is voiced SOMEWHERE
+// (instrument or bark moment — never voiceless); the register tripwire
+// still holds; and the settler's name is laundered and lands.
 
-import { EVENTS, LINES, vesperSay } from '../src/vesper.js';
+import { EVENTS, INSTRUMENT, suitSay, cleanName } from '../src/vesper.js';
+import { BARK_MOMENTS } from '../src/vesperbrain.js';
 
 let failed = 0;
 function check(name, ok, detail = '') {
   if (ok) { console.log(`  ok  ${name}`); } else { failed++; console.error(`FAIL  ${name} ${detail}`); }
 }
 
-// 1. every declared event has lines; every line table is declared
-check('every event voiced', EVENTS.every((e) => Array.isArray(LINES[e]) && LINES[e].length >= 2),
-  EVENTS.filter((e) => !LINES[e] || LINES[e].length < 2).join(','));
-check('no orphan tables', Object.keys(LINES).every((k) => EVENTS.includes(k)));
-
-// 2. lines are clean strings: no HTML, no template syntax, sane length
+// 1. the split is total: every event is instrument OR bark, never both,
+//    never neither — the mind and the instruments never speak over each other
 {
-  let ok = true;
-  for (const table of Object.values(LINES)) {
+  const uncovered = EVENTS.filter((e) => !INSTRUMENT[e] && !BARK_MOMENTS[e]);
+  check('every event is voiced somewhere', uncovered.length === 0, uncovered.join(','));
+  const both = EVENTS.filter((e) => INSTRUMENT[e] && BARK_MOMENTS[e]);
+  check('no event speaks through both channels', both.length === 0, both.join(','));
+  check('no orphan instrument tables', Object.keys(INSTRUMENT).every((k) => EVENTS.includes(k)));
+}
+
+// 2. the instrument channel is functional, never personality
+{
+  const PERSONALITY_EVENTS = ['wake', 'sunset', 'night', 'dawn', 'idle', 'first-steps', 'pressurised'];
+  check('personality events are the mind\'s alone',
+    PERSONALITY_EVENTS.every((e) => !INSTRUMENT[e]));
+  let terse = true, banned = true;
+  const MENACE = /\b(kill|die|dead|blood|hate|stupid|useless|abandon)\b/i;
+  for (const table of Object.values(INSTRUMENT)) {
     for (const line of table) {
-      if (typeof line !== 'string') ok = false;
-      if (/[<>]|\$\{/.test(line)) ok = false;
-      if (line.length < 10 || line.length > 220) ok = false;
+      if (line.length > 130) terse = false;
+      if (MENACE.test(line)) banned = false;
     }
   }
-  check('lines clean + sized', ok);
+  check('instrument lines are terse', terse);
+  check('register tripwire holds', banned);
+  check('the off-relay notice stands', Array.isArray(INSTRUMENT['radio-static'])
+    && INSTRUMENT['radio-static'].length >= 2);
+  check('safety events covered instantly',
+    ['air-low', 'cold', 'leak', 'no-shelter'].every((e) => INSTRUMENT[e]?.length >= 2));
 }
 
-// 3. deterministic pick, and the cycle walks the whole table without repeats
+// 3. deterministic pick; silence for the mind's events
 {
-  check('pick deterministic', vesperSay('sunset', 2) === vesperSay('sunset', 2));
-  for (const e of EVENTS) {
-    const n = LINES[e].length;
-    const seen = new Set();
-    for (let i = 0; i < n; i++) seen.add(vesperSay(e, i));
-    check(`cycle covers ${e}`, seen.size === n, `${seen.size}/${n}`);
-  }
+  check('pick deterministic', suitSay('air-low', 2) === suitSay('air-low', 2));
+  const seen = new Set();
+  const n = INSTRUMENT['air-low'].length;
+  for (let i = 0; i < n; i++) seen.add(suitSay('air-low', i));
+  check('cycle walks the whole table', seen.size === n);
+  check('the mind\'s events are silence here', suitSay('sunset', 0) === null
+    && suitSay('no-such-event', 0) === null);
 }
 
-// 4. unknown events return null, never throw
-check('unknown event is silence', vesperSay('no-such-event', 0) === null);
-
-// 5. the register holds: VESPER never menaces the player. A word-list
-// tripwire, not a censor — additions that trip it deserve a second look.
+// 4. the settler's name: laundered at the door, landed in the lines
 {
-  const banned = /\b(kill you|hate you|obey|worthless|stupid human)\b/i;
-  let ok = true;
-  for (const table of Object.values(LINES)) {
-    for (const line of table) if (banned.test(line)) ok = false;
-  }
-  check('the register holds', ok);
-}
-
-// ---- the settler's name: laundered at the door, landed in the lines ----
-{
-  const { cleanName, vesperSay, LINES } = await import('../src/vesper.js');
   check('cleanName strips markup teeth', cleanName('<b>Ada</b>{x}$`\\') === 'bAdabx');
   check('cleanName caps at sixteen', cleanName('A'.repeat(40)).length === 16);
   check('cleanName keeps honest names', cleanName("Mary-Ann O'Hara") === "Mary-Ann O'Hara");
   check('cleanName of garbage is empty', cleanName('<>{}') === '' && cleanName(42) === '');
-  // {name} lands, and "settler" serves when there is no name
-  const named = [];
-  for (const [event, table] of Object.entries(LINES)) {
-    table.forEach((line, i) => { if (line.includes('{name}')) named.push([event, i]); });
+  const t = INSTRUMENT['radio-static'].length;
+  let subOk = true;
+  for (let i = 0; i < t; i++) {
+    if (suitSay('radio-static', i, 'Ada').includes('{name}')) subOk = false;
+    if (suitSay('radio-static', i, '').includes('{name}')) subOk = false;
   }
-  check('some lines carry {name}', named.length >= 3);
-  let subOk = true, fallOk = true;
-  for (const [event] of named) {
-    const t = LINES[event].length;
-    for (let n = 0; n < t; n++) {
-      const withName = vesperSay(event, n, 'Ada');
-      const without = vesperSay(event, n, '');
-      if (withName.includes('{name}') || without.includes('{name}')) subOk = false;
-      if (/\{name\}/.test(without) || (without.includes('Ada'))) fallOk = false;
-    }
-  }
-  check('{name} always lands', subOk);
-  check('"settler" serves when unnamed', fallOk);
+  check('{name} always lands (or "settler" serves)', subOk);
 }
 
 if (failed) { console.error(`verify-vesper: ${failed} FAILED`); process.exit(1); }

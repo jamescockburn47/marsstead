@@ -51,7 +51,7 @@ import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
-import { vesperSay, cleanName } from './vesper.js';
+import { suitSay, cleanName } from './vesper.js';
 import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
@@ -346,6 +346,10 @@ class Game {
     this.missionStart = s.missionStart ?? this.simMillis;
     this.trail = deserializeTrail(s.trail); // the old marks still stand
     if (!this.settlerName) this.settlerName = s.settlerName || '';
+    // she remembers: the last exchanges and the count of talks ride the
+    // save, so rapport survives the browser closing
+    if (Array.isArray(s.vesperLog) && s.vesperLog.length) this.vesperHistory = s.vesperLog;
+    this.talks = s.talks || 0;
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -374,6 +378,8 @@ class Game {
       machines: this.machines,
       trail: serializeTrail(this.trail),
       settlerName: this.settlerName,
+      vesperLog: this.vesperHistory.slice(-6),
+      talks: this.talks || 0,
     })).catch(() => {});
   }
 
@@ -922,15 +928,48 @@ class Game {
   }
 
   say(event) {
-    // ambience yields to conversation (safety and feedback always land);
-    // dropped barks don't advance the cycle — no lines burned unheard
+    // ambience yields to conversation (safety and feedback always land)
     if (!shouldBark(event, this.t - this.lastTalk)) return;
     const n = this.saidCounts[event] || 0;
     this.saidCounts[event] = n + 1;
-    const line = vesperSay(event, n, this.settlerName);
-    if (!line) return;
-    this.hud.say(line, this.t);
-    this.voice.speak(line, moodForEvent(event, sanitizeState(this.brainState())));
+    // the instrument channel: instant, deterministic, relay-proof — the
+    // events a player must hear NOW (safety, refusals, mechanics)
+    const instr = suitSay(event, n, this.settlerName);
+    if (instr) {
+      this.hud.say(instr, this.t);
+      this.voice.speak(instr, moodForEvent(event, sanitizeState(this.brainState())));
+      return;
+    }
+    // everything else is the MIND's to notice: one live line, in her own
+    // words, with your shared history in reach. A missed bark is silence,
+    // never noise — the rapport rule: canned personality is dead.
+    this.barkLive(event);
+  }
+
+  barkLive(event) {
+    const gap = this.t - (this.lastBarkAt ?? -999);
+    const first = !this.saidFirsts.has(event); // firsts always deserve a line
+    if (!first && gap < 35) return;             // ambient chatter is rationed
+    this.lastBarkAt = this.t;
+    fetch('/brain/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        state: sanitizeState(this.brainState()),
+        history: this.vesperHistory.slice(-4),
+        bark: event,
+      }),
+      signal: AbortSignal.timeout(14000),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
+      .then(({ line, mood }) => {
+        if (!line) return;
+        this.vesperHistory.push({ who: 'vesper', text: line });
+        while (this.vesperHistory.length > 8) this.vesperHistory.shift();
+        this.hud.say(line, this.t, Math.max(7, line.length / 12));
+        this.voice.speak(line, mood || 'calm', { live: true });
+      })
+      .catch(() => { /* a missed notice harms nothing */ });
   }
   sayOnce(event) {
     if (this.saidFirsts.has(event)) return;
@@ -947,6 +986,8 @@ class Game {
     const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
     return {
       settlerName: this.settlerName,
+      talks: this.talks || 0,
+      milestones: [...this.saidFirsts].slice(-8).join(', '),
       sol: missionSol,
       clock: solClock(this.simMillis),
       season: season(this.simMillis),
@@ -972,6 +1013,7 @@ class Game {
     const text = (raw || '').trim();
     if (!text) return;
     this.lastTalk = this.t;
+    this.talks = (this.talks || 0) + 1;
     this.vesperHistory.push({ who: 'you', text });
     while (this.vesperHistory.length > 8) this.vesperHistory.shift();
     const body = JSON.stringify({

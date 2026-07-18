@@ -76,6 +76,9 @@ export function snapshotSave(state) {
     // unmarked ground) — already flat-encoded by tracks.serializeTrail
     trail: Array.isArray(state.trail) ? state.trail : [],
     settlerName: cleanName(state.settlerName || ''),
+    // her memory of you (additive): the last exchanges + how often you talk
+    vesperLog: Array.isArray(state.vesperLog) ? state.vesperLog.slice(-6) : [],
+    talks: Number.isFinite(state.talks) ? Math.max(0, Math.round(state.talks)) : 0,
     savedAt: Date.now(),
   };
 }
@@ -205,6 +208,13 @@ export function acceptSave(meta) {
     // bounded pass-through: tracks.deserializeTrail launders the quads
     trail: Array.isArray(meta.trail) ? meta.trail.slice(0, 48000) : [],
     settlerName: cleanName(meta.settlerName || ''),
+    // laundered memory: known speakers, plain short strings, six turns max
+    vesperLog: Array.isArray(meta.vesperLog)
+      ? meta.vesperLog.slice(-6)
+        .filter((h) => h && (h.who === 'you' || h.who === 'vesper') && typeof h.text === 'string')
+        .map((h) => ({ who: h.who, text: h.text.replace(/[<>{}`$\\]/g, '').slice(0, 240) }))
+      : [],
+    talks: Number.isFinite(meta.talks) ? Math.max(0, Math.min(100000, Math.round(meta.talks))) : 0,
     savedAt: meta.savedAt || 0,
   };
 }

@@ -11,7 +11,8 @@
 // Deploy keeps the repo layout (server/ beside src/) so this import holds
 // on both ends:
 import {
-  buildMessages, sanitizeState, clampLine, moodFor, ttsPlan,
+  buildMessages, buildBarkMessages, BARK_MOMENTS, sanitizeState, clampLine,
+  moodFor, moodForEvent, ttsPlan,
   CHAT_PARAMS, LIMITS, MOODS, VOICE_ID, cleanStr,
 } from '../src/vesperbrain.js';
 
@@ -106,11 +107,16 @@ async function handleChat(req, res, ip) {
   const state = sanitizeState(body.state);
   const history = Array.isArray(body.history) ? body.history.slice(-LIMITS.historyMax) : [];
   const text = cleanStr(body.text || '', LIMITS.playerMax);
-  if (!text) return send(res, 400, { ok: false, why: 'nothing heard' });
+  // barks: the settler said nothing — the client names a known moment and
+  // the mind offers one unprompted line (same contract, same phase)
+  const bark = typeof body.bark === 'string' && BARK_MOMENTS[body.bark] ? body.bark : '';
+  if (!text && !bark) return send(res, 400, { ok: false, why: 'nothing heard' });
 
   const payload = {
     ...CHAT_PARAMS,
-    messages: buildMessages(state, history, text),
+    messages: bark
+      ? buildBarkMessages(state, history, bark)
+      : buildMessages(state, history, text),
     stream: false,
   };
   if (THINKING === 'disabled') payload.thinking = { type: 'disabled' };
@@ -128,7 +134,7 @@ async function handleChat(req, res, ip) {
     const raw = data?.choices?.[0]?.message?.content;
     const line = clampLine(raw);
     if (!line) throw new Error('empty completion');
-    send(res, 200, { ok: true, line, mood: moodFor(state) });
+    send(res, 200, { ok: true, line, mood: bark ? moodForEvent(bark, state) : moodFor(state) });
   } catch (err) {
     console.error('chat:', err.message);
     send(res, 502, { ok: false });

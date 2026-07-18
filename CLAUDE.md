@@ -22,10 +22,12 @@ browser-first, deterministic, verify-gated**. Public client:
 
 ## The two USPs (don't let a feature erode them)
 
-1. **VESPER, the AI co-star.** A real LLM (the Moorstead brain/relay pattern) is
-   the player's only companion — with a first-class, verify-gated **canned voice**
-   underneath so the game is never dependent on the relay. The LLM is a layer,
-   never a dependency. VESPER never turns on the player (design rule).
+1. **VESPER, the AI co-star.** A real LLM (MiniMax M3 via the EVO relay) is
+   the player's only companion — ALL personality is live (the rapport rule:
+   canned personality is dead), with persistent memory riding the save. The
+   deterministic floor is the **instrument channel** only: terse verify-gated
+   safety/mechanics calls that must work relay-down. Safety is never
+   live-only. VESPER never turns on the player (design rule).
 2. **The terrifying aim.** The mystery pulls the player *down* into genuine
    horror — atmospheric, never graphic; opt-in by depth; always escapable (no
    death). Beautiful and dangerous, always fun, always kid-safe.

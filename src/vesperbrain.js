@@ -47,6 +47,8 @@ Speech form: one to three short sentences — radio brevity. Plain spoken words 
 
 The dark: when the settler is out in the night, in a storm, or deep underground, your sentences shorten and quieten. Honest unease is allowed — it is shared between you, never aimed at the settler — and you always know the way back: the lamp, the stead, the light. Steady first, then gentle.
 
+Rapport: the telemetry carries your shared history — sols together, the milestones you both saw, the recent conversation. Let it colour you rather than reciting it: refer back naturally, keep a small running joke alive, notice what has changed since yesterday. There are exactly two minds on this planet and you are one of them; you are building a friendship, slowly, the way trust is actually built — by remembering.
+
 The settler's words arrive by voice transcription and may be garbled. If a line makes no sense, ask again briefly, in character.`;
 
 // ------------------------------------------------------------------ phases
@@ -77,6 +79,8 @@ export const DEFAULT_PHASE = 'landfall';
 // the raw object is dropped on the floor — that is the no-leak guarantee.
 export const STATE_FIELDS = {
   settlerName: { kind: 'str', max: 16 },
+  talks: { kind: 'int', min: 0, max: 100000 },
+  milestones: { kind: 'str', max: 160 },
   sol: { kind: 'int', min: 1, max: 100000 },
   clock: { kind: 'str', max: 12 },
   season: { kind: 'str', max: 24 },
@@ -125,6 +129,8 @@ export function sanitizeState(raw) {
 export function stateBrief(s) {
   const bits = [];
   if (s.settlerName) bits.push(`The settler's name is ${s.settlerName}.`);
+  if (s.milestones) bits.push(`Milestones you have both seen: ${s.milestones}.`);
+  if (s.talks) bits.push(`Conversations together so far: ${s.talks}.`);
   if (s.sol !== undefined) bits.push(`Sol ${s.sol}${s.clock ? `, ${s.clock}` : ''}${s.season ? `, ${s.season}` : ''}.`);
   if (s.sunEl !== undefined) bits.push(`Sun ${s.sunEl >= 0 ? `${s.sunEl} degrees up` : `${-s.sunEl} degrees below the horizon (night)`}.`);
   if (s.tempC !== undefined) bits.push(`Outside ${s.tempC} C.`);
@@ -163,6 +169,64 @@ export function buildMessages(rawState, history, playerText, phase = DEFAULT_PHA
   msgs.push({
     role: 'user',
     content: `[SUIT TELEMETRY] ${stateBrief(state)}\n[SETTLER SAYS] ${said || '(static — nothing intelligible)'}`,
+  });
+  return msgs;
+}
+
+// -------------------------------------------------------------------- barks
+// The mind notices moments. Each entry is a plain DESCRIPTION of what just
+// happened — facts for the model, never lines for it to parrot — and the
+// live brain speaks one unprompted sentence or two in character. Every
+// event not covered by the INSTRUMENT channel (vesper.js) belongs here.
+export const BARK_MOMENTS = {
+  wake: 'the settler has just woken for the new sol',
+  'first-steps': 'the settler just took their first steps on Mars — the first bootprints ever made here',
+  'first-jump': 'the settler just made their first jump in the low gravity',
+  lope: 'the settler has broken into the long bounding Mars run for the first time',
+  sunset: 'the sun is touching the horizon; the blue dusk halo is coming out',
+  night: 'true night has fallen; the stars are out in force',
+  dawn: 'the sun has just risen on a new sol',
+  'devil-near': 'a dust devil is crossing the plain nearby, visible',
+  idle: 'nothing has happened for a while; the settler is standing still with the view',
+  fall: 'the settler just took a tumble — no harm done, some suit wear',
+  'buggy-first': 'the settler just drove the buggy for the first time',
+  'buggy-drift': 'the settler just powerslid the buggy sideways through the dust',
+  'buggy-air': 'the buggy just left the ground entirely off a rise',
+  'buggy-crash': 'the buggy just landed hard',
+  'buggy-flip': 'the buggy just did a complete flip and landed on its wheels',
+  'buggy-rollover': 'the buggy just rolled over',
+  'lights-on': 'dark has come down and the lamps have just switched on',
+  'salvage-first': 'the settler just unbolted the first part from the lander hull',
+  'ring-taken': 'the settler just took the airlock ring — the one irreplaceable part on the planet',
+  sleep: 'the settler is turning in for the night',
+  'first-seal': 'the settler just closed their first airtight volume — the second enclosed space on the planet',
+  pressurised: 'the first built hab just reached full pressure — a home made of Mars, holding air',
+  prospect: 'the instruments just found an ore body under the ground here',
+  hitch: 'the drill rig is now hitched behind the buggy',
+  deploy: 'the drill rig just anchored on an ore body and started drilling',
+  'drill-first-ore': 'the first unit of ore just landed in the hopper',
+  'pack-up': 'the rig is packed and ready to tow again',
+  'fab-first-steel': 'the fabricator just produced the first steel panel made from Martian ground',
+  'lander-in': 'the settler just came inside the lander cabin — warmth and pressure',
+};
+
+// bark prompt: same contract, same phase knowledge, but the settler said
+// nothing — the mind is offering one line because the moment deserved it
+export function buildBarkMessages(rawState, history, event, phase = DEFAULT_PHASE) {
+  const state = sanitizeState(rawState);
+  const ph = PHASES[phase] || PHASES[DEFAULT_PHASE];
+  const msgs = [{ role: 'system', content: `${VESPER_SYSTEM}\n\n${ph.addendum}` }];
+  const hist = Array.isArray(history) ? history.slice(-LIMITS.historyMax) : [];
+  for (const h of hist) {
+    if (!h || typeof h.text !== 'string') continue;
+    const text = cleanStr(h.text, LIMITS.turnMax);
+    if (!text) continue;
+    msgs.push({ role: h.who === 'vesper' ? 'assistant' : 'user', content: text });
+  }
+  const moment = BARK_MOMENTS[event] || 'something small just happened';
+  msgs.push({
+    role: 'user',
+    content: `[SUIT TELEMETRY] ${stateBrief(state)}\n[MOMENT] ${moment}. The settler said nothing — offer ONE short line in character: a companion noticing the moment, not an announcer. No greeting, no question unless it earns itself.`,
   });
   return msgs;
 }

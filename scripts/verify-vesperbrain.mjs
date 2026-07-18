@@ -123,8 +123,18 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   // anything the live brain is told — she cannot leak what she was never
   // given, and this line asserts she is never given it
   const PLOT_WORDS = /weaver|murderbot|replicat|betray|possess|infect|panspermia|vault|the deep signal|take over|reprogram/i;
-  const everything = [VESPER_SYSTEM, ...Object.values(PHASES).map((p) => p.addendum)].join(' ');
-  check('no plot word reaches any prompt', !PLOT_WORDS.test(everything));
+  const { BARK_MOMENTS, buildBarkMessages } = await import('../src/vesperbrain.js');
+  const everything = [VESPER_SYSTEM, ...Object.values(PHASES).map((p) => p.addendum),
+    ...Object.values(BARK_MOMENTS)].join(' ');
+  check('no plot word reaches any prompt (barks included)', !PLOT_WORDS.test(everything));
+  // barks: same contract, the moment described, one-line instruction
+  const bark = buildBarkMessages({ settlerName: 'Ada', sunEl: 1 }, [], 'sunset');
+  check('bark carries the system contract', bark[0].content.startsWith(VESPER_SYSTEM));
+  check('bark names the moment', bark[bark.length - 1].content.includes('blue dusk halo'));
+  check('bark asks for one line, not an announcer',
+    /ONE short line/.test(bark[bark.length - 1].content));
+  check('rapport fields whitelisted', (await import('../src/vesperbrain.js'))
+    .sanitizeState({ talks: 12.7, milestones: 'x'.repeat(400) }).talks === 13);
   // each phase admits ignorance of the underground honestly
   check('every phase owns its ignorance of the deep',
     Object.values(PHASES).every((p) => /nothing of what lies deep underground/i.test(p.addendum)));

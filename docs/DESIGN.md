@@ -42,15 +42,19 @@ built yesterday, warns you the storm is coming because it can read the same
 forecast the sim runs, gets quietly delighted when a hab finally holds pressure,
 and — this is the point — is **afraid in the deep with you**.
 
-- **Real brain, canned heart.** The live LLM runs on the family's EVO server
-  (`llama-server`, the worldsvc relay shape); the prompt carries the *live* world
-  state — sol-time, temperature, suit air, power margin, where you are, what you
-  just did, the last log lines — so VESPER speaks to the Mars you are actually
-  standing in. But the **canned-line fallback is first-class** (pure,
-  verify-gated, per-mood): if the relay is down or you're a guest, VESPER still
-  speaks, still has a personality, still fills the silence. **The LLM is a layer,
-  never a dependency** — the Moorstead/Saltstead weather-live rule, applied to a
-  character.
+- **Real brain, instrument floor.** *(Amended — the rapport rule: canned
+  personality is dead.)* The live LLM runs on the family's EVO relay; the
+  prompt carries the *live* world state — sol-time, temperature, suit air,
+  where you are, what you just did — **and your shared history**: the
+  settler's name, the milestones you both saw, the last exchanges (they ride
+  the save), so VESPER speaks to the Mars you are actually standing in and
+  remembers the life you've had on it. Every word of personality — event
+  barks included — is hers, live: the player builds rapport with one mind,
+  not a lookup table. What stays deterministic is the **instrument channel**
+  (pure, verify-gated): terse safety and mechanics calls — air, cold, leaks,
+  refusals — that must land instantly and relay-down, plus the one honest
+  off-relay notice. Personality is never canned again; safety is never
+  live-only. A missed bark is silence, never noise.
 - **The backdrop against solitude.** A whole empty planet is the biggest quiet
   room any `stead` has built. VESPER is the furniture that makes it bearable and
   then makes it *company*: ambient remarks on a good sunset, a hum of chatter on
