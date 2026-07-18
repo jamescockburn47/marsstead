@@ -43,6 +43,11 @@ const state = {
   check('flags survive', back.everPressurised === true && back.saidFirsts.includes('wake'));
   const aboard = acceptSave(snapshotSave({ ...state, inLander: true }));
   check('the cabin survives', aboard.inLander === true && back.inLander === false);
+  // shakedown: the flag rides, and legacy saves that plainly built or
+  // stripped are graced past the gate
+  const fresh = acceptSave(snapshotSave({ ...state, stead: [], lander: { ...state.lander, 'window-pane': 2, 'airlock-ring': 1, 'alloy-panel': 10 }, sleptOnce: false, missionStart: 5 }));
+  check('unslept fresh save stays locked', fresh.sleptOnce === false && fresh.missionStart === 5);
+  check('legacy builder graced past shakedown', back.sleptOnce === true);
 }
 
 // 2. forward-refuse: a newer client's save is politely declined

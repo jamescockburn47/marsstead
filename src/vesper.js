@@ -20,7 +20,7 @@ export const EVENTS = [
   'hab-too-small',
   'prospect', 'hitch', 'jackknife', 'trailer-sway', 'deploy',
   'drill-first-ore', 'hopper-full', 'pack-up', 'fab-first-steel',
-  'lander-in', 'not-tired',
+  'lander-in', 'not-tired', 'salvage-unlocked',
 ];
 
 export const LINES = {
@@ -205,6 +205,10 @@ export const LINES = {
     "The sun's still up, settler. Beds are for the dark — Mars runs a strict household.",
     "Not yet. Sleep is a night instrument. Plenty of sol left to spend first.",
     "I could dim the windows, but the planet would still know. Wait for dusk.",
+  ],
+  'salvage-unlocked': [
+    "Good sol. Shakedown's complete — new mission phase: CONSTRUCTION. The hull is inventory now; every bolt on her is yours to spend.",
+    "You slept, the ship held, and mission rules say she's a warehouse from this morning. Unbolt gently — she flew well.",
   ],
 };
 

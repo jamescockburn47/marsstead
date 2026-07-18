@@ -68,6 +68,7 @@ import {
   machineTake, machineOutCount,
 } from './machines.js';
 import { MachineLayer } from './machinelayer.js';
+import { LanderConsole } from './console.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
@@ -130,6 +131,8 @@ class Game {
     this.salvageSel = 0;      // Q cycles the target type
     this.unbolt = null;       // { id, t, need } while working a bolt
     this.inLander = false;    // in the cabin: warm, pressurised, home
+    this.console = new LanderConsole();
+    this.sleptOnce = false;   // shakedown ends (and salvage unlocks) at first rest
 
     // the walker's state — spawned at HOME (the Jezero delta)
     this.pos = new THREE.Vector3(0, 0, 0);
@@ -144,6 +147,7 @@ class Game {
     // walk into the blue hour (the demo IS the sunset)
     this.simMillis = Date.now();
     this.calibrateToLocalHour(16.4);
+    this.missionStart = this.simMillis; // sol 1 of THIS landing (save carries it)
 
     // sleep: null, or { t, wake, jumped } while the night is skipped
     this.sleepAnim = null;
@@ -263,6 +267,8 @@ class Game {
     this.machines = s.machines;
     this.machineLayer.sync(this.machines, meshGroundHeight);
     this.prevHopper = hopperCount(this.rig);
+    this.sleptOnce = s.sleptOnce;
+    this.missionStart = s.missionStart ?? this.simMillis;
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -283,6 +289,8 @@ class Game {
       everPressurised: this.everPressurised,
       saidFirsts: this.saidFirsts,
       inLander: this.inLander,
+      sleptOnce: this.sleptOnce,
+      missionStart: this.missionStart,
       rig: this.rig,
       prospected: this.prospected,
       fab: this.fab,
@@ -315,6 +323,7 @@ class Game {
     if (e.code === 'KeyF') this.loadRover();
     if (e.code === 'KeyG') this.unloadRover();
     if (e.code === 'KeyC' && this.driving) this.fpv = !this.fpv;
+    if (e.code === 'KeyC' && this.inLander) this.console.toggleExpand();
     if (e.code === 'KeyB' && !this.driving && !this.sleepAnim) {
       this.buildMode = !this.buildMode;
       if (!this.buildMode) {
@@ -357,6 +366,7 @@ class Game {
     this.pos.set(this.landerPos.x, 0, this.landerPos.z);
     this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
     this.hud.setVeil(0.55); // the cabin: the planet, dimmed to a porthole
+    this.console.setVisible(true);
     this.sayOnce('lander-in');
   }
 
@@ -366,6 +376,51 @@ class Game {
     this.pos.set(this.landerPos.x, 0, this.landerPos.z + 2.9);
     this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
     this.hud.setVeil(0);
+    this.console.setVisible(false);
+  }
+
+  // the console's read of the world, rebuilt each cabin frame
+  consoleModel() {
+    const missionSol = Math.max(1,
+      Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
+    const phase = !this.sleptOnce ? 'shakedown — hull salvage locked'
+      : this.everPressurised ? 'the full ledger' : 'construction';
+    const tau = tauAt(mtc(this.simMillis));
+    const temp = surfaceTempC(this.sunEl ?? 0, tau);
+    const bedworthyBuilt = this.analysis.volumes
+      .some((v) => v.cells.length >= 6 && canPressurise(v, true));
+    return {
+      sol: `${missionSol}`,
+      clock: solClock(this.simMillis),
+      season: season(this.simMillis),
+      phase,
+      objectives: [
+        ['rest a night aboard', this.sleptOnce],
+        ['prospect an ore body', this.prospected.size > 0],
+        ['seal a volume', this.saidFirsts.has('first-seal')],
+        ['pressurise the first hab', this.everPressurised],
+        ['cook steel from Mars', this.saidFirsts.has('fab-first-steel')],
+        ['raise a hab that beats the lander', bedworthyBuilt],
+      ],
+      air: `${Math.round(this.air * 100)}`,
+      warm: `${Math.round(this.warm * 100)}`,
+      temp: `${Math.round(temp)}°C`,
+      sun: `${(this.sunEl ?? 0).toFixed(1)}° ${canSleep(this.sunEl ?? 90) ? '(night)' : '(up)'}`,
+      dust: tau > 3 ? 'STORM' : tau > 1.2 ? 'thick' : 'clear',
+      shelter: this.sheltered() ? 'within reach' : 'none in reach',
+      suit: loadLabel(this.suit),
+      rover: loadLabel(this.roverStore),
+      hull: `${remainingTotal(this.lander)} parts${this.sleptOnce ? '' : ' (locked)'}`,
+      fab: `${fabOutCount(this.fab)} ready · ${this.fab.queue.length} cooking`,
+      machines: this.machines.length
+        ? this.machines.map((m) => `${m.type}${m.queue.length ? '*' : ''}`).join(', ')
+        : 'none built',
+      rig: this.rig.deployed
+        ? `drilling — hopper ${hopperCount(this.rig)}/${HOPPER_CAP}`
+        : this.rig.hitched ? 'in tow' : 'parked',
+      ore: `${this.prospected.size} site${this.prospected.size === 1 ? '' : 's'}`,
+      vesper: this.hud.vesperLine.textContent,
+    };
   }
   distToRover() {
     return Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
@@ -495,6 +550,7 @@ class Game {
     }
   }
   salvageTarget() {
+    if (!this.sleptOnce) return null; // shakedown: the hull isn't inventory yet
     const opts = available(this.lander);
     if (!opts.length) return null;
     return opts[((this.salvageSel % opts.length) + opts.length) % opts.length];
@@ -1042,6 +1098,8 @@ class Game {
         + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : '')
         + ' · hatch at the ladder',
       );
+    } else if (this.distToLander() < 6 && !this.sleptOnce) {
+      this.hud.setPrompt('hull salvage — locked until you’ve rested a night · hatch at the ladder');
     } else if (this.distToLander() < 6 && this.fabLabel()) {
       this.hud.setPrompt(this.fabLabel().replace(/^ · /, ''));
     } else if (canSleep(this.sunEl ?? 90) && this.sheltered()) {
@@ -1079,11 +1137,12 @@ class Game {
     co.y = Math.max(co.y, meshGroundHeight(co.x, co.z) + 0.8);
     this.cam.position.lerp(co, Math.min(1, 4 * dt));
     this.cam.lookAt(this.pos.x, this.pos.y + 3.2, this.pos.z);
-    this.hud.setPrompt('LANDER — cabin · |*E| step out'
+    this.hud.setPrompt('LANDER — cabin · |*E| step out · |*C| console'
       + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : '')
       + this.fabLabel());
     this.hud.setBags(`suit ${loadLabel(this.suit)}`);
     this.hud.setSpeed(null);
+    this.console.update(this.consoleModel());
   }
 
   // the night, skipped: fade to black, jump the clock to the computed dawn
@@ -1096,7 +1155,12 @@ class Game {
       this.simMillis = s.wake;
       this.air = 1; this.warm = 1;
       this.hud.setVeil(this.inLander ? 0.55 : 0); // the cabin keeps its dim
-      this.say('wake');
+      if (!this.sleptOnce) {
+        this.sleptOnce = true; // shakedown over: the hull becomes inventory
+        this.say('salvage-unlocked');
+      } else {
+        this.say('wake');
+      }
       this.persist(); // the morning is worth keeping
     }
     if (s.t >= 3.2) this.sleepAnim = null;

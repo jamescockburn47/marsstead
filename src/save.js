@@ -55,6 +55,8 @@ export function snapshotSave(state) {
     everPressurised: !!state.everPressurised,
     saidFirsts: [...state.saidFirsts],
     inLander: !!state.inLander, // saved in the cabin, wake in the cabin
+    sleptOnce: !!state.sleptOnce,
+    missionStart: state.missionStart,
     // the expedition (additive fields, version stays 1: an older save just
     // wakes with the rig parked by the lander and a cold fabricator)
     rig: {
@@ -187,6 +189,11 @@ export function acceptSave(meta) {
     everPressurised: !!meta.everPressurised,
     saidFirsts,
     inLander: !!meta.inLander,
+    // legacy grace: a save that already stripped bolts or raised walls has
+    // plainly passed the shakedown, whatever its fields say
+    sleptOnce: !!meta.sleptOnce || stead.length > 0
+      || LANDER_STOCK.some(({ id, count }) => lander[id] < count),
+    missionStart: Number.isFinite(meta.missionStart) ? meta.missionStart : null,
     rig,
     prospected,
     fab,
