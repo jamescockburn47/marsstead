@@ -17,12 +17,29 @@ export function windAt(x, z, t) {
 }
 
 // ---- suspension ------------------------------------------------------------
-// Ambient dust load tau: a clear-sol base with a gentle afternoon rise
-// (convection lofts dust as the ground warms). Phase 1 replaces the base
-// with the Montabone replay; the shape survives.
-export function tauAt(mtcHours, base = 0.4) {
-  const afternoon = Math.exp(-Math.pow((mtcHours - 15) / 4.5, 2)) * 0.25;
+// Ambient dust load tau: a multi-SOL weather cycle times a gentle
+// afternoon rise (convection lofts dust as the ground warms). The cycle is
+// deterministic fbm over the sol count — clear spells and dusty spells,
+// each a few sols long, and THE SKIES ALWAYS CLEAR AGAIN: dust is weather,
+// never a permanent veil (the design rule: a clear night is a spectacle,
+// and only dust takes it away). Phase 1 replaces the cycle with the
+// Montabone replay; the shape survives.
+export function solBase(sol) {
+  const w = fbm2(sol * 0.13 + 3.7, sol * 0.031 + 11.1);
+  return 0.12 + Math.pow(Math.max(0, Math.min(1, (w - 0.25) * 2.2)), 1.5) * 0.75;
+}
+
+export function tauAt(mtcHours, sol = 0) {
+  const base = solBase(sol);
+  const afternoon = Math.exp(-Math.pow((mtcHours - 15) / 4.5, 2)) * (0.06 + 0.3 * base);
   return base + afternoon;
+}
+
+// thin water-ice cirrus: its own slow cycle, ZERO on most sols — an
+// occasional milky evening, anti-correlated with nothing but its own luck
+export function cirrusAt(sol) {
+  const c = fbm2(sol * 0.21 + 71.3, sol * 0.045 + 5.9);
+  return Math.max(0, Math.min(1, (c - 0.52) * 2.2));
 }
 
 // ---- the haze envelope -----------------------------------------------------
@@ -35,7 +52,9 @@ export function hazeDensity(elevRad, tau) {
   const horiz = 1 - Math.max(0, Math.min(1, Math.sin(Math.max(0, elevRad))));
   const low = Math.pow(horiz, 2.4);                 // hugging the ground
   const load = Math.max(0, Math.min(1.5, tau)) / 1.5;
-  return Math.min(0.9, (0.12 + 0.75 * low) * load);
+  // tempered: the veil must never smother the sky it serves (a clear sol
+  // reads crisp to the horizon; even a dusty one leaves the zenith alone)
+  return Math.min(0.7, (0.07 + 0.58 * low) * load);
 }
 
 // ---- swirl: the vortex wake ------------------------------------------------

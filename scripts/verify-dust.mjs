@@ -3,7 +3,7 @@
 // breathes within limits. All deterministic.
 
 import {
-  windAt, tauAt, swirl, devilState, devilSpin, hazeDensity,
+  windAt, tauAt, solBase, cirrusAt, swirl, devilState, devilSpin, hazeDensity,
   DEVIL_COUNT, DEVIL_LIFE, DEVIL_RANGE,
 } from '../src/dust.js';
 
@@ -25,15 +25,39 @@ function check(name, ok, detail = '') {
   check('wind bounded + deterministic', ok, `max=${worst.toFixed(2)}`);
 }
 
-// 2. tau: clear-sol envelope, afternoon rise, bounded
+// 2. tau is WEATHER: a multi-sol cycle with an afternoon rise — and the
+//    skies CLEAR, regularly and for spells, never a permanent veil
 {
-  let ok = true;
-  for (let h = 0; h < 24; h += 0.25) {
-    const t = tauAt(h);
-    if (!(t >= 0.35 && t <= 0.75)) ok = false;
+  let ok = true, minB = 9, maxB = 0, clear = 0, dusty = 0;
+  for (let sol = 0; sol < 300; sol++) {
+    const b = solBase(sol);
+    if (!(b >= 0.1 && b <= 0.95)) ok = false;
+    minB = Math.min(minB, b); maxB = Math.max(maxB, b);
+    if (b < 0.3) clear++;
+    if (b > 0.55) dusty++;
+    for (const h of [3, 9, 15, 21]) {
+      const t = tauAt(h, sol);
+      if (!(t >= 0.1 && t <= 1.2)) ok = false;
+    }
   }
-  check('tau envelope bounded', ok);
-  check('tau rises in the afternoon', tauAt(15) > tauAt(6));
+  check('tau bounded across 300 sols', ok, `base ${minB.toFixed(2)}..${maxB.toFixed(2)}`);
+  check('the skies clear regularly (>=25% of sols)', clear >= 75, `${clear}/300`);
+  check('dusty spells exist too', dusty >= 15, `${dusty}/300`);
+  check('tau rises in the afternoon', tauAt(15, 7) > tauAt(6, 7));
+  let run = 0, bestRun = 0;
+  for (let sol = 0; sol < 300; sol++) {
+    run = solBase(sol) < 0.35 ? run + 1 : 0;
+    bestRun = Math.max(bestRun, run);
+  }
+  check('clear spells LAST (3+ consecutive sols)', bestRun >= 3, `longest=${bestRun}`);
+  let none = 0, cOk = true;
+  for (let sol = 0; sol < 300; sol++) {
+    const c = cirrusAt(sol);
+    if (c === 0) none++;
+    if (!(c >= 0 && c <= 1)) cOk = false;
+  }
+  check('cirrus absent on most sols', none >= 150, `${none}/300`);
+  check('cirrus bounded', cOk);
 }
 
 // 3. swirl: no singularity at the core, dies with distance, off when still

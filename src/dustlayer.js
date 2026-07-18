@@ -36,10 +36,13 @@ const DOME_FS = /* glsl */`
     // horizon weighting mirrors the pure hazeDensity envelope
     float horiz = 1.0 - clamp(sin(max(0.0, asin(clamp(d.y, -1.0, 1.0)))), 0.0, 1.0);
     float w = pow(horiz, 2.4);
-    float a = uHaze * (0.25 + 0.75 * w) * (0.45 + 0.75 * n);
+    float a = uHaze * (0.2 + 0.8 * w) * (0.35 + 0.65 * n);
+    // the veil thins after dark: dust is sunlit matter, and the night
+    // sky is the lantern — the stars must win a clear night
+    a *= mix(0.3, 1.0, clamp(uSunI * 1.6, 0.0, 1.0));
     // dust brightens toward the sun — the shaft of a dusty afternoon
     vec3 col = uCol + vec3(0.22, 0.10, 0.03) * uSunI * exp(-distance(d, uSunDir) * 2.2);
-    gl_FragColor = vec4(col, clamp(a, 0.0, 0.85));
+    gl_FragColor = vec4(col, clamp(a, 0.0, 0.55));
   }
 `;
 

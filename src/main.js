@@ -25,7 +25,7 @@ import { buildComposer, resizeComposer, disposeComposer } from './post.js';
 import {
   phobosWorld, deimosWorld, earthElongation, marsEqToWorld,
 } from './marsheavens.js';
-import { tauAt, windAt } from './dust.js';
+import { tauAt, windAt, cirrusAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
   G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0, LOPE_HOP_V0,
@@ -435,7 +435,7 @@ class Game {
       Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
     const phase = !this.sleptOnce ? 'shakedown — hull salvage locked'
       : this.everPressurised ? 'the full ledger' : 'construction';
-    const tau = tauAt(mtc(this.simMillis));
+    const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
     const temp = surfaceTempC(this.sunEl ?? 0, tau);
     const bedworthyBuilt = this.analysis.volumes
       .some((v) => v.cells.length >= 6 && canPressurise(v, true));
@@ -1458,7 +1458,8 @@ class Game {
     this.sunEl = sunEl; // live handles: the console + live checks read these
     const sunAz = sunAzimuth(this.simMillis, lat, lon);
     this.sunAz = sunAz;
-    const tau = tauAt(mtc(this.simMillis));
+    const sol = Math.floor(this.simMillis / 88775244);
+    const tau = tauAt(mtc(this.simMillis), sol);
     const L = lightState(sunEl, tau);
     this.L = L; // renderFrame's drives read the same state this frame set
 
@@ -1491,7 +1492,8 @@ class Game {
       deimosDir: new THREE.Vector3(...dd),
       earthDir,
       earthI: Math.min(1, L.starVisibility * 1.5 + L.haloStrength * 0.25),
-      cirrus: (1 - L.storm) * (0.1 + 0.5 * L.haloStrength),
+      // cirrus is OCCASIONAL — most sols carry none at all
+      cirrus: Math.min(0.5, (1 - L.storm) * cirrusAt(sol) * (0.5 + 0.5 * L.haloStrength)),
       millis: this.simMillis, lat, t: this.t,
       camPos: this.cam.position,
     });

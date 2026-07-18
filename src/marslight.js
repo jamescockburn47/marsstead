@@ -67,7 +67,9 @@ export function lightState(sunEl, tau = TAU_CLEAR) {
   // a GAMEPLAY number, not a physical one — and on a CLEAR night the stars
   // themselves raise it: the vivid sky is what makes Mars walkable after
   // dark (with the headlamps), and only a dust storm takes it away.
-  const stars = clamp01(1 - day * 1.4) * (1 - storm);
+  // stars ride the dust: full on a clear sol (tau ~0.4 and under), fading
+  // through a dusty spell, gone toward a storm — the veil is WEATHER
+  const stars = clamp01(1 - day * 1.4) * (1 - storm) * clamp01((1.15 - tau) / 0.75);
   const ambI = lerp(lerp(0.17, 0.26, stars), 0.55, day) * (1 - storm * 0.35);
   const amb = mix3(mix3(AMB_NIGHT, STARLIT_NIGHT, stars),
     mix3(AMB_DAY, STORM_TINT, storm), day);
