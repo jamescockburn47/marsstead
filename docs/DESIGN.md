@@ -102,9 +102,18 @@ the panspermia thread is really about — is meant to genuinely frighten.
 ## The identity (inherited from Moorstead & Saltstead — non-negotiable)
 
 1. **Browser-first, instant-play, procedural-only.** All geometry, textures,
-   audio synthesised in code. Low-poly flat-shaded style — `BufferGeometry`
-   built in code, not voxels, but still **zero binary assets**. The landing
-   page's dune shader is the proof of tone: one fragment shader, no downloads.
+   audio synthesised in code — `BufferGeometry` built in code, not voxels,
+   and **zero binary assets**, ever. Surfaces are **smooth-shaded with
+   per-pixel procedural detail**: albedo and normals computed in the fragment
+   shader from the same noise family that grows the geometry, never sampled
+   from a file — and never displacing the drawn surface (the walked-surface
+   contract in the terrain gate). The landing page's dune shader is the proof
+   of tone — one fragment shader, no downloads — and the game's look is that
+   shader promoted onto the ground. *(Amended: the family's founding
+   "low-poly flat-shaded" was the means, not the end. The end is zero-asset
+   procedural beauty, and Mars — the realism sibling, built on real data —
+   is where the family look grows up. Light does the heavy lifting: the
+   sibling light rigs port here, minus the sea.)*
 2. **Kid-safe shared worlds.** Server-authoritative caps, no raw player text as
    HTML (`escHtml` everywhere), no unbounded griefing surface. A shared stead is
    built cooperatively; you cannot demolish another player's work. The horror is
@@ -213,6 +222,20 @@ The physics pillar says *what* Mars does; this section is the art direction —
 atmosphere is not an effect applied to the world, **the atmosphere is the world's
 renderer**. Every colour on Mars arrives through dust; paint the dust right and
 everything else inherits the look.
+
+The rig itself is inherited, not invented. From **Saltstead**: the
+pure-drive/THREE-apply split (every lighting number computed in a pure module,
+merely applied by scene code), ACES tone mapping with **deterministic adaptive
+exposure** (eased toward a pure `exposureTarget(dayness)` — no luminance
+readback), the Fine/Plain quality tiers with the gfx probe and fps watchdog,
+the latitude-true celestial frame for the night sky, and the zone-gloom
+pattern for the mystery's places. From **Moorstead**: the post stack (bloom →
+OutputPass → grade: CAS sharpen, split-tone, vignette, luminance-scaled grain,
+temporal dither — and the **dread channel** the mystery will one day drive)
+and the fog discipline (a single owner of fog colour, matched to the dome).
+What does **not** port: anything of the sea — and Saltstead's polygonal cloud
+fleet, explicitly. Mars's thin water-ice cirrus is drawn per-pixel in the sky
+dome's fragment shader, never as instanced blobs.
 
 ### The light rig — `src/marslight.js` (pure envelopes, the `lightrig` heir)
 

@@ -56,8 +56,10 @@ already whitelists the family tunnel pattern. Reachable via `ssh evo-tailscale`.
 
 ## Identity invariants (inherited, non-negotiable)
 
-1. Browser-first, procedural-only, **zero binary assets**. Low-poly flat-shaded,
-   `BufferGeometry` in code.
+1. Browser-first, procedural-only, **zero binary assets**. Smooth-shaded with
+   per-pixel procedural shader detail (never displacing the drawn surface),
+   `BufferGeometry` in code. (Amended from "low-poly flat-shaded" — see
+   DESIGN.md invariant 1. Never port Saltstead's polygonal cloud fleet.)
 2. Kid-safe shared worlds: server-authoritative caps, `escHtml` everywhere, no
    griefing surface, horror never graphic, add-only shared steads.
 3. The verify gate is the contract: pure logic imports no THREE/DOM so Node runs it.
