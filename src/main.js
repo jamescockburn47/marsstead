@@ -7,7 +7,8 @@
 // Dev keys: WASD move, SHIFT lope, SPACE jump, mouse-drag orbit,
 // L headlamp, [ ] scrub time (the demo's best friend).
 // E interact · Q cycle part · F/G load/unload rover · R sleep (sheltered,
-// at night) · B build mode (E place, X remove, Q part, V wall/roof).
+// at night) · B build mode (E place, X remove, Q part, V wall/roof) ·
+// M the surveyor's map (fog clears where you walk).
 
 import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
@@ -34,13 +35,15 @@ import {
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
 import { vesperSay } from './vesper.js';
-import { canSleep, wakeMillis } from './sleep.js';
+import { canSleep, wakeMillis, bedworthy } from './sleep.js';
 import {
   CELL, PART_TYPES, faceKey, parseFaceKey, faceCentre, createStead,
   canPlace, place, removePart, cardinal, cursorFace,
 } from './build.js';
 import { analyse, volumeAtCell, canPressurise, findLeaks } from './pressure.js';
-import { SteadLayer } from './steadlayer.js';
+import { SteadLayer, BED_DEPTH } from './steadlayer.js';
+import { createExploration, visit } from './explore.js';
+import { MarsMap } from './marsmap.js';
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
@@ -129,11 +132,19 @@ class Game {
     this.buildSel = 0;         // Q cycles part types while building
     this.buildSlot = 'wall';   // V flips wall/roof
     this.analysis = { volumes: [], outside: new Set() };
+    this.insideVolume = null;
     this.insidePressurised = false;
     this.everPressurised = false; // flips once; the gentle start ends with it
     this.cycling = null;       // { t, tx, tz } while an airlock runs its cycle
     this.leakCacheKey = '';
     this.leaks = [];
+    this.steadOrigin = null;   // where the first part went down (map POI)
+
+    // the earned map: fog everywhere the settler hasn't walked
+    this.exploration = createExploration();
+    visit(this.exploration, 0, 0); // the drop site is known ground
+    this.lastVisit = { x: 0, z: 0 };
+    this.map = new MarsMap(meshGroundHeight);
 
     // the suit
     this.air = 1; this.warm = 1;
@@ -188,6 +199,7 @@ class Game {
       if (!this.buildMode) { this.steadLayer.showGhost(null); this.steadLayer.clearLeaks(); }
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
+    if (e.code === 'KeyM') this.map.toggle();
     if (e.code === 'KeyV' && this.buildMode) {
       this.buildSlot = this.buildSlot === 'wall' ? 'roof' : 'wall';
     }
@@ -263,10 +275,11 @@ class Game {
     }
   }
 
-  // shelter, tonight's definition: the lander's hull, or standing inside
-  // a pressurised volume of your own build
+  // a bed for the night: the lander's hull, or a pressurised hab that
+  // BEATS the lander (bedworthy — small sealed volumes shelter, not sleep)
   sheltered() {
-    return this.distToLander() < 7 || this.insidePressurised;
+    return this.distToLander() < 7
+      || (this.insidePressurised && bedworthy(this.insideVolume));
   }
 
   // ---- building --------------------------------------------------------
@@ -280,9 +293,11 @@ class Game {
     return PART_TYPES[type].costs.every(([id, n]) => count(this.suit, id) >= n);
   }
 
-  // the grid anchor: fixed at first placement, previewed before it
+  // the grid anchor: fixed at first placement, previewed before it —
+  // bedded BED_DEPTH into the dirt so wall feet bite instead of perch
   buildBaseY() {
-    return this.steadBaseY ?? meshGroundHeight(this.pos.x, this.pos.z);
+    return this.steadBaseY
+      ?? meshGroundHeight(this.pos.x, this.pos.z) - BED_DEPTH;
   }
 
   buildCursor(forRemove = false) {
@@ -308,8 +323,9 @@ class Game {
     const key = this.buildCursor(false);
     if (!key || !this.placementOk(key, type)) return;
     if (this.steadBaseY === null) {
-      this.steadBaseY = meshGroundHeight(this.pos.x, this.pos.z);
+      this.steadBaseY = this.buildBaseY();
       this.steadLayer.setBase(this.steadBaseY);
+      this.steadOrigin = { x: this.pos.x, z: this.pos.z };
     }
     for (const [id, n] of PART_TYPES[type].costs) remove(this.suit, id, n);
     place(this.stead, key, type);
@@ -384,7 +400,11 @@ class Game {
   trySleep() {
     if (this.sleepAnim || this.driving) return;
     if (!canSleep(this.sunEl ?? 90)) return;
-    if (!this.sheltered()) { this.say('no-shelter'); return; }
+    if (!this.sheltered()) {
+      // a sealed-but-small hab earns its own refusal
+      this.say(this.insidePressurised ? 'hab-too-small' : 'no-shelter');
+      return;
+    }
     const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
     const wake = wakeMillis(this.simMillis, lat, lon);
     if (wake === null) return; // polar night: no dawn to wake into
@@ -565,6 +585,7 @@ class Game {
     {
       const cx = Math.floor(this.pos.x / CELL), cz = Math.floor(this.pos.z / CELL);
       const vol = this.steadBaseY !== null ? volumeAtCell(this.analysis, cx, 0, cz) : null;
+      this.insideVolume = vol;
       this.insidePressurised = !!(vol && canPressurise(vol, true));
       if (this.insidePressurised) {
         this.air = Math.min(1, this.air + dt * 0.06);
@@ -802,6 +823,20 @@ class Game {
     if (sunEl < -8) this.sayOnce('night');
     if (sunEl > 4 && this.lastSunEl < sunEl && this.saidFirsts.has('night')) this.sayOnce('dawn');
     this.lastSunEl = sunEl;
+
+    // ---- the earned map: stamp ground as it's actually covered
+    if (Math.hypot(this.pos.x - this.lastVisit.x, this.pos.z - this.lastVisit.z) > 12) {
+      this.lastVisit = { x: this.pos.x, z: this.pos.z };
+      visit(this.exploration, this.pos.x, this.pos.z);
+    }
+    if (this.map.visible) {
+      this.map.update(this.exploration, {
+        player: { x: this.pos.x, z: this.pos.z, heading: this.driving ? this.buggy.heading : this.heading },
+        lander: this.landerPos,
+        buggy: { x: this.buggy.x, z: this.buggy.z },
+        stead: this.steadOrigin,
+      });
+    }
 
     // ---- the world layers
     this.terrain.update(this.pos.x, this.pos.z);

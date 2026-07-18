@@ -17,6 +17,7 @@ export const EVENTS = [
   'dawn', 'devil-near', 'cold', 'air-low', 'idle', 'fall',
   'buggy-first', 'buggy-drift', 'buggy-air', 'buggy-crash', 'buggy-flip', 'buggy-rollover', 'lights-on', 'salvage-first', 'suit-full', 'ring-taken',
   'sleep', 'no-shelter', 'first-seal', 'pressurised', 'leak', 'airlock-cycle',
+  'hab-too-small',
 ];
 
 export const LINES = {
@@ -149,6 +150,11 @@ export const LINES = {
   'airlock-cycle': [
     "Cycling. Thirty seconds of bureaucracy between two worlds. Worth every one.",
     "Airlock's doing its slow arithmetic. Pressure equalising… there. Through you go.",
+  ],
+  'hab-too-small': [
+    "It holds air, and I'm proud of it — but it's a closet, settler. The lander keeps the bed until you build bigger than it.",
+    "The thermal mass isn't there. A night in this and I'd be reading you the cold ledger by 03:00. Sleep in the lander; build bigger.",
+    "Cosy is not a rating. Mine the steel, raise a real hab, and I'll happily run your nights from in here.",
   ],
 };
 

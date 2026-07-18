@@ -14,8 +14,21 @@ import { sunElevation } from './marstime.js';
 export const SOL_MS = 88775244;   // one sol in clock millis
 export const WAKE_EL = 3;         // deg — wake into usable morning light
 
+// The lander stays the bedroom until you build something that BEATS it
+// (James's call): a pressurised volume must hold at least this many cells
+// to sleep the night in — a size the finite salvage stock cannot seal
+// (it caps out at a 2×2), so the first real bedroom costs mined steel.
+// Smaller sealed volumes still shelter: air, warmth, a door against the
+// dust — they just aren't anywhere to sleep through a −80° night.
+export const HAB_MIN_CELLS = 6;
+
 // night enough to sleep: the sun is properly down (not merely setting)
 export function canSleep(sunEl) { return sunEl < -1; }
+
+// is this pressurised volume a real bedroom, or a closet with gauges?
+export function bedworthy(volume) {
+  return !!volume && volume.cells.length >= HAB_MIN_CELLS;
+}
 
 // the next moment the RISING sun crosses WAKE_EL at (lat, lonE), or null
 // if no dawn comes within a sol and a quarter (polar night — the caller

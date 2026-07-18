@@ -63,6 +63,15 @@ Survival stays soft (slow air, forgiving cold, the lander as a free refill)
 until the first volume pressurises — then the full ledger switches on and the
 planet starts keeping score. VESPER narrates the change of terms.
 
+## The bedroom bar (James's call, 2026-07-18)
+
+The lander stays the only bed until the player builds a pressurised hab that
+**beats it**: `HAB_MIN_CELLS` (6) cells or more. Salvage stock can seal at
+most a 2×2 (4 cells), so the first real bedroom needs mined steel — the sleep
+mechanic itself pulls the player into the expedition loop. Small sealed
+volumes still shelter (air, warmth, a door against the dust); they just
+aren't anywhere to sleep through a −80° night. VESPER explains the refusal.
+
 ## Build order (each step verify-gated, playable at every stop)
 
 1. **Foundations (this commit):** `inventory.js`, `build.js`, `pressure.js` —

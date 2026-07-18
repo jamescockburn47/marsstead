@@ -1,7 +1,9 @@
 // verify-sleep: the night skip always wakes into a real, rising dawn;
 // polar night refuses the bed instead of jumping a season.
 
-import { canSleep, wakeMillis, WAKE_EL, SOL_MS } from '../src/sleep.js';
+import {
+  canSleep, wakeMillis, bedworthy, WAKE_EL, SOL_MS, HAB_MIN_CELLS,
+} from '../src/sleep.js';
 import { sunElevation, solarLongitude } from '../src/marstime.js';
 
 let failed = 0;
@@ -50,6 +52,18 @@ check('day does not', !canSleep(30));
   const midwinterNight = wakeMillis(t, 85, 0);
   check('polar night refuses the bed', midwinterNight === null,
     `Ls=${solarLongitude(t).toFixed(1)} got=${midwinterNight}`);
+}
+
+// 5. the bedroom bar: bigger than anything salvage can seal — the finite
+//    stock closes at most a 2×2 (4 cells), so a bedworthy hab needs the
+//    mine. The lander keeps its tenant until then.
+{
+  check('salvage-sized volumes are not bedworthy', HAB_MIN_CELLS > 4, `${HAB_MIN_CELLS}`);
+  const cells = (n) => ({ cells: Array.from({ length: n }, (_, i) => [i, 0, 0]), airlocks: 1 });
+  check('closet refuses the bed', !bedworthy(cells(1)));
+  check('2x2 refuses the bed', !bedworthy(cells(4)));
+  check('a real hab sleeps', bedworthy(cells(HAB_MIN_CELLS)));
+  check('no volume, no bed', !bedworthy(null));
 }
 
 if (failed) { console.error(`verify-sleep: ${failed} FAILED`); process.exit(1); }
