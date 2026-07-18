@@ -29,6 +29,8 @@ import {
   STRIDE_HZ_WALK, STRIDE_HZ_LOPE, fallStep, fallSeverity,
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
+import { RockLayer } from './rocklayer.js';
+import { collidersNear } from './rocks.js';
 import { SkyDome } from './sky.js';
 import { DustLayer, PuffCloud, Footprints } from './dustlayer.js';
 import { Colonist } from './colonist.js';
@@ -116,6 +118,7 @@ class Game {
     this.scene.add(this.fill);
 
     this.terrain = new TerrainLayer(this.scene);
+    this.rocks = new RockLayer(this.scene);
     this.sky = new SkyDome(this.scene);
     this.dust = new DustLayer(this.scene, meshGroundHeight);
     this.puffs = new PuffCloud(this.scene, 2400, 0.05);
@@ -1011,6 +1014,15 @@ class Game {
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.resolveWalls(px, pz);
+    // the big rocks are real: the boot pushes off any boulder in reach
+    for (const c of collidersNear(this.pos.x, this.pos.z)) {
+      const d = Math.hypot(this.pos.x - c.x, this.pos.z - c.z);
+      if (d < c.r + 0.35 && d > 1e-6) {
+        const push = (c.r + 0.35 - d) / d;
+        this.pos.x += (this.pos.x - c.x) * push;
+        this.pos.z += (this.pos.z - c.z) * push;
+      }
+    }
     if (this.vel.lengthSq() > 0.05) {
       this.heading = Math.atan2(this.vel.x, this.vel.z);
       this.sayOnce('first-steps');
@@ -1355,6 +1367,18 @@ class Game {
       if (blocked) { this.buggy.u *= -0.2; this.buggy.v = 0; }
     }
 
+    // ---- boulders stop the buggy too: drive around the country,
+    // never through it (speed scrubs off on the stone)
+    for (const c of collidersNear(this.buggy.x, this.buggy.z)) {
+      const d = Math.hypot(this.buggy.x - c.x, this.buggy.z - c.z);
+      if (d < c.r + 1.1 && d > 1e-6) {
+        const push = (c.r + 1.1 - d) / d;
+        this.buggy.x += (this.buggy.x - c.x) * push;
+        this.buggy.z += (this.buggy.z - c.z) * push;
+        this.buggy.u *= 0.5;
+      }
+    }
+
     // ---- the tow: the rig chases the pin; geometry raises the flags
     if (this.rig.hitched) {
       const pin = this.hitchPin();
@@ -1513,6 +1537,7 @@ class Game {
 
     // ---- the world layers
     this.terrain.update(this.pos.x, this.pos.z);
+    this.rocks.update(this.pos.x, this.pos.z);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
     // dust is sunlit matter: it fades with the light (never glows at night)
     this.dust.moteMat.opacity = 0.06 + 0.44 * L.sunIntensity;

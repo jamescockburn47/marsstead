@@ -72,9 +72,23 @@ for (let i = 0; i < 40; i++) {
 // one camera grammar for every shot: yaw/pitch fixed, or aimed down-sun.
 // hour sets the coarse clock; el (with dir 'down'|'up') fine-scrubs the sun
 // to a target ELEVATION — the light states live at elevations, not hours.
-async function shot(name, { hour, el, dir = 'down', downSun = false, lamp = false, yaw = 0.6, pitch = 0.22 } = {}) {
-  await page.evaluate(({ hour, el, dir, downSun, lamp, yaw, pitch }) => {
+async function shot(name, { hour, el, dir = 'down', downSun = false, lamp = false, yaw = 0.6, pitch = 0.22, goto } = {}) {
+  await page.evaluate(async ({ hour, el, dir, downSun, lamp, yaw, pitch, goto }) => {
     const g = window.marsstead;
+    if (goto === 'rocky') {
+      // stand the colonist in the rockiest country within reach
+      const { rockiness } = await import('/src/rocks.js');
+      let best = { r: 0, x: 0, z: 0 };
+      for (let x = -800; x <= 800; x += 64) {
+        for (let z = -800; z <= 800; z += 64) {
+          const rr = rockiness(x, z);
+          if (rr > best.r) best = { r: rr, x, z };
+        }
+      }
+      g.pos.set(best.x, 0, best.z);
+      g.pos.y = g.groundAt(best.x, best.z);
+      for (let i = 0; i < 30; i++) g.frame(performance.now() + i * 16);
+    }
     if (hour !== undefined) g.calibrateToLocalHour(hour);
     if (el !== undefined) {
       let guard = 0;
@@ -93,9 +107,15 @@ async function shot(name, { hour, el, dir = 'down', downSun = false, lamp = fals
       g.camPitch = 0.12;
       for (let i = 0; i < 30; i++) g.frame(performance.now() + 12000 + i * 33);
     }
-  }, { hour, el, dir, downSun, lamp, yaw, pitch });
+  }, { hour, el, dir, downSun, lamp, yaw, pitch, goto });
+  // a teleport rebuilds the whole streamed grid — drain the build queues
+  // under real RAF before asking for a stable frame
+  await page.waitForFunction(() => {
+    const g = window.marsstead;
+    return g.terrain.queue.length === 0 && g.rocks.queue.length === 0;
+  }, null, { timeout: 90000 }).catch(() => {});
   await page.waitForTimeout(700); // real RAF frames so the canvas presents
-  await page.screenshot({ path: `media/sheet-${name}.png` });
+  await page.screenshot({ path: `media/sheet-${name}.png`, timeout: 60000 });
   const state = await page.evaluate(() => ({
     sunEl: +window.marsstead.sunEl.toFixed(1),
     exposure: +window.marsstead.renderer.toneMappingExposure.toFixed(3),
@@ -107,6 +127,7 @@ async function shot(name, { hour, el, dir = 'down', downSun = false, lamp = fals
 const shots = [];
 shots.push(await shot('noon', { hour: 12.2 }));
 shots.push(await shot('afternoon', { hour: 15.5 }));
+shots.push(await shot('boulderfield', { hour: 16.2, goto: 'rocky', yaw: 2.2, pitch: 0.18 }));
 shots.push(await shot('golden', { el: 12, downSun: true }));
 shots.push(await shot('bluehour', { el: 0.4, downSun: true }));
 shots.push(await shot('night', { el: -25, lamp: true }));
