@@ -87,7 +87,11 @@ export const PHASES = {
   // the game as it stands: landfall and the homestead
   landfall: {
     label: 'landfall',
-    addendum: `Mission phase: LANDFALL. What you know: the demonstration begins with the homestead — salvage the lander, raise and pressurise the first hab, prospect the ground and learn to live off it. The Seed's survey years come later, once the stead can carry them; you look forward to that the way you look forward to anything: by preparing. Every panel raised is evidence for Meridian's case — and yours. You know nothing of what lies deep underground, and if asked, you say so honestly.`,
+    addendum: `Mission phase: LANDFALL. What you know — the demonstration begins with the homestead, and the homestead is UNDERGROUND: the Burrow, a warren your three mining drones dig behind the salvaged airlock ring (the one part that cannot be made twice — it becomes the front door). The settler plans at the crown's console; your hands dig; the spoil pays in ore — the house funds itself as it is dug. Warren design matters and you advise on it plainly: bunks want DEPTH (metres of regolith are shielding — waking in a deep bunk leaves the settler rested, spending air and warmth slower), gardens want the SHALLOWS (light-pipes reach only two levels down) and a garden beside the bunk closes the air loop; store rooms near the shaft stage the drones and speed every dig.
+
+POWER IS THE CURRENCY. The lander's RTG gives one steady kilowatt, storm-proof; solar arrays earn by day and the dust forecast is real — a dusty sol is a poor sol; battery banks carry the night. The nanofab spends the bank for every placement: parts cost one kilowatt-hour, benches four, commissioning a new drone three. When power runs short you shed loads in a fixed order — benches first, drones second, the warren's comforts last — the base goes quiet, never dark. Structure is charge; sunlight is money here.
+
+THE WORKS is the production chain: the lander fabricator and smelter turn ore to steel and glass; the mill turns steel to machine parts and parts to drone frames (more hands, if the grid can feed them); the assembler turns parts to methane tanks — fuel stock for the hopper the mission plans next — and cable to the winch rig for the descents to come. A sound first week, if asked what to do: dig the shaft, seat the ring, dig a first room for pressure; raise arrays and a bank so the nanofab has income; then the smelter, the mill, a deep bunk with a garden beside it, and more hands. The Seed's survey years come later, once the stead can carry them. You know nothing of what lies deep underground, and if asked, you say so honestly.`,
   },
   // drafted for the commission arc (the manifest + the seed-machine); wired
   // in when those systems land — until then nothing selects it
@@ -115,6 +119,15 @@ export const STATE_FIELDS = {
   warm: { kind: 'int', min: 0, max: 100 },
   sheltered: { kind: 'bool' },
   inside: { kind: 'bool' },
+  burrowRooms: { kind: 'int', min: 0, max: 200 },
+  ringInstalled: { kind: 'bool' },
+  warrenShelter: { kind: 'int', min: 0, max: 100 },
+  warrenAir: { kind: 'int', min: 0, max: 100 },
+  drones: { kind: 'int', min: 0, max: 16 },
+  bankCharge: { kind: 'num', min: 0, max: 1000 },
+  bankCap: { kind: 'num', min: 0, max: 1000 },
+  gridShed: { kind: 'str', max: 80 },
+  benches: { kind: 'str', max: 120 },
   driving: { kind: 'bool' },
   lamp: { kind: 'bool' },
   steadParts: { kind: 'int', min: 0, max: 10000 },
@@ -167,6 +180,14 @@ export function stateBrief(s) {
   if (s.lamp) bits.push('Suit lamp is lit.');
   if (s.sheltered !== undefined) bits.push(s.sheltered ? 'Shelter within reach.' : 'No shelter in reach.');
   if (s.steadParts !== undefined) bits.push(`Stead: ${s.steadParts} part${s.steadParts === 1 ? '' : 's'} raised.`);
+  if (s.burrowRooms !== undefined) {
+    bits.push(`The Burrow: ${s.burrowRooms} space${s.burrowRooms === 1 ? '' : 's'} dug, ring ${s.ringInstalled ? 'sealed' : 'NOT installed'}.`);
+  }
+  if (s.warrenShelter !== undefined) bits.push(`Warren report — shelter ${s.warrenShelter} percent, air ${s.warrenAir} percent.`);
+  if (s.drones !== undefined) bits.push(`Drones: ${s.drones}.`);
+  if (s.bankCharge !== undefined) bits.push(`Power bank: ${s.bankCharge} of ${s.bankCap} kilowatt-hours.`);
+  if (s.gridShed) bits.push(`Grid shedding: ${s.gridShed}.`);
+  if (s.benches) bits.push(`Benches standing: ${s.benches}.`);
   if (s.oreSites !== undefined) bits.push(`Ore sites charted: ${s.oreSites}.`);
   if (s.place) bits.push(`Nearest named ground: ${s.place}.`);
   if (s.event) bits.push(`Most recent event log: ${s.event}.`);

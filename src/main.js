@@ -1123,6 +1123,16 @@ class Game {
       lamp: !!this.lampLit,
       steadParts: this.stead.parts.size,
       oreSites: this.prospected.size,
+      // the base she advises on: the warren, the grid, the fleet, the chain
+      burrowRooms: [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length,
+      ringInstalled: this.burrow.ringInstalled,
+      warrenShelter: Math.round(warrenReport(this.burrow).shelter * 100),
+      warrenAir: Math.round(warrenReport(this.burrow).air * 100),
+      drones: this.droneCount,
+      bankCharge: this.grid ? this.grid.charge : 0,
+      bankCap: this.grid ? this.grid.capacity : 0,
+      gridShed: this.grid && this.grid.shed.length ? this.grid.shed.join(', ') : '',
+      benches: [...new Set(this.machines.map((m) => m.type))].join(', '),
       lastLine: this.hud.vesperLine.textContent,
     };
   }
