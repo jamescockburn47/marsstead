@@ -54,7 +54,8 @@ export const MACHINE_TYPES = {
     name: 'Landing pad',
     costs: [['steel-panel', 4]],
     recipes: {},
-    size: 10,
+    size: 10,        // the apron needs its ground…
+    maxSlope: 0.07,  // …and that ground level: no floating rims
   },
   battery: {
     name: 'Battery bank',
@@ -91,10 +92,14 @@ export function createMachine(type, x, z, heading = 0) {
   return { type, x, z, heading, queue: [], t: 0, out: {} };
 }
 
-// placement law: known type, tolerable ground, clear of its neighbours
+// placement law: known type, tolerable ground (stations may demand
+// flatter), clear of its neighbours (big stations demand more room)
 export function canPlaceMachine(type, slope, machines, x, z) {
-  if (!MACHINE_TYPES[type] || slope > MAX_MACHINE_SLOPE) return false;
-  return machines.every((m) => Math.hypot(m.x - x, m.z - z) >= MACHINE_SPACING);
+  const t = MACHINE_TYPES[type];
+  if (!t || slope > (t.maxSlope ?? MAX_MACHINE_SLOPE)) return false;
+  const sizeOf = (k) => MACHINE_TYPES[k]?.size ?? MACHINE_SPACING;
+  return machines.every((m) => Math.hypot(m.x - x, m.z - z)
+    >= Math.max(sizeOf(type), sizeOf(m.type)));
 }
 
 export function machineFeed(m, id, n = 1) {

@@ -1541,7 +1541,7 @@ class Game {
         const { x, z } = this.machineTargetCell();
         const ok = canPlaceMachine(type, this.slopeAt(x, z), this.machines, x, z)
           && this.canAfford(type);
-        this.machineLayer.showGhost(x, meshGroundHeight(x, z), z, ok);
+        this.machineLayer.showGhost(x, meshGroundHeight(x, z), z, ok, type);
         this.steadLayer.showGhost(null);
       } else {
         this.machineLayer.showGhost(null);

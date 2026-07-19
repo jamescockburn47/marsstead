@@ -242,12 +242,15 @@ export class HopperLayer {
     this.group.rotation.z = leanRad;
   }
 
-  // the burn: 0 quiet .. 1 full thrust — throat glow, light, no particles
+  // the burn: 0 quiet .. 1 full thrust — throat glow stretching into a
+  // short plume, hard warm light on the apron. No particles, ever.
   setFlame(k, t = 0) {
     const f = Math.max(0, Math.min(1, k));
     const flick = f > 0 ? 0.9 + 0.1 * Math.sin(t * 37) : 0;
-    this.flame.material.opacity = f * 0.85 * flick;
-    this.flameLight.intensity = f * 4.2 * flick;
+    this.flame.material.opacity = f * 0.9 * flick;
+    this.flame.scale.y = 1 + f * 0.8;
+    this.flame.position.y = -f * 0.34;      // the plume reaches for the ground
+    this.flameLight.intensity = f * 7.5 * flick;
   }
 
   update(t, night) {
