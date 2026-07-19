@@ -18,6 +18,8 @@
 // (English_CalmWoman turned out American). Verified-British female
 // alternatives: English_Graceful_Lady, English_SentimentalLady,
 // English_compelling_lady1.
+import { retrieveFacts } from './gamefacts.js';
+
 export const VOICE_ID = 'English_Wiselady';
 export const TTS_MODEL = 'speech-2.8-hd';
 export const TTS_MODEL_WHISPER = 'speech-2.6-hd';
@@ -211,9 +213,15 @@ export function buildMessages(rawState, history, playerText, phase = DEFAULT_PHA
     msgs.push({ role: h.who === 'vesper' ? 'assistant' : 'user', content: text });
   }
   const said = cleanStr(playerText || '', LIMITS.playerMax);
+  // the mini-RAG (Moorstead's game-facts pattern): the chunks that match
+  // this question ride the prompt as FIELD NOTES — mechanics come from
+  // the corpus at answer time, never from memory
+  const facts = retrieveFacts(said);
   msgs.push({
     role: 'user',
-    content: `[SUIT TELEMETRY] ${stateBrief(state)}\n[SETTLER SAYS] ${said || '(static — nothing intelligible)'}`,
+    content: `[SUIT TELEMETRY] ${stateBrief(state)}`
+      + (facts.length ? `\n[FIELD NOTES — mechanics reference; these outrank memory] ${facts.join(' ')}` : '')
+      + `\n[SETTLER SAYS] ${said || '(static — nothing intelligible)'}`,
   });
   return msgs;
 }
@@ -283,9 +291,12 @@ export function buildBarkMessages(rawState, history, event, phase = DEFAULT_PHAS
     msgs.push({ role: h.who === 'vesper' ? 'assistant' : 'user', content: text });
   }
   const moment = BARK_MOMENTS[event] || 'something small just happened';
+  const facts = retrieveFacts(moment, 2);
   msgs.push({
     role: 'user',
-    content: `[SUIT TELEMETRY] ${stateBrief(state)}\n[MOMENT] ${moment}. The settler said nothing — offer ONE short line in character: a companion noticing the moment, not an announcer. No greeting, no question unless it earns itself.`,
+    content: `[SUIT TELEMETRY] ${stateBrief(state)}`
+      + (facts.length ? `\n[FIELD NOTES — mechanics reference; these outrank memory] ${facts.join(' ')}` : '')
+      + `\n[MOMENT] ${moment}. The settler said nothing — offer ONE short line in character: a companion noticing the moment, not an announcer. No greeting, no question unless it earns itself.`,
   });
   return msgs;
 }

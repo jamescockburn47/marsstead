@@ -124,10 +124,26 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   // given, and this line asserts she is never given it
   const PLOT_WORDS = /weaver|murderbot|replicat|betray|possess|infect|panspermia|vault|the deep signal|take over|reprogram/i;
   const { BARK_MOMENTS, buildBarkMessages, VESPER_LORE, buildMessages: bmCanon } = await import('../src/vesperbrain.js');
+  const { GAME_FACTS, retrieveFacts } = await import('../src/gamefacts.js');
   const everything = [VESPER_SYSTEM, VESPER_LORE,
     ...Object.values(PHASES).map((p) => p.addendum),
-    ...Object.values(BARK_MOMENTS)].join(' ');
-  check('no plot word reaches any prompt (lore + barks included)', !PLOT_WORDS.test(everything));
+    ...Object.values(BARK_MOMENTS),
+    ...GAME_FACTS.map((f) => f.text)].join(' ');
+  check('no plot word reaches any prompt (lore + barks + facts)', !PLOT_WORDS.test(everything));
+  // the mini-RAG (Moorstead's pattern): the right truth for the question
+  const panels = retrieveFacts('how do i make steel panels?').join(' ');
+  check('facts: panels question retrieves the fabricator', /fabricator|press T/.test(panels));
+  check('facts: the ring truth is retrievable and honest',
+    /ONLY job/.test(retrieveFacts('do i need the airlock ring first?').join(' ')));
+  const dig = retrieveFacts('why did my dig stop, no power?').join(' ');
+  check('facts: a stalled dig finds the shed ladder or the queue', /shed|waits on charge/i.test(dig));
+  // hallucination-proof by construction: live constants interpolated
+  const { DIG_KWH } = await import('../src/burrow.js');
+  const { RTG_KW } = await import('../src/power.js');
+  const corpus = GAME_FACTS.map((f) => f.text).join(' ');
+  check('facts carry the LIVE dig prices', corpus.includes(`shaft ${DIG_KWH.shaft} kWh`));
+  check('facts carry the LIVE RTG output', corpus.includes(`${RTG_KW} kW`));
+  check('facts are chunk-sized', GAME_FACTS.every((f) => f.text.length < 400 && f.keywords.length >= 3));
   // the canon: present, substantial, carrying its load-bearing beams
   check('the canon is baked in', VESPER_LORE.length > 3000);
   for (const beam of ['Meridian', 'White Harbour', 'the Exodus', 'Moratorium',
