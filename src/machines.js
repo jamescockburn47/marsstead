@@ -47,6 +47,15 @@ export const MACHINE_TYPES = {
     costs: [['steel-panel', 2]],
     recipes: {},
   },
+  // ---- STAGE 3: the hopper's ground half — a pad is a free, EXACT
+  // landing (open ground costs the descent ellipse); size keeps the
+  // yard honest, the sintered apron needs its ground
+  'landing-pad': {
+    name: 'Landing pad',
+    costs: [['steel-panel', 4]],
+    recipes: {},
+    size: 10,
+  },
   battery: {
     name: 'Battery bank',
     costs: [['steel-panel', 1], ['electronics', 1]],

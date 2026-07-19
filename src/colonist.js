@@ -49,7 +49,8 @@ ${FBM_GLSL}`)
 
 // a painted Martian sky for the reflections: tiny equirect, code only.
 // Butterscotch horizon, dark zenith, rust ground — enough for a visor.
-function makeEnvTexture() {
+// Exported: the hopper's hull mirrors the same sky (one painted world).
+export function makeEnvTexture() {
   const W = 64, H = 32;
   const data = new Uint8Array(W * H * 4);
   const mix = (a, b, t) => a + (b - a) * t;
