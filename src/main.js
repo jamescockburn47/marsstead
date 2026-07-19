@@ -91,6 +91,15 @@ import {
 } from './machines.js';
 import { MachineLayer } from './machinelayer.js';
 import { LanderConsole } from './console.js';
+import { installKiosk } from './kiosk.js';
+import { startUpdateCheck } from './update-check.js';
+
+// Harden the page against stray browser gestures (two-finger swipe-back,
+// long-press menu, text drag) and take it fullscreen on first interaction —
+// then watch the deployed version.json for the "new version — tap to reload"
+// toast. Both inherited from the siblings (kiosk.js, update-check.js).
+installKiosk();
+startUpdateCheck();
 
 const TIME_SCALE = 40;            // one sol ~= 37 real minutes in Phase 0
 
