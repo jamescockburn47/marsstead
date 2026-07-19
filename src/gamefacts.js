@@ -13,8 +13,12 @@
 // Deploy note: the EVO relay imports vesperbrain.js which imports THIS —
 // ship both files together (scp src/gamefacts.js AND src/vesperbrain.js).
 
-import { RTG_KW, ARRAY_KW, BATTERY_CAP, LANDER_BANK_KWH, BUILD_KWH, LOADS } from './power.js';
-import { DIG_KWH, LIGHT_REACH } from './burrow.js';
+// power.js is the ONE import — dependency-free, so the EVO relay carries
+// the corpus without the world sim (ship power.js alongside)
+import {
+  RTG_KW, ARRAY_KW, BATTERY_CAP, LANDER_BANK_KWH, BUILD_KWH, LOADS,
+  DIG_KWH, LIGHT_REACH,
+} from './power.js';
 
 export const GAME_FACTS = [
   // --- power, the currency ---

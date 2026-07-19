@@ -101,6 +101,14 @@ export function tickPower(p, dtH, arrays, batteries, sunEl, tau, loads) {
 // ---- power as the CURRENCY of building (James's rule): the nanofab
 // spends the bank for every placement — matter comes from the spoil,
 // structure comes from the charge. Costs in bank-kWh, legible integers.
+// the warren's prices live HERE with the rest of the currency (and are
+// re-exported by burrow.js): power.js is dependency-free, so the EVO
+// relay can import the whole price list without dragging the world sim
+export const DIG_KWH = {
+  shaft: 4, corridor: 3, bunk: 6, store: 6, bay: 8, garden: 8,
+};
+export const LIGHT_REACH = 2; // deepest level a light-pipe still feeds
+
 export const BUILD_KWH = {
   machine: 6,     // any placed bench, array or bank
   steadPart: 2,   // a wall, roof or surface part

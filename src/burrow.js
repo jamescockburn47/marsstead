@@ -105,10 +105,10 @@ export function spoilFor(col, depth) {
 // is separate and small: that is their motors, this is the print.
 // Priced at INCOME scale (a sol of solar is ~30-60 kWh an array): a room
 // is a real bite of the bank, so a building spree outruns the sun and the
-// queue WAITS — the urgency that makes arrays and banks the true ladder.
-export const DIG_KWH = {
-  shaft: 4, corridor: 3, bunk: 6, store: 6, bay: 8, garden: 8,
-};
+// queue WAITS. The prices themselves live in power.js with the rest of
+// the currency (dependency-free for the relay); re-exported here.
+export { DIG_KWH, LIGHT_REACH } from './power.js';
+import { DIG_KWH } from './power.js';
 
 // the hands: droneCount drones all work the OLDEST unfinished dig (they
 // swarm one face — reads well on the surface and keeps the model simple).
@@ -185,7 +185,7 @@ export function isBedworthy(b) {
 //     want deep: the warren's founding tension.
 //   haul — a store beside the shaft stages the drones' spoil runs: the
 //     whole warren digs faster. Logistics, made spatial.
-export const LIGHT_REACH = 2; // deepest level a light-pipe still feeds
+import { LIGHT_REACH } from './power.js'; // canonical home: the currency module
 
 function adjacentPieces(b, col, depth) {
   const out = [];
