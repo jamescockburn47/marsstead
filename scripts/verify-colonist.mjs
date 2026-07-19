@@ -6,8 +6,8 @@
 // is finite.
 
 import {
-  BONES, GAIT, gaitBlend, cadence, dutyFactor, strideLength,
-  springStep, solveLeg, legFK, angDiff, ColonistRig,
+  BONES, GAIT, JOINT_CAP, gaitBlend, cadence, dutyFactor, strideLength,
+  springStep, smoothDampAngle, smoother01, solveLeg, legFK, angDiff, ColonistRig,
 } from '../src/colonistrig.js';
 
 let failed = 0;
@@ -130,6 +130,51 @@ function simulate(speed, seconds, dtStep = 1 / 90) {
   const last = frames[frames.length - 1].pose;
   const flatVals = JSON.stringify(last);
   check('pose all finite', !/null|NaN|Infinity/.test(flatVals), flatVals);
+
+  // (f) THE naturalistic cap: no joint exceeds its physiological angular
+  // velocity — this is the whole fix for "limbs snap too fast". At WALK_V
+  // the gait blend is 0, so caps are the base ceilings.
+  const dtStep = 1 / 90, r2d = 180 / Math.PI;
+  const peakVel = (sel) => {
+    let m = 0;
+    for (let i = 6; i < frames.length; i++) {
+      m = Math.max(m, Math.abs(sel(frames[i].pose) - sel(frames[i - 1].pose)) / dtStep * r2d);
+    }
+    return m;
+  };
+  const eps = 6;   // one-frame slew-clamp rounding headroom
+  const kneeV = peakVel((p) => p.legL.kneeFlex);
+  const hipV = peakVel((p) => p.legL.hipPitch);
+  const ankV = peakVel((p) => p.legL.anklePitch);
+  const shV = peakVel((p) => p.armL.shoulderPitch);
+  check('knee within physiological velocity cap', kneeV <= JOINT_CAP.knee + eps, `${kneeV.toFixed(0)} deg/s`);
+  check('hip within physiological velocity cap', hipV <= JOINT_CAP.hip + eps, `${hipV.toFixed(0)} deg/s`);
+  check('ankle within physiological velocity cap', ankV <= JOINT_CAP.ankle + eps, `${ankV.toFixed(0)} deg/s`);
+  check('shoulder within physiological velocity cap', shV <= JOINT_CAP.shoulder + eps, `${shV.toFixed(0)} deg/s`);
+}
+
+// ---- SmoothDamp + slew clamp on a hostile (step-function) target -----------
+{
+  // hammer the smoother with a target that teleports every frame; the hard
+  // slew clamp must still hold the output under the cap
+  const rig = new ColonistRig();
+  rig.smoothJoint('t', 0, 400, 0.05, 1 / 90);   // seed
+  let peak = 0, prev = 0;
+  const targets = [0, 3, -3, 3, 0, 2, -2, 2, -2, 0];
+  for (let i = 0; i < targets.length; i++) {
+    const x = rig.smoothJoint('t', targets[i], 400, 0.05, 1 / 90);
+    peak = Math.max(peak, Math.abs(x - prev) / (1 / 90) * (180 / Math.PI));
+    prev = x;
+  }
+  check('slew clamp survives a step-function target', peak <= 400 + 6, `${peak.toFixed(0)} deg/s`);
+
+  // SmoothDamp is monotone toward a fixed target and settles on it
+  const s = { x: 0, v: 0 };
+  for (let i = 0; i < 300; i++) smoothDampAngle(s, 1, 0.1, 1 / 60);
+  check('SmoothDamp settles on target', Math.abs(s.x - 1) < 1e-3, `x ${s.x}`);
+  // min-jerk endpoints: flat at 0 and 1, symmetric, monotone
+  check('smoother01 endpoints', smoother01(0) === 0 && smoother01(1) === 1
+    && Math.abs(smoother01(0.5) - 0.5) < 1e-9);
 }
 
 {

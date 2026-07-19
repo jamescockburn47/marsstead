@@ -27,8 +27,6 @@
 //   anklePitch  + lifts the TOES
 //   shoulderPitch + swings the arm FORWARD;  elbowFlex + bends forward
 
-import { hash2 } from './noise.js';
-
 // ---- suit skeleton (metres) — the view builds flesh on these bones ------
 export const BONES = {
   HIP_Y: 0.92,       // pelvis root over the sole, standing easy
@@ -80,6 +78,39 @@ export function springStep(s, target, omega, zeta, dt) {
   s.x += s.v * dt;
   return s;
 }
+
+// SmoothDamp — a critically-damped ease toward a MOVING target (Game
+// Programming Gems 4, Thomas Lowe; the maths behind Unity's SmoothDamp).
+// It never overshoots and eases the corner; paired with the slew clamp
+// below it is the whole answer to "limbs snap too fast". s = {x, v}.
+export function smoothDampAngle(s, target, smoothTime, dt) {
+  smoothTime = Math.max(1e-4, smoothTime);
+  const omega = 2 / smoothTime;
+  const x = omega * dt;
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  const change = angDiff(target, s.x);        // = s.x - target, shortest arc
+  const retarget = s.x - change;
+  const temp = (s.v + omega * change) * dt;
+  s.v = (s.v - omega * temp) * exp;
+  s.x = retarget + (change + temp) * exp;
+  return s.x;
+}
+
+// min-jerk time profile (Flash & Hogan 1985): zero velocity AND zero
+// acceleration at both ends — the swing foot neither jerks off the ground
+// nor stamps down. This IS smootherstep.
+export function smoother01(t) {
+  const c = clamp(t, 0, 1);
+  return c * c * c * (c * (c * 6 - 15) + 10);
+}
+
+// physiological angular-velocity ceilings, deg/s (Winter/Perry normative
+// gait). The slew clamp holds every joint to these, so no IK target-jump
+// at a foot plant can ever survive as a snap. Scaled up with the bound —
+// a Mars lope is allowed faster limbs than a walk.
+export const JOINT_CAP = {
+  hip: 260, knee: 420, ankle: 320, shoulder: 230, elbow: 230, torso: 110,
+};
 
 // ---- analytic two-bone IK (law of cosines), sagittal plane --------------
 // Hip at origin; foot target dz forward, dy DOWN-negative, in hip space.
@@ -137,6 +168,23 @@ export class ColonistRig {
     this.armS = [mkSpring(0), mkSpring(0)];      // shoulder pitches L/R
     this.packS = mkSpring(0);        // pack jiggle (under-damped, rides hipY)
     this.idleStep = null;            // in-flight tidy-up step when idling
+    this.sm = {};                    // per-joint SmoothDamp + slew states
+    this.moving = false;             // hysteresis latch (no stop-boundary flicker)
+  }
+
+  // smooth a joint toward its target: SmoothDamp eases the curve, then a
+  // HARD slew clamp (deg/s) guarantees the physiological ceiling. First
+  // call seeds at the target so nothing snaps into place on spawn.
+  smoothJoint(id, target, capDps, smoothTime, dt) {
+    let s = this.sm[id];
+    if (!s) { this.sm[id] = { x: target, v: 0 }; return target; }
+    const prev = s.x;
+    smoothDampAngle(s, target, smoothTime, dt);
+    const cap = capDps * (Math.PI / 180) * dt;
+    const d = angDiff(prev, s.x);
+    if (d > cap) { s.x = prev + cap; s.v = cap / dt; }
+    else if (d < -cap) { s.x = prev - cap; s.v = -cap / dt; }
+    return s.x;
   }
 
   // inp: { x, z, heading, vx, vz, speed, airborne, vy, groundAt(x,z), dt }
@@ -145,7 +193,13 @@ export class ColonistRig {
     this.t += dt;
     const { x, z, heading, speed, airborne } = inp;
     const ground = inp.groundAt;
-    const moving = speed > 0.25 && !airborne;
+    // hysteresis: start striding above 0.35 m/s, stop below 0.15 — so a
+    // figure hovering near the threshold can't flicker between gait and
+    // idle (that flicker read as a tremor).
+    if (airborne) this.moving = false;
+    else if (this.moving) { if (speed < 0.15) this.moving = false; }
+    else if (speed > 0.35) this.moving = true;
+    const moving = this.moving;
     const b = gaitBlend(speed);
 
     // teleports (buggy dismount, save load) re-seat everything
@@ -206,16 +260,22 @@ export class ColonistRig {
         swayTarget += f.side * w;
       } else {
         // swing: an arc from lift-off to the predicted catch point
-        if (f.planted) { f.planted = false; f.lift = { x: f.px, z: f.pz, y: f.py }; }
+        if (f.planted) { f.planted = false; f.lift = { x: f.px, z: f.pz, y: f.py }; f.tgt = null; }
         if (!f.lift) f.lift = { x: f.px, z: f.pz, y: f.py };
         const u = (cyc - D) / (1 - D);
         const tLand = (1 - u) * (1 - D) * T;
-        // capture point: land where the body will need catching
-        const tx = x + inp.vx * tLand + fx * halfStance + rx * f.side * BONES.FOOT_LAT;
-        const tz = z + inp.vz * tLand + fz * halfStance + rz * f.side * BONES.FOOT_LAT;
-        const s = smooth01(u);
-        f.px = lerp(f.lift.x, tx, s);
-        f.pz = lerp(f.lift.z, tz, s);
+        // capture point: land where the body will need catching. The LIVE
+        // point jumps when speed/heading change mid-swing — low-pass it so
+        // the foot can't be yanked (replanning every frame is the jitter).
+        const txLive = x + inp.vx * tLand + fx * halfStance + rx * f.side * BONES.FOOT_LAT;
+        const tzLive = z + inp.vz * tLand + fz * halfStance + rz * f.side * BONES.FOOT_LAT;
+        if (!f.tgt) f.tgt = { x: txLive, z: tzLive };
+        const k = Math.min(1, 7 * dt);
+        f.tgt.x += (txLive - f.tgt.x) * k;
+        f.tgt.z += (tzLive - f.tgt.z) * k;
+        const s = smoother01(u);   // min-jerk: no jerk at lift, no stamp at plant
+        f.px = lerp(f.lift.x, f.tgt.x, s);
+        f.pz = lerp(f.lift.z, f.tgt.z, s);
         const gY = ground(f.px, f.pz);
         const liftH = lerp(GAIT.LIFT_WALK, GAIT.LIFT_LOPE, b);
         f.py = Math.max(gY, lerp(f.lift.y, gY, s)) + Math.sin(Math.PI * u) * liftH;
@@ -284,8 +344,7 @@ export class ColonistRig {
     const turnRate = angDiff(this.lastHeading, heading) / dt;
     this.lastHeading = heading;
     springStep(this.rollS, clamp(-turnRate * speed * 0.02, -0.3, 0.3), 7, 1, dt);
-    springStep(this.swayS, moving ? swayTarget * 0.028
-      : Math.sin(this.t * 0.55) * 0.02, 4, 1, dt);
+    springStep(this.swayS, moving ? swayTarget * 0.028 : 0, 4, 1, dt);
 
     // pelvis follows the legs; shoulders answer against them; a suited
     // torso carries a permanent forward lean that grows with the bound
@@ -301,12 +360,10 @@ export class ColonistRig {
     springStep(this.armS[0], tL, 9, 0.85, dt);
     springStep(this.armS[1], tR, 9, 0.85, dt);
 
-    // idle breathing + the never-still noise floor (coherent drift, not
-    // twitching: value noise, per-channel offsets so nothing is in phase)
+    // breathing is the ONLY idle motion — a slow swell of the chest, and
+    // nothing that rotates a joint. No drift, no fidgets: a standing figure
+    // is still (the twitch read as Parkinsonian and had to go entirely).
     const breathe = Math.sin((this.t / 4.3) * Math.PI * 2);
-    const n1 = hash2(Math.floor(this.t * 0.7), 3) - 0.5;
-    const n2 = hash2(Math.floor(this.t * 0.5) + 7, 11) - 0.5;
-    const fid = moving || airborne ? null : this.fidget(inp.simT || this.t);
 
     pose.hipY = this.hipYS.x;
     pose.sway = this.swayS.x;
@@ -314,15 +371,14 @@ export class ColonistRig {
     pose.pelvisPitch = 0.05 + speed * 0.012 + lerp(0, 0.1, b)
       + this.leanS.x + (airborne ? -0.08 : 0);
     pose.pelvisRoll = this.rollS.x;
-    pose.torsoYaw = this.torsoYawS.x + (fid ? fid.yaw : n1 * 0.05);
-    pose.torsoPitch = breathe * 0.012 + (fid ? fid.pitch : n2 * 0.03);
+    pose.torsoYaw = this.torsoYawS.x;
+    pose.torsoPitch = 0;
     pose.breath = breathe;
     pose.packOff = clamp(this.packS.x - this.hipYS.x, -0.05, 0.05);
     const bend = 0.5 + 0.3 * b;   // the suit's pre-bent elbows
     pose.armL = {
-      shoulderPitch: this.armS[0].x + (fid && fid.wrist ? 0.95 : 0),
-      elbowFlex: airborne ? 0.9
-        : bend + Math.max(0, this.armS[0].x) * 0.6 + (fid && fid.wrist ? 1.1 : 0),
+      shoulderPitch: this.armS[0].x,
+      elbowFlex: airborne ? 0.9 : bend + Math.max(0, this.armS[0].x) * 0.6,
       abduct: 0.16 + 0.05 * b,
     };
     pose.armR = {
@@ -330,6 +386,26 @@ export class ColonistRig {
       elbowFlex: airborne ? 0.9 : bend + Math.max(0, this.armS[1].x) * 0.6,
       abduct: 0.16 + 0.05 * b,
     };
+
+    // ---- the naturalistic cap: SmoothDamp every joint, then hold it to a
+    // physiological angular-velocity ceiling. This is what de-robotises the
+    // walk — the IK can jump its target at a foot plant, but the rendered
+    // joint eases and is slew-limited, so no snap ever reaches the screen.
+    // Caps scale with the bound (kk): a Mars lope moves faster than a walk.
+    const kk = 1 + b;
+    const ST_LEG = 0.05, ST_ARM = 0.09, ST_TOR = 0.14;
+    for (const [tag, lp] of [['L', pose.legL], ['R', pose.legR]]) {
+      lp.hipPitch = this.smoothJoint('h' + tag, lp.hipPitch, JOINT_CAP.hip * kk, ST_LEG, dt);
+      lp.kneeFlex = this.smoothJoint('k' + tag, lp.kneeFlex, JOINT_CAP.knee * kk, ST_LEG, dt);
+      lp.anklePitch = this.smoothJoint('a' + tag, lp.anklePitch, JOINT_CAP.ankle * kk, ST_LEG, dt);
+    }
+    for (const [tag, ap] of [['L', pose.armL], ['R', pose.armR]]) {
+      ap.shoulderPitch = this.smoothJoint('s' + tag, ap.shoulderPitch, JOINT_CAP.shoulder * kk, ST_ARM, dt);
+      ap.elbowFlex = this.smoothJoint('e' + tag, ap.elbowFlex, JOINT_CAP.elbow * kk, ST_ARM, dt);
+    }
+    pose.torsoYaw = this.smoothJoint('ty', pose.torsoYaw, JOINT_CAP.torso, ST_TOR, dt);
+    pose.torsoPitch = this.smoothJoint('tp', pose.torsoPitch, JOINT_CAP.torso, ST_TOR, dt);
+
     // debug/verify taps
     pose.footL = { x: this.feet[0].px, y: this.feet[0].py, z: this.feet[0].pz,
       planted: this.feet[0].planted };
@@ -349,7 +425,7 @@ export class ColonistRig {
       bz = bz + rz * f.side * BONES.FOOT_LAT + fz * ahead;
     }
     f.px = bx; f.pz = bz; f.py = ground(bx, bz);
-    f.planted = true; f.lift = null;
+    f.planted = true; f.lift = null; f.tgt = null;
   }
 
   replant(inp) {
@@ -389,20 +465,4 @@ export class ColonistRig {
     }
   }
 
-  // the occasional discrete fidget: deterministic from the sim clock so
-  // shared worlds could replay it. Every ~9 s window may fire one; the
-  // envelope eases in and out over the middle of the window.
-  fidget(simT) {
-    const win = Math.floor(simT / 9);
-    const r = hash2(win, 91);
-    if (r < 0.45) return null;                    // most windows: nothing
-    const u = (simT - win * 9) / 9;
-    const env = smooth01((u - 0.2) / 0.15) * (1 - smooth01((u - 0.65) / 0.15));
-    if (env < 1e-3) return null;
-    const kind = hash2(win, 17);
-    if (kind < 0.35) return { yaw: 0.5 * env, pitch: 0.05 * env, wrist: false };
-    if (kind < 0.7) return { yaw: -0.55 * env, pitch: 0.02 * env, wrist: false };
-    // check the wrist display: forearm up, eyes down
-    return { yaw: 0.12 * env, pitch: 0.16 * env, wrist: env > 0.35 };
-  }
 }

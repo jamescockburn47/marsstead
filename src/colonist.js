@@ -118,10 +118,21 @@ export class Colonist {
     const rubber = new THREE.MeshPhysicalMaterial({
       color: RUBBER, roughness: 0.9, metalness: 0,
     });
+    // dusty fabric: shins and boots wear the regolith. Its own material so
+    // setDust can drive its colour toward Mars rust with distance walked,
+    // leaving the clean upper suit alone.
+    const dusty = new THREE.MeshPhysicalMaterial({
+      color: FABRIC, roughness: 0.9, metalness: 0,
+      sheen: 0.8, sheenRoughness: 0.6, sheenColor: 0xffe8cf,
+    });
     fabric.onBeforeCompile = suitDetail;
     shell.onBeforeCompile = suitDetail;
     accent.onBeforeCompile = suitDetail;
-    this.mats = [fabric, shell, accent, metal, visor, rubber];
+    dusty.onBeforeCompile = suitDetail;
+    this.dusty = dusty;
+    this.dustClean = new THREE.Color(FABRIC);
+    this.dustFull = new THREE.Color(0x9a5a33);   // caked Mars regolith
+    this.mats = [fabric, shell, accent, metal, visor, rubber, dusty];
 
     // the painted-sky reflections (zero-asset PMREM); metals are black
     // without one — this is what makes the visor a mirror of Mars
@@ -151,11 +162,11 @@ export class Colonist {
       const knee = new THREE.Group();
       knee.position.y = -BONES.THIGH;
       const shinPivot = new THREE.Group();
-      const shin = new THREE.Mesh(limbGeo(0.102, 0.086, BONES.SHIN), fabric);
+      const shin = new THREE.Mesh(limbGeo(0.102, 0.086, BONES.SHIN), dusty);
       const ankle = new THREE.Group();
       ankle.position.y = -BONES.SHIN;
       // the boot: body, hard toe, lugged sole
-      const boot = new THREE.Mesh(new RoundedBoxGeometry(0.17, 0.13, 0.29, 3, 0.05), fabric);
+      const boot = new THREE.Mesh(new RoundedBoxGeometry(0.17, 0.13, 0.29, 3, 0.05), dusty);
       boot.position.set(0, -0.045, 0.05);
       const toe = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.09, 0.11, 3, 0.035), shell);
       toe.position.set(0, -0.06, 0.155);
@@ -307,10 +318,26 @@ export class Colonist {
     for (const m of this.mats) m.envMapIntensity = k;
   }
 
+  // the regolith cakes on: shins and boots redden with distance walked
+  // (0 clean -> 1 caked). Permanent, like the bootprints — Mars marks you.
+  setDust(t) {
+    const k = Math.max(0, Math.min(1, t));
+    this.dusty.color.copy(this.dustClean).lerp(this.dustFull, k);
+    this.dusty.roughness = 0.9 + 0.05 * k;
+  }
+
   // inp: { x, z, heading, vx, vz, speed, airborne, vy, groundAt, simT }
   pose(dt, inp) {
     const p = this.rig.step(dt, inp);
     this.group.rotation.y = inp.heading;
+
+    // regolith accrues with ground covered on foot (~175 m to fully caked)
+    if (!inp.airborne && this._lx !== undefined) {
+      const d = Math.hypot(inp.x - this._lx, inp.z - this._lz);
+      this._dust = Math.min(0.7, (this._dust || 0) + d * 0.004);
+      this.setDust(this._dust);
+    }
+    this._lx = inp.x; this._lz = inp.z;
 
     this.pelvisPos.position.set(p.sway, p.hipY + BONES.ANKLE_H, 0);
     this.pelvisRot.rotation.set(p.pelvisPitch * 0.4 + p.torsoPitch,
