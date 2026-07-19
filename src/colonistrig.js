@@ -119,7 +119,7 @@ export const JOINT_CAP = {
 export function solveLeg(thigh, shin, dz, dy) {
   const reach = thigh + shin;
   let d = Math.hypot(dz, dy);
-  d = Math.min(Math.max(d, Math.abs(thigh - shin) + 0.01), reach - 0.005);
+  d = Math.min(Math.max(d, Math.abs(thigh - shin) + 0.01), reach - 0.0015);
   const base = Math.atan2(dz, -dy);            // straight-down -> forward
   const cosH = (thigh * thigh + d * d - shin * shin) / (2 * thigh * d);
   const hipPitch = base + Math.acos(Math.max(-1, Math.min(1, cosH)));
@@ -293,7 +293,9 @@ export class ColonistRig {
     } else if (stanceWSum > 1e-4) {
       hipTarget = (stanceHip / stanceWSum) - gHere;   // vault over the plant
     } else {
-      hipTarget = REST_HIP - (moving ? lerp(0, 0.05, b) : 0.015);
+      // stopped: stand tall on near-straight legs (hip just under full
+      // reach — enough for a natural micro-bend, not a crouch)
+      hipTarget = REST_HIP - (moving ? lerp(0.03, 0.06, b) : 0.0015);
     }
     hipTarget = clamp(hipTarget, REST_HIP - 0.30, REST_HIP + 0.06);
     springStep(this.hipYS, hipTarget, 18, 1, dt);
@@ -368,7 +370,8 @@ export class ColonistRig {
     pose.hipY = this.hipYS.x;
     pose.sway = this.swayS.x;
     pose.pelvisYaw = pelvisYaw;
-    pose.pelvisPitch = 0.05 + speed * 0.012 + lerp(0, 0.1, b)
+    // upright when stopped; the forward lean is a moving posture only
+    pose.pelvisPitch = (moving ? 0.05 : 0.0) + speed * 0.012 + lerp(0, 0.1, b)
       + this.leanS.x + (airborne ? -0.08 : 0);
     pose.pelvisRoll = this.rollS.x;
     pose.torsoYaw = this.torsoYawS.x;
@@ -432,8 +435,8 @@ export class ColonistRig {
     const fx = Math.sin(inp.heading), fz = Math.cos(inp.heading);
     const rx = fz, rz = -fx;
     for (const f of this.feet) {
-      this.plantFoot(f, inp.x, inp.z, rx, rz, fx, fz,
-        f.side < 0 ? 0.06 : -0.04, inp.groundAt);
+      // square stance: boots straight under the hips, no fore-aft stagger
+      this.plantFoot(f, inp.x, inp.z, rx, rz, fx, fz, 0, inp.groundAt);
     }
     this.lastX = inp.x; this.lastZ = inp.z;
     this.lastHeading = inp.heading; this.lastSpeed = inp.speed;
@@ -457,7 +460,9 @@ export class ColonistRig {
       const f = this.feet[i];
       const hx = x + rx * f.side * BONES.FOOT_LAT;
       const hz = z + rz * f.side * BONES.FOOT_LAT;
-      if (Math.hypot(f.px - hx, f.pz - hz) > 0.34) {
+      if (Math.hypot(f.px - hx, f.pz - hz) > 0.1) {
+        // bring a stray boot back directly under the hip — on a stop, this
+        // squares the stance so he settles with feet beneath him
         this.idleStep = { i, u: 0, from: { x: f.px, z: f.pz },
           to: { x: hx, z: hz } };
         break;

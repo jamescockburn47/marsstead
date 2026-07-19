@@ -186,6 +186,35 @@ function simulate(speed, seconds, dtStep = 1 / 90) {
     `${(flight / settled.length).toFixed(2)} of frames`);
 }
 
+// ---- the settle: walk, stop, and stand tall on straight legs under him -----
+{
+  const rig = new ColonistRig();
+  const dtStep = 1 / 90;
+  let x = 0, z = 0;
+  const inp = { x, z, heading: 0, vx: 0, vz: GAIT.WALK_V, speed: GAIT.WALK_V,
+    airborne: false, vy: 0, groundAt: () => 0, simT: 0 };
+  for (let t = 0; t < 3; t += dtStep) {   // walk
+    inp.x = x; inp.z = z += GAIT.WALK_V * dtStep; inp.simT = t;
+    rig.step(dtStep, inp);
+  }
+  inp.vz = 0; inp.speed = 0;              // stop, and hold for 4 s to settle
+  let last;
+  for (let t = 3; t < 7; t += dtStep) { inp.simT = t; last = rig.step(dtStep, inp); }
+
+  // legs near-straight (small standing knee bend, not a crouch)
+  const r2d = 180 / Math.PI;
+  const kneeDeg = Math.max(last.legL.kneeFlex, last.legR.kneeFlex) * r2d;
+  check('settles with near-straight legs', kneeDeg < 12, `knee ${kneeDeg.toFixed(1)} deg`);
+  // feet directly under the body (only the lateral half-stance, no fore-aft)
+  const offL = Math.abs(Math.hypot(last.footL.x - x, last.footL.z - z) - BONES.FOOT_LAT);
+  const offR = Math.abs(Math.hypot(last.footR.x - x, last.footR.z - z) - BONES.FOOT_LAT);
+  check('boots settle directly under the hips', offL < 0.05 && offR < 0.05,
+    `L ${offL.toFixed(3)} R ${offR.toFixed(3)}`);
+  // upright: no forward lean at rest
+  check('stands upright at rest', Math.abs(last.pelvisPitch) < 0.02,
+    `pitch ${last.pelvisPitch.toFixed(3)}`);
+}
+
 // ---- landing squash --------------------------------------------------------
 {
   const rig = new ColonistRig();
