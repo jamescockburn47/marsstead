@@ -318,11 +318,45 @@ class Game {
     this.lastTalk = -Infinity; // game-time of the last live exchange
     this.voice = new VesperVoice({ onTranscript: (t) => this.talkToVesper(t) });
 
+    // ---- the text channel: ENTER opens a line to VESPER, typed words ride
+    // the same road as spoken ones (talkToVesper — history, rapport, relay)
+    this.chatBar = document.createElement('input');
+    this.chatBar.id = 'vesperchat';
+    this.chatBar.maxLength = 240;
+    this.chatBar.placeholder = 'say something to VESPER — ENTER sends · ESC closes';
+    this.chatBar.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);'
+      + 'width:min(560px,80vw);padding:10px 14px;display:none;z-index:50;'
+      + 'font-family:Georgia,serif;font-size:14px;letter-spacing:1px;text-align:center;'
+      + 'color:#f6ede2;background:rgba(20,11,7,.92);outline:none;border-radius:4px;'
+      + 'border:1px solid rgba(232,196,106,.55);';
+    document.body.appendChild(this.chatBar);
+    this.chatBar.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // typing is not piloting
+      if (e.key === 'Enter') {
+        const text = this.chatBar.value.trim();
+        this.chatBar.value = '';
+        this.chatBar.style.display = 'none';
+        this.chatBar.blur();
+        if (text) { this.hud.say(`(you) ${text}`, this.t, 4); this.talkToVesper(text); }
+      } else if (e.key === 'Escape') {
+        this.chatBar.value = '';
+        this.chatBar.style.display = 'none';
+        this.chatBar.blur();
+      }
+    });
+
     this.keys = {};
     addEventListener('keydown', (e) => {
+      if (document.activeElement === this.chatBar) return; // words, not verbs
+      if (e.key === 'Enter' && !this.buildMode && !this.map.visible) {
+        this.chatBar.style.display = 'block';
+        this.chatBar.focus();
+        return;
+      }
       this.keys[e.code] = true; this.voice.poke(); this.devKeys(e);
     });
     addEventListener('keyup', (e) => {
+      if (document.activeElement === this.chatBar) return;
       this.keys[e.code] = false;
       if (e.code === 'KeyV') { this.voice.stopListening(); this.hud?.setEar(false); }
     });
@@ -1070,10 +1104,15 @@ class Game {
   }
 
   barkLive(event) {
+    // she speaks when there is SOMETHING TO SAY: firsts and milestones
+    // always; repeat scenery rarely (2.5 min global, 10 min per subject)
     const gap = this.t - (this.lastBarkAt ?? -999);
-    const first = !this.saidFirsts.has(event); // firsts always deserve a line
-    if (!first && gap < 35) return;             // ambient chatter is rationed
+    const first = !this.saidFirsts.has(event);
+    this.lastBarkByEvent = this.lastBarkByEvent || {};
+    const sameGap = this.t - (this.lastBarkByEvent[event] ?? -9999);
+    if (!first && (gap < 150 || sameGap < 600)) return;
     this.lastBarkAt = this.t;
+    this.lastBarkByEvent[event] = this.t;
     fetch('/brain/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1320,7 +1359,8 @@ class Game {
       this.idleTimer = 0;
     } else {
       this.idleTimer += dt;
-      if (this.idleTimer > 45) { this.idleTimer = 0; this.say('idle'); }
+      // idle musings retired from the loop: she speaks when there is
+      // something to say (James's rule) — standing still is not something
     }
 
     const ground = this.groundAt(this.pos.x, this.pos.z);
@@ -1736,11 +1776,11 @@ class Game {
     // VESPER reads the same flags the physics raises
     if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {
       this.driftTimer += dt;
-      if (this.driftTimer > 0.7) { this.driftTimer = -4; this.say('buggy-drift'); }
+      if (this.driftTimer > 0.7) { this.driftTimer = -60; this.say('buggy-drift'); }
     } else if (this.driftTimer > 0) this.driftTimer = 0;
     if (flags.airborne) {
       this.airTimer += dt;
-      if (this.airTimer > 0.8) { this.airTimer = -6; this.say('buggy-air'); }
+      if (this.airTimer > 0.8) { this.airTimer = -60; this.say('buggy-air'); }
     } else if (this.airTimer > 0) this.airTimer = 0;
     if (flags.rollover) this.say('buggy-rollover');
     if (flags.cleanFlip) this.say('buggy-flip');
