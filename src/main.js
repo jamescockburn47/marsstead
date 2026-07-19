@@ -43,7 +43,10 @@ import {
 import { TrackLayer } from './tracklayer.js';
 import { WakeLayer } from './wakelayer.js';
 import { Colonist } from './colonist.js';
-import { createBuggy, stepBuggy, deflectBuggy, WHEELBASE_F, WHEELBASE_R } from './buggy.js';
+import {
+  createBuggy, stepBuggy, deflectBuggy, wheelContactHeight,
+  WHEELBASE_F, WHEELBASE_R,
+} from './buggy.js';
 import { BuggyLayer, TRACK } from './buggylayer.js';
 import { Hud } from './hud.js';
 import { createLander, available, unboltSeconds, takeOne, remaining, remainingTotal } from './salvage.js';
@@ -1465,9 +1468,13 @@ class Game {
       this._bumpCache = { x: bx, z: bz, list: bumps };
     }
     // the sampler the physics uses for wheels AND the chassis skid plate:
-    // drawn terrain, with the rock domes riding on top
+    // drawn terrain, with the rock domes riding on top. Wheels read it
+    // through their own contact patch (wheelContactHeight) — a big wheel
+    // bridges cracks and climbs edges early; the skid plate stays a
+    // point-sampler, because the body is not round.
     const sample = (x, z) => Math.max(meshGroundHeight(x, z), bumpHeightAt(x, z, bumps));
-    const at = (lx, lz) => sample(bx + lx * cos + lz * sin, bz - lx * sin + lz * cos);
+    const at = (lx, lz) => wheelContactHeight(sample,
+      bx + lx * cos + lz * sin, bz - lx * sin + lz * cos, sin, cos);
     const wh = [at(-TRACK, WHEELBASE_F), at(TRACK, WHEELBASE_F),
       at(-TRACK, -WHEELBASE_R), at(TRACK, -WHEELBASE_R)];
     return { h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh, at: sample };

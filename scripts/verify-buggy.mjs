@@ -7,7 +7,8 @@
 // deterministic.
 
 import {
-  createBuggy, stepBuggy, deflectBuggy, chassisClearance, MU, MASS, TOP_SPEED,
+  createBuggy, stepBuggy, deflectBuggy, chassisClearance, wheelContactHeight,
+  MU, MASS, TOP_SPEED,
   SUSP_STATIC, SUSP_TRAVEL, WHEEL_R, HALF_TRACK, WHEELBASE_F, WHEELBASE_R,
   maxLatAccel, brakingDistance,
 } from '../src/buggy.js';
@@ -358,18 +359,46 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
 // chassis out of the dunes with a real physics-engine collider; ours is
 // the analytic CHASSIS_POINTS set — chassisClearance is the guarantee)
 
-// full ground data from an arbitrary sampler, as main.js builds it
+// full ground data from an arbitrary sampler, exactly as main.js builds
+// it: wheels read through their contact patch, the skid plate point-samples
 const mkGround = (at, s) => {
   const e = 0.7, sin = Math.sin(s.heading), cos = Math.cos(s.heading);
   const wh = [[-HALF_TRACK, WHEELBASE_F], [HALF_TRACK, WHEELBASE_F],
     [-HALF_TRACK, -WHEELBASE_R], [HALF_TRACK, -WHEELBASE_R]]
-    .map(([lx, lz]) => at(s.x + lx * cos + lz * sin, s.z - lx * sin + lz * cos));
+    .map(([lx, lz]) => wheelContactHeight(at,
+      s.x + lx * cos + lz * sin, s.z - lx * sin + lz * cos, sin, cos));
   return {
     h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh, at,
     gx: (at(s.x + e, s.z) - at(s.x - e, s.z)) / (2 * e),
     gz: (at(s.x, s.z + e) - at(s.x, s.z - e)) / (2 * e),
   };
 };
+
+// 21k. rolling contact: a crack NARROWER than the wheel is bridged — the
+// buggy rolls straight across a 0.5 m slot with barely a dip, where a
+// point-sampled wheel would drop 0.5 m into it
+{
+  const slot = (x, z) => (z > 24.75 && z < 25.25) ? -0.5 : 0;
+  const s = settled(); s.u = 6;
+  let dip = 0;
+  for (let t = 0; t < 5; t += DT) {
+    stepBuggy(s, { throttle: 0.4, steer: 0, brake: 0, handbrake: false }, mkGround(slot, s), DT);
+    if (s.z > 23 && s.z < 27) dip = Math.min(dip, s.y);
+  }
+  check('narrow crack is bridged, not fallen into', dip > -0.12, `dip=${dip.toFixed(3)}`);
+  check('and the crossing does not stop the buggy', s.z > 30, `z=${s.z.toFixed(1)}`);
+}
+
+// 21l. rolling contact: a sharp step is FELT before the wheel centre
+// reaches it — the patch's leading tap climbs the face early
+{
+  const step = (x, z) => (z >= 20 ? 0.35 : 0);
+  // front wheel centres (buggy z + 1.05) sit 0.25 m short of the face
+  const s = createBuggy(0, 18.7, 0);
+  const g = mkGround(step, s);
+  check('sharp step is felt early', g.wh[0] > 0.05 && g.wh[1] > 0.05,
+    `front wheel reads ${g.wh[0].toFixed(3)}`);
+}
 
 // 21e. a sharp crest bulge between the axles cannot poke the belly
 {

@@ -135,6 +135,25 @@ export function chassisClearance(s, at) {
   return worst;
 }
 
+// ---- rolling contact: a 0.62 m wheel is NOT a point. Each wheel reads
+// the surface through its own footprint — effective height = max over
+// the contact patch of (surface − sagitta) — so it BRIDGES cracks
+// narrower than itself and climbs sharp edges a little early, exactly
+// as a big mesh wheel does. This completes the DFA lesson: their wheels
+// rode a smooth analytic dune beneath the faceted render mesh; on
+// Marsstead the one-truth drawn surface IS the analytic read, so the
+// smoothing lives in the contact, never in the geometry.
+const PATCH = [0, WHEEL_R * 0.5, -WHEEL_R * 0.5, WHEEL_R * 0.8, -WHEEL_R * 0.8]
+  .map((d) => ({ d, sag: WHEEL_R - Math.sqrt(WHEEL_R * WHEEL_R - d * d) }));
+export function wheelContactHeight(sample, x, z, dirX, dirZ) {
+  let h = -Infinity;
+  for (const p of PATCH) {
+    const v = sample(x + dirX * p.d, z + dirZ * p.d) - p.sag;
+    if (v > h) h = v;
+  }
+  return h;
+}
+
 // per-axle vertical load (static split; the friction circle spends it)
 export function axleLoad() { return (MASS * G_MARS) / 2; }
 
