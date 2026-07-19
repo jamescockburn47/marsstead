@@ -57,6 +57,11 @@ export const GAME_FACTS = [
     text: 'A buggy stranded anywhere — down a cliff, out past walking range — is never lost: open the Burrow console at the crown and press RECALL THE BUGGY. The drones tow it home in a few minutes for a few kilowatt-hours. The settler themselves can always walk home, or let the suit run out: a blackout wakes them at shelter, cargo dropped where they fell, never worse.' },
   { topic: 'world', keywords: ['storm', 'dust', 'weather', 'forecast', 'tau', 'clear', 'sky'],
     text: 'Dust is weather with a real forecast: clear spells and dusty spells run in sols-long runs. Dust taxes solar and thickens the sky; deep storms are coming in a later phase but have not arrived yet.' },
+  // --- the hopper (Stage 3) ---
+  { topic: 'hopper', keywords: ['hopper', 'fly', 'flight', 'hop', 'pad', 'landing', 'assemble', 'rocket', 'horizon', 'range', 'travel'],
+    text: 'The hopper crosses horizons: build a landing pad (four steel panels, with B), then assemble the craft at the pad console (E at the pad) from six steel panels, four machine parts and two electronics. Hops are ballistic and plotted — mark a target inside the fuel circle on the pad console and light the engine.' },
+  { topic: 'hopper', keywords: ['fuel', 'methane', 'tank', 'tanks', 'cradle', 'payload', 'ellipse', 'reach'],
+    text: 'Hopper fuel is methane tanks (assembler-made from machine parts), loaded whole and spent whole at ignition: a full rack of six reaches about twenty-five kilometres, one tank a kilometre and a half. Cradling the buggy nearly halves range. Pads land exact; open ground lands inside a descent ellipse that grows with the hop.' },
   { topic: 'meta', keywords: ['orders', 'help', 'controls', 'keys', 'manual', 'instructions'],
     text: 'O reopens the LANDFALL ORDERS (the written briefing); ENTER types to VESPER, V is push-to-talk. The orders sheet lists every key.' },
 ];

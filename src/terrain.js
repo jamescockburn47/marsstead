@@ -114,6 +114,13 @@ if (uNormalAmp > 0.001) {
     this.queue = [];
   }
 
+  // the hopper's arc: streamed ground hides under the vista and returns
+  // for the descent — chunks built while hidden arrive hidden
+  setVisible(v) {
+    this.hidden = !v;
+    for (const c of this.chunks.values()) c.mesh.visible = v;
+  }
+
   // the tier lever: plain zeroes the amps (and the shader's uniform branch
   // skips the noise); fine restores the authored values
   setDetail(on) {
@@ -155,6 +162,7 @@ if (uNormalAmp > 0.001) {
       geo.setIndex(new THREE.BufferAttribute(idx, 1));
       const mesh = new THREE.Mesh(geo, this.mat);
       mesh.receiveShadow = true;
+      mesh.visible = !this.hidden;
       this.scene.add(mesh);
       this.chunks.set(k, { mesh, res });
     }

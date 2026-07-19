@@ -23,15 +23,19 @@ export const MAX_TANKS = 6;          // the manifold's rack
 export const CRADLE_BUGGY_KG = 260;  // the buggy, slung beneath
 export const PILOT_KG = 95;          // settler + suit
 
-// ---- the honest range model ----------------------------------------------
-// Δv from Tsiolkovsky (methalox vacuum Isp ≈ 355 s), split half for
+// ---- the range model -------------------------------------------------------
+// Δv from Tsiolkovsky (methalox vacuum Isp ≈ 355 s), split half for the
 // ascent burn and half for the landing burn, with a gravity-loss tax;
-// range from the 45° ballistic: R = v² / g. Mars is small and g is low —
-// this is why hops are enormous, and the numbers below keep the game's
-// 50–300 km promise inside real physics' shape.
+// range from the 45° ballistic: R = v² / g. The mass RELATIONSHIPS are
+// real — that's what makes fuel and payload honest decisions — but the
+// absolute range is compressed by WORLD_RANGE: the playable planet is
+// 1:200 (mars.js M_PER_DEG — the whole world is ~107 km around), so a
+// truthful 300 km hop would lap it three times. The sanctioned
+// fun-over-truth override (DESIGN.md), applied once, named, and visible.
 export const ISP_S = 355;
 export const G0 = 9.80665;           // rocket-equation reference, Earth-fixed
 export const LOSS_FACTOR = 0.78;     // gravity/steering losses eat the rest
+export const WORLD_RANGE = 1 / 14;   // the 1:200 world's compression of reach
 
 export function wetMass(fuelKg, payloadKg) {
   return HOPPER_DRY_KG + PILOT_KG + Math.max(0, payloadKg) + Math.max(0, fuelKg);
@@ -44,7 +48,7 @@ export function hopRangeKm(fuelKg, payloadKg = 0) {
   const m1 = m0 - fuelKg;
   const dv = ISP_S * G0 * Math.log(m0 / m1) * LOSS_FACTOR;
   const v = dv / 2;                      // half up, half held for the landing
-  return (v * v) / G_MARS / 1000;        // 45° ballistic, in kilometres
+  return (v * v) / G_MARS / 1000 * WORLD_RANGE; // 45° ballistic, world-scaled
 }
 
 // fuel needed for a given distance at a given payload: invert by search
@@ -59,7 +63,7 @@ export function fuelForKm(distKm, payloadKg = 0) {
 }
 
 // ---- the plot -------------------------------------------------------------
-export const MIN_HOP_KM = 4;         // under this the buggy is the answer
+export const MIN_HOP_KM = 1.2;       // under this the buggy is the answer
 export const APEX_FRACTION = 0.25;   // 45° ballistic: apex = range / 4
 
 // the descent ellipse (STRUCTURE.md): a PAD is a free, exact landing; open
@@ -67,10 +71,10 @@ export const APEX_FRACTION = 0.25;   // 45° ballistic: apex = range / 4
 // with the hop (real EDL truth: longer flights spread further, mostly
 // downtrack). Deterministic in the chosen target, so every client and
 // every replan agree on where "there" actually is.
-export const ELLIPSE_MIN_M = 220;
+export const ELLIPSE_MIN_M = 90;
 export function descentEllipseM(distKm) {
-  return { along: Math.min(2600, ELLIPSE_MIN_M + distKm * 8),
-    cross: Math.min(1300, ELLIPSE_MIN_M * 0.6 + distKm * 4) };
+  return { along: Math.min(700, ELLIPSE_MIN_M + distKm * 24),
+    cross: Math.min(360, ELLIPSE_MIN_M * 0.6 + distKm * 12) };
 }
 // where the hop truly ends: exact onto a pad, scattered onto open ground
 export function landingPoint(from, to, distKm, onPad) {
@@ -119,7 +123,7 @@ export function planHop(h, from, to, payloadKg = 0) {
 // phase durations: staged and cinematic, not simulated — scaled gently
 // with distance so a long hop feels long without outstaying the shot
 export function hopDurations(distKm) {
-  const arc = Math.min(46, 14 + distKm * 0.11);
+  const arc = Math.min(44, 12 + distKm * 1.3);
   return { ascent: 8, arc, descent: 9, total: 8 + arc + 9 };
 }
 

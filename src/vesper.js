@@ -28,6 +28,7 @@ export const EVENTS = [
   'power-low', 'no-charge', 'drone-deployed', 'buggy-recalled',
   'brief-wake', 'brief-power', 'brief-dig', 'brief-works',
   'pairing-review',
+  'hopper-built', 'hop-ignition', 'hop-crest', 'hop-landed',
 ];
 
 // the first-sol briefing's deterministic floor: if the relay is down, the

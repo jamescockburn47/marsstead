@@ -96,6 +96,16 @@ function check(name, ok, detail = '') {
   check('unknown type refuses', createMachine('replicator', 0, 0) === null);
 }
 
+// 2b. the pad's ground law: bigger footprint, flatter ground
+{
+  check('a pad places on the level', canPlaceMachine('landing-pad', 0.05, [], 0, 0));
+  check('a pad refuses a tilt a smelter would take',
+    !canPlaceMachine('landing-pad', 0.1, [], 0, 0) && canPlaceMachine('smelter', 0.1, [], 0, 0));
+  const pad = createMachine('landing-pad', 0, 0);
+  check('the apron demands its ground', !canPlaceMachine('smelter', 0.05, [pad], 6, 0)
+    && canPlaceMachine('smelter', 0.05, [pad], 12, 0));
+}
+
 // 3. the cook: same contract as the fab, per-type recipes
 {
   const sm = createMachine('smelter', 0, 0);

@@ -100,9 +100,12 @@ export function lightState(sunEl, tau = TAU_CLEAR) {
 // butterscotch band fringed blue over the black. Pure: surface state in,
 // altitude-modified state out, plus the limb strength the dome shader
 // reads. verify-marslight holds the ladder's facts.
+// Altitudes are the 1:200 world's own (mars.js): the haze top sits a
+// couple of kilometres up, not ninety — the ladder's scale heights match
+// the world the hopper actually flies.
 export function altitudeLight(L, altM = 0) {
   const a = Math.max(0, altM);
-  const thin = 1 - Math.exp(-a / 9000);         // how much sky is BELOW you
+  const thin = 1 - Math.exp(-a / 2600);         // how much sky is BELOW you
   const SPACE = [0.004, 0.004, 0.008];
   const zen = mix3(L.skyZenith, SPACE, clamp01(thin * 1.35));
   const hor = mix3(L.skyHorizon, SPACE, thin * thin); // the horizon lingers, then goes
@@ -116,13 +119,13 @@ export function altitudeLight(L, altM = 0) {
     ambientColour: mix3(L.ambientColour, STARLIT_NIGHT, thin * 0.7),
     ambientIntensity: L.ambientIntensity * (1 - 0.72 * thin),
     fogColour: hor,
-    fogDensity: L.fogDensity * Math.exp(-a / 6000),
+    fogDensity: L.fogDensity * Math.exp(-a / 2000),
     shadowSoftness: L.shadowSoftness * (1 - thin),
     starVisibility: stars,
     thin,
     // the limb only reads once you stand above most of the haze, and it
     // needs sunlight somewhere on the arc of the world to shine at all
-    limb: clamp01((a - 3500) / 11000) * clamp01(0.25 + L.sunIntensity + L.haloStrength),
+    limb: clamp01((a - 1200) / 3600) * clamp01(0.25 + L.sunIntensity + L.haloStrength),
   };
 }
 

@@ -26,7 +26,7 @@ const FS = /* glsl */`
   varying vec3 vDir;
   uniform vec3 uZen, uHor, uSunCol, uHalo;
   uniform vec3 uSunDir, uPhobosDir, uDeimosDir, uEarthDir, uMWPole;
-  uniform float uSunI, uHaloS, uStars, uEarthI, uCirrus, uT;
+  uniform float uSunI, uHaloS, uStars, uEarthI, uCirrus, uT, uThin, uLimb;
 
   ${FBM_GLSL}
 
@@ -34,6 +34,14 @@ const FS = /* glsl */`
     vec3 d = normalize(vDir);
     float up = clamp(d.y, 0.0, 1.0);
     vec3 sky = mix(uHor, uZen, pow(up, 0.6));
+
+    // the altitude ladder: the gradient dries to space-black from the
+    // zenith down as the air thins beneath you; the horizon keeps a
+    // residue that the limb band then owns
+    if (uThin > 0.001) {
+      float dry = uThin * smoothstep(-0.02, 0.45, d.y);
+      sky = mix(sky, vec3(0.004, 0.004, 0.008), min(1.0, dry * 1.25));
+    }
 
     float s = distance(d, uSunDir);
     // the blue forward-scatter halo — Mars's signature dusk
@@ -97,6 +105,24 @@ const FS = /* glsl */`
       sky += (uSunCol * 0.55 + uHalo * uHaloS * 0.3) * cir;
     }
 
+    // THE LIMB — the rusty edge of space: at altitude the whole
+    // atmosphere shows edge-on as a thin butterscotch band along the
+    // horizon, fringed blue above (the same forward-scatter that makes
+    // the dusk halo), over black. The band sits a breath below eye level
+    // and tightens as you climb — real Mars-orbit photography, in one
+    // gaussian and a mix.
+    if (uLimb > 0.001) {
+      float limbY = -0.015 - 0.05 * uThin;
+      float w = 34.0 + 26.0 * uThin;
+      float band = exp(-pow((d.y - limbY) * w, 2.0));
+      vec3 limbCol = mix(vec3(0.82, 0.44, 0.19),
+        vec3(0.45, 0.62, 0.85), smoothstep(0.0, 0.045, d.y - limbY));
+      // the band glows hardest toward the sun's side of the world
+      float sunSide = 0.55 + 0.45 * max(0.0, dot(normalize(vec2(d.x, d.z)),
+        normalize(vec2(uSunDir.x, uSunDir.z) + vec2(1e-4))));
+      sky += limbCol * band * uLimb * sunSide * 0.9;
+    }
+
     // grain so the gradient never bands (the landing-page trick)
     sky += (h21(d.xy * 640.0 + d.z) - 0.5) * 0.012;
 
@@ -131,6 +157,8 @@ export class SkyDome {
       uEarthI: { value: 0 },
       uCirrus: { value: 0 },
       uT: { value: 0 },
+      uThin: { value: 0 },   // how much sky is BELOW you (the altitude ladder)
+      uLimb: { value: 0 },   // the rusty edge: band strength at the horizon
     };
     const geo = new THREE.SphereGeometry(1, 32, 16);
     const mat = new THREE.ShaderMaterial({
@@ -191,6 +219,8 @@ export class SkyDome {
     u.uSunI.value = light.sunIntensity;
     u.uHaloS.value = light.haloStrength;
     u.uStars.value = light.starVisibility;
+    u.uThin.value = light.thin || 0;
+    u.uLimb.value = light.limb || 0;
     u.uEarthI.value = o.earthI;
     u.uCirrus.value = o.cirrus;
     u.uT.value = o.t;
@@ -207,6 +237,11 @@ export class SkyDome {
     // stars fade with daylight and storm, exactly as the envelope says
     this.bright.material.opacity = light.starVisibility;
     this.faint.material.opacity = light.starVisibility * 0.85;
+    // at altitude the star sphere must sit BEYOND the world below, or
+    // the galaxy sprinkles across the planet's face (size is screen-fixed,
+    // so pushing the sphere out costs nothing) — on the ground it stays
+    // inside the modest far plane
+    this.frame.scale.setScalar((light.thin || 0) > 0.02 ? 480000 : 3900);
     // the Milky Way pole rides the same quaternion, handed to the dome
     this._mwWorld.set(...this.mw).applyQuaternion(this.frame.quaternion);
     u.uMWPole.value.copy(this._mwWorld);

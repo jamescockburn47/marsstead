@@ -16,7 +16,14 @@ import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
 import { sunElevation, sunAzimuth, solClock, solarLongitude, season } from './marstime.js';
-import { lightState, surfaceTempC, dayFactor } from './marslight.js';
+import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
+import {
+  createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
+  serializeHopper, deserializeHopper, CRADLE_BUGGY_KG,
+} from './hopper.js';
+import { HopperLayer } from './hopperlayer.js';
+import { VistaLayer } from './vistalayer.js';
+import { HopConsole } from './hopconsole.js';
 import {
   EXPOSURE_BASE, exposureTarget, decideTier, fpsVerdict, median,
   SETTLE_S, WINDOW_S,
@@ -329,6 +336,56 @@ class Game {
     this.swayTimer = 0;
     this.prevHopper = 0;
 
+    // ---- STAGE 3: the hopper — the pure craft, its layer, the vista
+    // for the arc, and the pad's console. hopper.js owns the numbers.
+    this.hopper = createHopper();
+    this.hopperBuilt = false;
+    this.hopperLayer = new HopperLayer(this.scene, this.renderer);
+    this.vista = new VistaLayer(this.scene);
+    this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
+    const HOP_COSTS = [['steel-panel', 6], ['machine-parts', 4], ['electronics', 2]];
+    const hopPool = (id) => count(this.suit, id) + count(this.roverStore, id);
+    this.hopUI = new HopConsole({
+      getHopper: () => this.hopper,
+      isBuilt: () => this.hopperBuilt,
+      canAssemble: () => {
+        const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
+        const listed = HOP_COSTS.map(([id, n]) => `${n} ${id.replace('-', ' ')}`).join(', ');
+        return {
+          ok: missing.length === 0 && !!this.grid && this.grid.charge >= BUILD_KWH.machine,
+          text: `It wants <b>${listed}</b> and ${BUILD_KWH.machine} kWh — `
+            + (missing.length ? `short of ${missing.map(([id]) => id.replace('-', ' ')).join(', ')}.`
+              : 'all aboard. Light the work.'),
+        };
+      },
+      onAssemble: () => {
+        const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
+        if (missing.length || !spend(this.power, BUILD_KWH.machine)) { this.say('no-charge'); return; }
+        for (const [id, n] of HOP_COSTS) {
+          const fromSuit = remove(this.suit, id, n);
+          if (fromSuit < n) remove(this.roverStore, id, n - fromSuit);
+        }
+        const pad = this.nearestPad();
+        this.hopperBuilt = true;
+        this.hopper.x = pad ? pad.x : this.pos.x + 4;
+        this.hopper.z = pad ? pad.z : this.pos.z;
+        this.say('hopper-built');
+      },
+      getPads: () => this.machines.filter((m) => m.type === 'landing-pad'),
+      getHome: () => this.crownPos,
+      buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
+      tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
+      onLoadTank: () => {
+        if (this.hopper.fuelKg >= 6 * 110) return;
+        if (remove(this.suit, 'methane-tank', 1) || remove(this.roverStore, 'methane-tank', 1)) {
+          hopperLoadTank(this.hopper);
+        }
+      },
+      onIgnite: (tx, tz, cradle, onPad) => this.igniteHop(tx, tz, cradle, onPad),
+      getBank: () => (this.grid ? { charge: this.grid.charge, capacity: this.grid.capacity } : null),
+      line: () => this.hud.vesperLine.textContent || '…',
+    });
+
     // the suit
     this.air = 1; this.warm = 1;
     this.saidCounts = {}; this.lamp = false;
@@ -507,11 +564,14 @@ class Game {
     if (Array.isArray(s.vesperLog) && s.vesperLog.length) this.vesperHistory = s.vesperLog;
     this.talks = s.talks || 0;
     this.regard = deserializeRegard(s.regard); // the pairing, as it stood
+    this.hopper = deserializeHopper(s.hopper); // the craft, where it stood
+    this.hopperBuilt = !!s.hopperBuilt;
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
   // fire-and-forget: a failed save must never cost a frame, let alone a run
   persist() {
+    if (this.hopFlight) return; // mid-air is no place to write history
     if (this.resetting || !this.booted) return; // never resurrect a wiped
     // slate; never write from a page that hasn't fully woken up
     saveGame(snapshotSave({
@@ -549,6 +609,8 @@ class Game {
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
       regard: serializeRegard(this.regard),
+      hopper: serializeHopper(this.hopper),
+      hopperBuilt: !!this.hopperBuilt,
     })).catch(() => {});
   }
 
@@ -779,6 +841,113 @@ class Game {
     return best;
   }
 
+  nearestPad() {
+    let best = null, bestD = Infinity;
+    for (const m of this.machines) {
+      if (m.type !== 'landing-pad') continue;
+      const d = Math.hypot(m.x - this.pos.x, m.z - this.pos.z);
+      if (d < bestD) { best = m; bestD = d; }
+    }
+    return best;
+  }
+
+  // ---- STAGE 3: ignition and the staged flight ----------------------------
+  igniteHop(tx, tz, cradle, onPad) {
+    const payload = cradle ? CRADLE_BUGGY_KG : 0;
+    const from = [this.hopper.x, this.hopper.z];
+    if (!beginHop(this.hopper, from, [tx, tz], payload, onPad)) return;
+    this.vista.build(from, this.hopper.hop.to);
+    this.hopFlight = { cradle, hidTerrain: false, landedSettling: false };
+    this.colonist.group.visible = false;
+    if (cradle) this.buggyLayer.group.visible = false;
+    this._preHopFar = this.cam.far;   // hand the depth budget back on landing
+    this.cam.far = 600000;
+    this.cam.updateProjectionMatrix();
+    this.say('hop-ignition');
+  }
+
+  // one frame of the flight: the pure module dictates, the layers obey.
+  // Returns the altitude (m) for the light ladder, or 0 when not flying.
+  frameFlight(dt) {
+    if (!this.hopper.hop && !this.hopFlight) return 0;
+    const F = this.hopFlight;
+    const snap = this.hopper.hop ? tickHop(this.hopper, dt) : { phase: 'landed', prog: 1, alt: 0, x: this.hopper.x, z: this.hopper.z };
+    const groundY = meshGroundHeight(snap.x, snap.z);
+    // the settler rides: pos IS the craft; inputs are dead weight
+    this.pos.set(snap.x, groundY + snap.alt, snap.z);
+    this.vel.set(0, 0, 0); this.vy = 0; this.airborne = false;
+    const H = this.hopper.hop;
+    const heading = H ? Math.atan2(H.to[0] - H.from[0], H.to[1] - H.from[1]) : 0;
+    const lean = snap.phase === 'ascent' ? 0.1 : snap.phase === 'descent' ? -0.08 : 0;
+    this.hopperLayer.setPose(snap.x, groundY + snap.alt, snap.z, heading, lean);
+    this.hopperLayer.setFuel(this.hopper.fuelKg);
+    // the burn: full on ascent, dead ballistic on the arc, the landing
+    // burn waking as the ground comes back up
+    const burn = snap.phase === 'ascent' ? 1
+      : snap.phase === 'descent' ? Math.min(1, Math.max(0, 1 - snap.alt / 2200)) : 0;
+    this.hopperLayer.setFlame(burn, this.t);
+    // the vista swap: streamed ground hides above the haze (or above half
+    // the apex on a short lob — the streamer must never chase the track),
+    // returns below
+    const swapAlt = Math.min(1200, (H ? H.apexM : 1200) * 0.55);
+    if (snap.alt > swapAlt && !F.hidTerrain) {
+      F.hidTerrain = true;
+      this.terrain.setVisible(false);
+      this.rocks.setVisible(false);
+      this.vista.setVisible(true);
+      if (this.vista.mesh) this.vista.mesh.position.y = -3; // ducks under real chunks
+      this.say('hop-crest');
+    }
+    if (snap.alt <= swapAlt && F.hidTerrain && (snap.phase === 'descent' || snap.phase === 'landed')) {
+      F.hidTerrain = false;
+      this.terrain.setVisible(true);
+      this.rocks.setVisible(true);
+    }
+    // the camera: authored per phase — pulled back, slowly orbiting
+    const wantDist = snap.phase === 'ascent' ? 15 + snap.prog * 120
+      : snap.phase === 'arc' ? 26 : 18;
+    this.camDist += (wantDist - this.camDist) * Math.min(1, dt * 1.2);
+    this.camPitch += ((snap.phase === 'arc' ? 0.5 : 0.34) - this.camPitch) * Math.min(1, dt * 0.8);
+    this.camYaw += dt * 0.045;
+    if (snap.phase === 'landed') {
+      // touchdown: the world hands back
+      this.hopFlight = null;
+      this.colonist.group.visible = true;
+      this.pos.set(this.hopper.x + 3.2, 0, this.hopper.z + 2.4);
+      this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
+      this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z,
+        meshGroundHeight(this.hopper.x, this.hopper.z) + 0.1, heading);
+      this.hopperLayer.setFlame(0, this.t);
+      if (F.cradle) {
+        this.buggy.x = this.hopper.x - 4.2; this.buggy.z = this.hopper.z + 3.5;
+        this.buggy.u = 0; this.buggy.v = 0;
+        this.buggyLayer.group.visible = true;
+      }
+      this.camDist = 7;
+      this.cam.far = this._preHopFar || 6000;
+      this.cam.updateProjectionMatrix();
+      this.say('hop-landed');
+      this.persist();
+      return 0;
+    }
+    return snap.alt;
+  }
+
+  // the flight's frame: the pure phase machine dictates position; the
+  // camera rides authored curves; the settler's inputs are dead weight
+  frameFlying(dt) {
+    this.hopAlt = this.frameFlight(dt);
+    const co = new THREE.Vector3(
+      Math.sin(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+      this.camDist * Math.sin(this.camPitch) + 2.4,
+      Math.cos(this.camYaw) * -this.camDist * Math.cos(this.camPitch),
+    ).add(this.pos);
+    // rigid, never lerped: the craft moves kilometres a second — a lagged
+    // camera turns the star of the shot into a speck
+    this.cam.position.copy(co);
+    this.cam.lookAt(this.pos.x, this.pos.y + 1.2, this.pos.z);
+  }
+
   // T works the nearest bench: a built machine first, else the lander's
   // fabricator — clear the out-tray into the bags, then feed it raw
   workFab() {
@@ -822,8 +991,19 @@ class Game {
 
   // E is THE doing key: the cabin door, the rover, the rig, the bolts
   interact() {
+    if (this.hopFlight) return; // nothing to do but ride
     if (this.burrowUI.visible) { this.burrowUI.close(); return; }
     if (this.worksUI.visible) { this.worksUI.close(); return; }
+    if (this.hopUI.visible) { this.hopUI.close(); return; }
+    // the pad's console outranks the works view at a landing pad
+    {
+      const nm = this.nearestMachine();
+      if (!this.inLander && !this.driving && nm && nm.type === 'landing-pad'
+        && Math.hypot(nm.x - this.pos.x, nm.z - this.pos.z) < 8) {
+        this.hopUI.open();
+        return;
+      }
+    }
     if (!this.inLander && !this.driving
       && (this.nearestMachine() || this.distToLander() < 6) && this.distToLadder() >= 3.6
       && this.distToRover() >= 3.2 && this.distToCrown() >= 4
@@ -1284,6 +1464,8 @@ class Game {
 
     if (this.sleepAnim) {
       this.frameSleeping(dt);
+    } else if (this.hopFlight) {
+      this.frameFlying(dt);       // STAGE 3: the staged hop owns the frame
     } else if (this.inLander) {
       this.frameInside(dt);
     } else if (this.driving) {
@@ -1903,7 +2085,10 @@ class Game {
     this.sunAz = sunAz;
     const sol = Math.floor(this.simMillis / 88775244);
     const tau = tauAt(mtc(this.simMillis), sol);
-    const L = lightState(sunEl, tau);
+    let L = lightState(sunEl, tau);
+    // the altitude ladder: a hop in flight re-lights the whole world —
+    // sky drying to black, stars at noon, fog dying, the limb waking
+    if ((this.hopAlt || 0) > 1) L = altitudeLight(L, this.hopAlt);
     this.L = L; // renderFrame's drives read the same state this frame set
 
     // the pairing's slow arithmetic: quiet sols decay the hidden score;
@@ -2088,10 +2273,30 @@ class Game {
     this.rigLayer.update(this.rig, meshGroundHeight(this.rig.x, this.rig.z));
     this.rigLayer.syncOre(this.pos.x, this.pos.z, meshGroundHeight);
 
-    // ---- the world layers
-    this.terrain.update(this.pos.x, this.pos.z);
-    this.rocks.update(this.pos.x, this.pos.z);
+    // ---- the world layers: streaming freezes while the arc flies over
+    // the vista (STRUCTURE.md: never low-level streaming under flight) —
+    // it resumes on descent so the destination arrives under the dust
+    if (!this.hopFlight || !this.hopFlight.hidTerrain) {
+      this.terrain.update(this.pos.x, this.pos.z);
+      this.rocks.update(this.pos.x, this.pos.z);
+    }
     this.trackLayer.update(this.pos.x, this.pos.z, this.trail, meshGroundHeight);
+
+    // the hopper on its pad (flight frames pose it themselves)
+    if (this.hopperBuilt && !this.hopFlight) {
+      this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z,
+        meshGroundHeight(this.hopper.x, this.hopper.z) + 0.1, this.hopperHeading || 0);
+      this.hopperLayer.setFuel(this.hopper.fuelKg);
+      this.hopperLayer.setFlame(0, this.t);
+    } else if (!this.hopperBuilt) {
+      this.hopperLayer.hide();
+    }
+    this.hopperLayer.update(this.t, (this.sunEl ?? 10) < 0);
+    this.hopUI.update(dt);
+    // the vista hands back to the streamed world once it has caught up
+    if (!this.hopFlight && this.vista.mesh && this.terrain.queue.length === 0) {
+      this.vista.dispose();
+    }
 
     // ---- the Burrow: the hands dig in real seconds; spoil is ore — and
     // DESIGN PAYS: a staged store speeds the haul, lit gardens top your

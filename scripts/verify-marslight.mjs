@@ -81,8 +81,8 @@ const chans = ['skyZenith', 'skyHorizon', 'sunColour', 'haloBlue', 'ambientColou
   const { altitudeLight, lightState } = await import('../src/marslight.js');
   const noon = lightState(60, 0.4);
   const ground = altitudeLight(noon, 0);
-  const mid = altitudeLight(noon, 8000);
-  const high = altitudeLight(noon, 40000);
+  const mid = altitudeLight(noon, 2200);   // the 1:200 world's mid-climb
+  const high = altitudeLight(noon, 11000); // a long hop's crest
   const ch = (L) => Object.values(L).every((v) => (Array.isArray(v)
     ? v.every((n) => Number.isFinite(n) && n >= 0 && n <= 1.01)
     : typeof v !== 'number' || Number.isFinite(v)));
@@ -100,10 +100,10 @@ const chans = ['skyZenith', 'skyHorizon', 'sunColour', 'haloBlue', 'ambientColou
   check('the dust fill dies with the dust',
     high.ambientIntensity < noon.ambientIntensity * 0.4);
   check('the limb reads only from altitude',
-    ground.limb === 0 && altitudeLight(noon, 2000).limb === 0 && high.limb > 0.9);
+    ground.limb === 0 && altitudeLight(noon, 800).limb === 0 && high.limb > 0.9);
   check('the halo is a surface phenomenon', high.haloStrength < noon.haloStrength + 1e-9);
   // the ladder holds at night too: no NaN, limb dims but exists over dusk
-  const dusk = altitudeLight(lightState(-2, 0.4), 30000);
+  const dusk = altitudeLight(lightState(-2, 0.4), 9000);
   check('the ladder survives the dusk', ch(dusk) && dusk.limb > 0);
 }
 

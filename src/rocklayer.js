@@ -125,4 +125,9 @@ export class RockLayer {
       }
     }
   }
+
+  // the hopper's arc flies over the vista, not the boulder field
+  setVisible(v) {
+    for (const c of this.chunks.values()) if (c.mesh) c.mesh.visible = v;
+  }
 }

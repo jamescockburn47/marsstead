@@ -88,6 +88,9 @@ export function snapshotSave(state) {
     // the hidden partnership score (additive): a small opaque record —
     // regard.js launders it again on the way back in
     regard: state.regard && typeof state.regard === 'object' ? state.regard : null,
+    // Stage 3 (additive): the craft's fuel and stand, and whether it exists
+    hopper: state.hopper && typeof state.hopper === 'object' ? state.hopper : null,
+    hopperBuilt: !!state.hopperBuilt,
     savedAt: Date.now(),
   };
 }
@@ -232,6 +235,8 @@ export function acceptSave(meta) {
       : [],
     talks: Number.isFinite(meta.talks) ? Math.max(0, Math.min(100000, Math.round(meta.talks))) : 0,
     regard: meta.regard && typeof meta.regard === 'object' ? meta.regard : null,
+    hopper: meta.hopper && typeof meta.hopper === 'object' ? meta.hopper : null,
+    hopperBuilt: !!meta.hopperBuilt,
     savedAt: meta.savedAt || 0,
   };
 }
