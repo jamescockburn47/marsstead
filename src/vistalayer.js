@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { meshGroundHeight, colourFor } from './marschunk.js';
+import { latLonToWorld } from './mars.js';
 import { FBM_GLSL } from './glsl.js';
 
 const N = 110;                 // verts per side — coarse is honest at altitude
@@ -19,25 +20,39 @@ export class VistaLayer {
     this.mesh = null;
   }
 
-  // build centred on the hop's midpoint, spanning the track with margin
-  build(from, to) {
+  // build centred on the hop's midpoint, spanning the track with margin —
+  // or, with { world: true }, one full east-west wrap of the planet
+  // (106.56 km: the seam closes on itself, so no square edge can ever
+  // show east or west) across the whole latitude range
+  build(from, to, { world = false } = {}) {
     this.dispose();
     const cx = (from[0] + to[0]) / 2, cz = (from[1] + to[1]) / 2;
     const dist = Math.hypot(to[0] - from[0], to[1] - from[1]);
-    const span = Math.max(90000, dist * 1.7 + 60000);
-    const step = span / (N - 1);
+    // world mode: one full E-W wrap (the seam closes on itself) but only
+    // the REAL latitude range north-south — beyond the poles the
+    // projection is nonsense and must never be sampled
+    const spanX = world ? 360 * 296 : Math.max(90000, dist * 1.7 + 60000);
+    let z0, z1;
+    if (world) {
+      z0 = latLonToWorld(89.2, 0).z;
+      z1 = latLonToWorld(-89.2, 0).z;
+    } else {
+      z0 = cz - spanX / 2; z1 = cz + spanX / 2;
+    }
+    const stepX = spanX / (N - 1);
+    const stepZ = (z1 - z0) / (N - 1);
     const pos = new Float32Array(N * N * 3);
     const col = new Float32Array(N * N * 3);
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
-        const x = cx - span / 2 + i * step;
-        const z = cz - span / 2 + j * step;
+        const x = cx - spanX / 2 + i * stepX;
+        const z = z0 + j * stepZ;
         const h = meshGroundHeight(x, z);
         const k = (j * N + i) * 3;
         pos[k] = x; pos[k + 1] = h; pos[k + 2] = z;
-        const hx = meshGroundHeight(x + step, z) - h;
-        const hz = meshGroundHeight(x, z + step) - h;
-        const steep = Math.min(1, Math.hypot(hx, hz) / step * 3);
+        const hx = meshGroundHeight(x + stepX, z) - h;
+        const hz = meshGroundHeight(x, z + stepZ) - h;
+        const steep = Math.min(1, Math.hypot(hx, hz) / Math.max(stepX, 1) * 3);
         const c = colourFor(h, x, z, steep);
         col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2];
       }

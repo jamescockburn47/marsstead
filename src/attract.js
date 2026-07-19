@@ -14,14 +14,19 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 // the shots: local hour sets the light, tau sets the weather. AGL means
 // "above ground level" — the applier adds real terrain height.
 export const SHOTS = [
-  // the whole scale: from the black, down the ladder, into the haze
+  // the WHOLE world at once: the globe turning in the black, wearing its
+  // atmosphere as a rim (globelayer) — no square edges anywhere, because
+  // there are no edges on a sphere
+  { id: 'planet', dur: 15, hour: 13.0, tau: 0.4 },
+  // the dive: from 11 km down the ladder, into the haze
   { id: 'descent', dur: 22, hour: 16.4, tau: 0.4 },
-  // the settlement at blue hour: the buried lantern against the violet
+  // the settlement: a settling crane orbit in dusty late light
   { id: 'stead', dur: 16, hour: 17.5, tau: 0.5 },
   // the night drive: lamps, boulders, the galaxy overhead
   { id: 'drive', dur: 18, hour: 23.6, tau: 0.25 },
-  // the weather: a thick golden hour, looking into the low sun
-  { id: 'gold', dur: 14, hour: 15.6, tau: 1.2 },
+  // THE SKY ITSELF: the blue-halo sunset, most of the frame given to the
+  // air — the thing the whole look is built on
+  { id: 'dusk', dur: 16, hour: 17.8, tau: 0.45 },
 ];
 export const FADE_S = 1.1;             // crossfade shoulder at each cut
 export const LOOP_S = SHOTS.reduce((a, s) => a + s.dur, 0);
@@ -48,6 +53,21 @@ export function reelAt(t) {
 // `target` is the moving subject (the buggy) for the drive shot.
 export function shotCam(id, k, target = null) {
   const e = ease(clamp01(k));
+  if (id === 'planet') {
+    // coords in the GLOBE's frame (main adds the globe's centre): a slow
+    // approach from 3.1 R to 1.6 R, drifting around the disc — the whole
+    // planet, turning, in starlight
+    const R = 16960;
+    const d = (3.1 - 1.5 * e) * R;
+    const a = 0.6 + k * 0.5;
+    const tilt = 0.28 - k * 0.1;
+    return {
+      cam: [Math.cos(a) * d * Math.cos(tilt), Math.sin(tilt) * d, Math.sin(a) * d * Math.cos(tilt)],
+      look: [0, 0, 0],
+      alt: 40000,
+      globe: true,
+    };
+  }
   if (id === 'descent') {
     // 11 km down to 90 m, sliding in from the south-east. The frame
     // HOLDS THE HORIZON: look well ahead and a shade below level, so the
@@ -85,12 +105,13 @@ export function shotCam(id, k, target = null) {
       world: true,     // cam/look are world coords (they follow the subject)
     };
   }
-  // gold: a low dolly over the dunes, gazing WEST into the dusty sun —
-  // the surface raked in gilded relief, the pale coin in frame
-  const dx = lerp(720, 300, e);
+  // dusk: the sky gets the frame — a low camera on the plain, gazing
+  // west and UP into the sunset: the blue forward-scatter halo, the
+  // shafts, the first stars; the ground a dark band at the frame's foot
+  const drift = k * 90;
   return {
-    cam: [dx, lerp(15, 9, e), lerp(240, 110, e)],
-    look: [dx - 700, 26, lerp(150, 40, e)],
+    cam: [180 - drift * 0.4, 3.2, 60 + drift * 0.25],
+    look: [-820, 300 + e * 130, -40],
     alt: 0,
   };
 }

@@ -68,12 +68,13 @@ async function shot(name, tIntoLoop) {
   console.log(`  shot attract-${name}`);
 }
 
-// mid-shot times into the loop: descent(0-22) stead(22-38) drive(38-56) gold(56-70)
-await shot('descent-high', 8);
-await shot('descent-low', 20);
-await shot('stead', 30);
-await shot('drive', 47);
-await shot('gold', 63);
+// mid-shot times: planet(0-15) descent(15-37) stead(37-53) drive(53-71) dusk(71-87)
+await shot('planet', 9);
+await shot('descent-high', 22);
+await shot('descent-low', 34.5);
+await shot('stead', 45);
+await shot('drive', 62);
+await shot('dusk', 79);
 
 console.log(errors.length ? `shot-attract: ${errors.length} console errors!` : 'shot-attract: clean');
 errors.slice(0, 4).forEach((e) => console.error('  ' + e));

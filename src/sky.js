@@ -44,10 +44,16 @@ const FS = /* glsl */`
     }
 
     float s = distance(d, uSunDir);
-    // the blue forward-scatter halo — Mars's signature dusk
-    sky += uHalo * exp(-s * 6.5) * uHaloS * 0.9;
-    // warm inner glow + the disc itself
-    sky += uSunCol * exp(-s * 28.0) * uSunI * 0.8;
+    // the blue forward-scatter halo — Mars's signature dusk. The blue
+    // must REPLACE the butterscotch around the sun, not add to it:
+    // blue added over orange merely whitens, and the flagship reads as
+    // glare instead of the alien blue the real photographs show.
+    float haloLobe = exp(-s * 6.5) * uHaloS;
+    sky = mix(sky, uHalo * 1.05, min(0.7, haloLobe * 0.8));
+    sky += uHalo * exp(-s * 16.0) * uHaloS * 0.35;
+    // warm inner glow + the disc itself — the glow stands aside as the
+    // halo rises: at dusk the ring around the sun belongs to the blue
+    sky += uSunCol * exp(-s * 28.0) * uSunI * 0.8 * (1.0 - uHaloS * 0.65);
     sky += uSunCol * smoothstep(0.026, 0.020, s) * uSunI * 2.0;
     // the dusty shafts: streaks of forward-scattered sun through the
     // haze, an angular fbm field around the low sun (sun-local basis,
@@ -66,6 +72,9 @@ const FS = /* glsl */`
     // spine — fractal mottling, vivid on a clear night, gone by day.
     // The sky is the LANTERN: on Mars the night is walked by starlight.
     if (uStars > 0.01 && d.y > -0.05) {
+      // soft skirt at the cutoff: from orbit the camera looks DOWN past
+      // the band, and a hard conditional edge reads as a seam in space
+      float mwSkirt = smoothstep(-0.05, 0.08, d.y);
       float g = dot(d, uMWPole);
       float core = exp(-g * g * 90.0);
       float glow = exp(-g * g * 18.0);
@@ -79,7 +88,7 @@ const FS = /* glsl */`
       // levels: a band you can SEE STRUCTURE in, never a floodlight —
       // the night ground stays lit by the stars, not by the galaxy alone
       sky += (vec3(0.95, 0.93, 1.0) * core * 0.19 + vec3(0.55, 0.62, 0.85) * glow * 0.075)
-        * mottle * rift * uStars;
+        * mottle * rift * uStars * mwSkirt;
     }
 
     // Phobos — the hurrying moon, west to east; Deimos — the slow spark

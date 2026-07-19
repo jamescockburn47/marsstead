@@ -25,6 +25,7 @@ import { HopperLayer } from './hopperlayer.js';
 import { VistaLayer } from './vistalayer.js';
 import { HopConsole } from './hopconsole.js';
 import { reelAt, shotCam, driveInput } from './attract.js';
+import { GlobeLayer } from './globelayer.js';
 import { rockiness } from './rocks.js';
 import {
   EXPOSURE_BASE, exposureTarget, decideTier, fpsVerdict, median,
@@ -983,13 +984,18 @@ class Game {
     // the buggy parks in the yard for the stead shot (the drive shot
     // re-seats it at the ridge each pass)
     this.buggy = createBuggy(A.x + 7, A.z + 15, 2.3);
-    // the descent's vista, built ONCE — rebuilding a 12k-vert far-field
-    // every loop pass is a visible stall; in attract it only ever toggles
-    this.vista.build([A.x, A.z], [A.x, A.z]);
+    // the descent's vista, built ONCE and WORLD-WIDE (one full E-W wrap:
+    // no square edge can show) — rebuilding a far-field every loop pass
+    // is a visible stall; in attract it only ever toggles
+    this.vista.build([A.x, A.z], [A.x, A.z], { world: true });
     if (this.vista.mesh) {
       this.vista.mesh.position.y = -3;
       this.vista.setVisible(false);
     }
+    // the whole planet, for the opening shot: the globe turning in the
+    // black, parked far beneath the flat world's stage
+    this.globe = new GlobeLayer(this.scene);
+    this.globe.setPlaced(A.x, -120000, A.z);
     // the cut veil: every shot change happens behind it
     this.attractVeil = document.createElement('div');
     this.attractVeil.style.cssText = 'position:fixed;inset:0;z-index:59;'
@@ -1021,16 +1027,18 @@ class Game {
     this.hopAlt = c.alt;                          // the light ladder reads this
     // visibility is DECLARATIVE, every frame — the reel loops and skips
     // (the shot rig jumps the clock); event-edges desync, states cannot.
-    // The vista itself was built once at enterAttract: only toggles here.
+    // The vista and the globe were built once at enterAttract: toggles only.
+    const wantGlobe = shot.id === 'planet';
     const wantVista = shot.id === 'descent' && c.alt >= 1000;
-    const wantFar = wantVista ? 600000 : 6000;
+    const wantFar = (wantVista || wantGlobe) ? 600000 : 6000;
     if (this.cam.far !== wantFar) {
       this.cam.far = wantFar;
       this.cam.updateProjectionMatrix();
     }
-    this.terrain.setVisible(!wantVista);
-    this.rocks.setVisible(!wantVista);
+    this.terrain.setVisible(!wantVista && !wantGlobe);
+    this.rocks.setVisible(!wantVista && !wantGlobe);
     if (this.vista.mesh) this.vista.setVisible(wantVista);
+    if (this.globe) this.globe.setVisible(wantGlobe);
     // the night drive: scripted hands on a real wheel — and the LAYER
     // posed here too (the on-foot/driving frames that normally pose it
     // never run under the reel)
@@ -1051,7 +1059,17 @@ class Game {
     }
     this.buggyLayer.update(dt, this.buggy,
       { skidF: false, skidR: false, airborne: false, landed: false });
-    // the camera, applied rigid; streaming follows the LOOK point
+    // the camera, applied rigid; streaming follows the camera's ground
+    if (c.globe) {
+      const G = this.globe.centre;
+      this.cam.position.set(G.x + c.cam[0], G.y + c.cam[1], G.z + c.cam[2]);
+      this.cam.lookAt(G.x, G.y, G.z);
+      this.pos.set(A.x, 0, A.z);
+      this.pos.y = meshGroundHeight(A.x, A.z);
+      this.vel.set(0, 0, 0); this.vy = 0;
+      this.attractVeil.style.opacity = veil.toFixed(3);
+      return;
+    }
     const wx = c.world ? c.cam[0] : A.x + c.cam[0];
     const wz = c.world ? c.cam[2] : A.z + c.cam[2];
     const lx = c.world ? c.look[0] : A.x + c.look[0];
@@ -2229,6 +2247,11 @@ class Game {
     // the altitude ladder: a hop in flight re-lights the whole world —
     // sky drying to black, stars at noon, fog dying, the limb waking
     if ((this.hopAlt || 0) > 1) L = altitudeLight(L, this.hopAlt);
+    // the reel's planet shot is TRUE space: the globe's own rim shell is
+    // the atmosphere — the dome must not draw a horizon band out there
+    if (this.attract && this.attractShotId === 'planet') {
+      L = { ...L, limb: 0, fogDensity: 0 };
+    }
     this.L = L; // renderFrame's drives read the same state this frame set
 
     // the pairing's slow arithmetic: quiet sols decay the hidden score;
@@ -2433,6 +2456,7 @@ class Game {
     }
     this.hopperLayer.update(this.t, (this.sunEl ?? 10) < 0);
     this.hopUI.update(dt);
+    if (this.globe) { this.globe.update(dt); this.globe.setSun(sunDir); }
     // the vista hands back to the streamed world once it has caught up
     if (!this.hopFlight && this.vista.mesh && this.terrain.queue.length === 0) {
       this.vista.dispose();

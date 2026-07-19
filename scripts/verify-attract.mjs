@@ -67,6 +67,20 @@ function check(name, ok, detail = '') {
   check('the drive shot tracks its subject',
     Math.abs(shotCam('drive', 0.5, [500, 300]).look[0] - 500) < 1e-9
     && shotCam('drive', 0.5, [500, 300]).world === true);
+  // the planet shot: the WHOLE surface at once — globe-framed, from
+  // space, approaching but never landing (the cut does the landing)
+  check('the planet shot is globe-framed space', (() => {
+    const a = shotCam('planet', 0), b = shotCam('planet', 1);
+    const d = (c) => Math.hypot(c.cam[0], c.cam[1], c.cam[2]);
+    return a.globe === true && a.alt > 10000
+      && d(a) > d(b) && d(b) > 16960 * 1.2; // approaches, never enters
+  })());
+  // the dusk shot: the sky owns the frame — the look point rides far
+  // above the lens (the halo, the shafts, the first stars)
+  check('the dusk shot looks up into the sky',
+    shotCam('dusk', 0.5).look[1] > shotCam('dusk', 0.5).cam[1] + 100);
+  check('a dusk shot exists and gold is gone',
+    SHOTS.some((s) => s.id === 'dusk') && !SHOTS.some((s) => s.id === 'gold'));
   check('the stead orbit closes in', (() => {
     const r0 = Math.hypot(shotCam('stead', 0).cam[0], shotCam('stead', 0).cam[2]);
     const r1 = Math.hypot(shotCam('stead', 1).cam[0], shotCam('stead', 1).cam[2]);
