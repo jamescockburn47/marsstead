@@ -1499,7 +1499,17 @@ class Game {
   }
 
   frameDriving(dt) {
-    const input = {
+    // the touch joystick is ANALOG (touch.js publishes touchStick while a
+    // thumb holds it): proportional steer and throttle, so micro
+    // corrections don't have to be full-lock skids. The keyboard's
+    // switched read is the fallback, unchanged.
+    const ts = this.touchStick;
+    const input = ts ? {
+      throttle: ts.y >= 0 ? ts.y : (this.buggy.u <= 0.5 ? ts.y * 0.85 : 0),
+      brake: ts.y < 0 && this.buggy.u > 0.5 ? -ts.y : 0,
+      steer: -ts.x,
+      handbrake: !!this.keys.Space,
+    } : {
       throttle: (this.keys.KeyW ? 1 : 0) + (this.keys.KeyS && this.buggy.u <= 0.5 ? -0.85 : 0),
       brake: this.keys.KeyS && this.buggy.u > 0.5 ? 1 : 0,
       steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
@@ -1535,8 +1545,9 @@ class Game {
     }
     this.buggyFlags = flags;
 
-    // wheel ruts: paired marks land behind the axles as ground is covered
-    if (Math.abs(this.buggy.u) > 0.5) {
+    // wheel ruts: paired marks land behind the axles as ground is covered —
+    // but only while the wheels TOUCH it (a flying buggy prints nothing)
+    if (!flags.airborne && Math.abs(this.buggy.u) > 0.5) {
       appendTrack(this.trail, this.buggy.x, this.buggy.z, this.buggy.heading, 'wheel');
     }
 

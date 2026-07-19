@@ -33,6 +33,18 @@ export function joystickToKeys(dx, dy, radius) {
   return out;
 }
 
+// Joystick offset -> an ANALOG stick (-1..1 each axis, y up = forward) for
+// the buggy: keys are switches and a switched steer is a skid, so driving
+// reads this instead when it's live. Steer (x) carries a square-law curve —
+// half a push is a quarter lock — so micro corrections at speed are gentle
+// and full lock still lives at the rim. Throttle (y) stays linear.
+export function joystickToStick(dx, dy, radius) {
+  const nx = Math.max(-1, Math.min(1, dx / radius));
+  const ny = Math.max(-1, Math.min(1, -dy / radius));
+  if (Math.hypot(nx, ny) < DEADZONE) return { x: 0, y: 0 };
+  return { x: nx * Math.abs(nx), y: ny };
+}
+
 // Drag delta (screen px) -> yaw/pitch deltas the caller applies exactly as
 // the mousemove handler does (camYaw -= dYaw; camPitch += dPitch, clamped).
 export function lookDelta(dx, dy) {
@@ -294,6 +306,7 @@ export class TouchControls {
     for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space']) {
       this.game.keys[k] = false;
     }
+    this.game.touchStick = null;
   }
 
   // one door to the game: the same events the keyboard sends
@@ -350,6 +363,7 @@ export class TouchControls {
     };
     const clear = () => {
       id = null; knob.style.transform = 'translate(0,0)'; setKeys({});
+      this.game.touchStick = null; // driving falls back to the key bus
       z.style.removeProperty('--jx'); z.style.removeProperty('--jy'); // stick drifts home
     };
     z.addEventListener('touchstart', (e) => {
@@ -370,6 +384,7 @@ export class TouchControls {
         if (m > RADIUS) { dx *= RADIUS / m; dy *= RADIUS / m; }
         knob.style.transform = `translate(${dx}px,${dy}px)`;
         setKeys(joystickToKeys(dx, dy, RADIUS));
+        this.game.touchStick = joystickToStick(dx, dy, RADIUS); // the buggy's analog read
         e.preventDefault();
       }
     }, { passive: false });

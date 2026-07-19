@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  joystickToKeys, lookDelta, isTouchPrimary, touchMode,
+  joystickToKeys, joystickToStick, lookDelta, isTouchPrimary, touchMode,
   stateOf, controlsFor, MORE_ITEMS, LOOK_YAW_SENS, LOOK_PITCH_SENS,
 } from '../src/touch.js';
 
@@ -33,6 +33,21 @@ const down = joystickToKeys(0, 30, R);
 ok(down.KeyS && !down.KeyW && !down.ShiftLeft, 'pushed down -> back, never a lope');
 const left = joystickToKeys(-30, 0, R);
 ok(left.KeyA && !left.KeyD, 'pushed left -> KeyA (steer left in the buggy too)');
+
+// ---- joystickToStick: the buggy's analog read — proportional, expo steer
+const still = joystickToStick(0, 0, R);
+ok(still.x === 0 && still.y === 0, 'centre -> zero stick');
+ok(joystickToStick(0, -3, R).y === 0, 'deadzone -> zero stick');
+const half = joystickToStick(20, 0, R);
+ok(Math.abs(half.x - 0.25) < 1e-9, 'half push right -> quarter lock (square-law steer)');
+const fullR = joystickToStick(40, 0, R);
+ok(Math.abs(fullR.x - 1) < 1e-9, 'full push right -> full lock still at the rim');
+ok(joystickToStick(-40, 0, R).x === -1, 'left is negative x');
+const fwd = joystickToStick(0, -40, R);
+ok(fwd.y === 1 && fwd.x === 0, 'full forward -> y=1 (throttle is linear)');
+ok(joystickToStick(0, 40, R).y === -1, 'full back -> y=-1 (brake/reverse)');
+ok(joystickToStick(200, -200, R).x <= 1 && joystickToStick(200, -200, R).y <= 1,
+  'overshoot past the rim clamps');
 
 // ---- lookDelta: mirrors the mousemove contract (yaw and pitch sens differ)
 const ld = lookDelta(100, 50);
@@ -100,5 +115,9 @@ ok(/dispatchEvent\(new KeyboardEvent\(type, \{ code \}\)\)/.test(touch),
 ok(!/import .*three/i.test(touch), 'touch.js imports no THREE (identity invariant 3)');
 ok(/viewport-fit=cover/.test(html) && /user-scalable=no/.test(html),
   'index.html viewport is touch-ready (safe areas, no pinch-zoom of the page)');
+ok(/const ts = this\.touchStick/.test(main) && /steer: -ts\.x/.test(main),
+  'driving prefers the analog stick when a thumb holds it');
+ok(/!flags\.airborne && Math\.abs\(this\.buggy\.u\) > 0\.5/.test(main),
+  'a flying buggy prints no wheel ruts');
 
 console.log(`verify-touch: ${n} assertions OK`);
