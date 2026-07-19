@@ -58,8 +58,15 @@ page.on('console', (m) => {
   }
 });
 
-// a NEW landing every run: deterministic spawn, calibrated clock
-await page.addInitScript(() => { try { localStorage.clear(); } catch { /* fine */ } });
+// a NEW landing every run: deterministic spawn, calibrated clock — but the
+// LANDFALL ORDERS sheet stays shut (it auto-opens on a fresh save and
+// would blind every frame of the sheet)
+await page.addInitScript(() => {
+  try {
+    localStorage.clear();
+    localStorage.setItem('marsstead-orders-seen', '1');
+  } catch { /* fine */ }
+});
 await page.goto(`http://localhost:${PORT}/?play&gfx=fine`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.marsstead && window.marsstead.ready, null, { timeout: 20000 });
 
@@ -75,6 +82,7 @@ for (let i = 0; i < 40; i++) {
 async function shot(name, { hour, el, dir = 'down', downSun = false, lamp = false, yaw = 0.6, pitch = 0.22, goto } = {}) {
   await page.evaluate(async ({ hour, el, dir, downSun, lamp, yaw, pitch, goto }) => {
     const g = window.marsstead;
+    if (g.orders && g.orders.visible) g.orders.close(); // never shoot paper
     if (goto === 'rocky') {
       // stand the colonist in the rockiest country within reach
       const { rockiness } = await import('/src/rocks.js');

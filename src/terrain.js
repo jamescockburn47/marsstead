@@ -33,37 +33,97 @@ export class TerrainLayer {
       shader.uniforms.uAlbedoAmp = this.detail.uAlbedoAmp;
       shader.uniforms.uNormalAmp = this.detail.uNormalAmp;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vMarsPos;')
-        .replace('#include <begin_vertex>',
-          '#include <begin_vertex>\nvMarsPos = position;'); // chunk positions are world-space
+        .replace('#include <common>', `#include <common>
+varying vec3 vMarsPos;
+varying vec3 vMarsNrm;
+varying float vMarsDist;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vMarsPos = position;      // chunk positions are world-space
+vMarsNrm = objectNormal;  // the analytic normal, for the slope key`)
+        .replace('#include <project_vertex>', `#include <project_vertex>
+vMarsDist = -mvPosition.z; // view depth: high-frequency detail fades out`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
 varying vec3 vMarsPos;
+varying vec3 vMarsNrm;
+varying float vMarsDist;
 uniform float uAlbedoAmp, uNormalAmp;
 ${FBM_GLSL}
+const vec2 MARSWIND2 = vec2(0.879, 0.477);
+// wind-frame coordinates, stretched along the prevailing wind: isotropic
+// blobs read as leopard at grazing sun; elongated ones read as dunes and
+// wind streaks (DESIGN.md's own colour spec: wind-streak albedo)
+vec2 marsAniso(vec2 p) {
+  return vec2(dot(p, MARSWIND2), dot(p, vec2(-MARSWIND2.y, MARSWIND2.x)) * 2.2);
+}
 // the detail height-field the normal tilt reads: metre-scale rubble over
-// a longer undulation — same fbm family as the sky and the dust
-float marsDetailH(vec2 p) {
-  return fbm(p * 1.7) * 0.65 + fbm(p * 0.23 + 5.0) * 0.35;
+// a longer wind-stretched undulation — same fbm family as sky and dust.
+// rubbleW lets the caller fade the fine band with distance (sub-pixel
+// noise at range is shimmer, not detail).
+float marsDetailH(vec2 p, float rubbleW) {
+  return fbm(p * 1.7) * rubbleW + fbm(marsAniso(p) * 0.23 + 5.0) * 0.35;
+}
+// THE SECOND PASS — aeolian ripples: ~0.7 m ridges transverse to the
+// prevailing wind, crests wandered by fbm so no two fields repeat.
+// Returns 0 (trough) .. 1 (crest) and the analytic phase gradient (the
+// wander's own gradient is dropped: this is shading, not survey data).
+const vec2 MARSWIND = vec2(0.879, 0.477);
+float marsRippleG(vec2 p, out vec2 grad) {
+  float ph = dot(p, MARSWIND) * 8.8 + fbm(p * 0.33 + 3.1) * 4.2;
+  grad = cos(ph) * 8.8 * MARSWIND;
+  return sin(ph) * 0.5 + 0.5;
 }`)
         .replace('#include <color_fragment>', `#include <color_fragment>
 if (uAlbedoAmp > 0.001) {
-  // per-pixel albedo: two bands of fbm, MULTIPLICATIVE so the vertex
-  // palette's warm ordering (the colour law) is preserved per channel
-  float aN = fbm(vMarsPos.xz * 0.45) - 0.5;
-  float aF = fbm(vMarsPos.xz * 3.1 + 17.3) - 0.5;
-  diffuseColor.rgb *= 1.0 + (aN * 0.7 + aF * 0.3) * 2.0 * uAlbedoAmp;
+  // per-pixel albedo, all bands MULTIPLICATIVE so the vertex palette's
+  // warm ordering (the colour law) survives per channel.
+  // Past the angle of repose the dust slides off: bared rock reads
+  // darker and a touch cooler than the dust that films the flats.
+  float mSlope = clamp(1.0 - vMarsNrm.y, 0.0, 1.0);
+  float mRocky = smoothstep(0.10, 0.32, mSlope);
+  // 65 m country drift, rotated off the lattice: tone, never leopard
+  float aP = fbm(vMarsPos.xz * mat2(0.8, -0.6, 0.6, 0.8) * 0.015 + 9.7) - 0.5;
+  float aN = fbm(marsAniso(vMarsPos.xz) * 0.45) - 0.5; // 2 m wind-streaked mottle
+  float aF = fbm(vMarsPos.xz * 3.1 + 17.3) - 0.5;      // 30 cm speckle
+  float mBand = aP * 0.28 + aN * 0.32 + aF * 0.25;
+  // ripples sort the bright dust to their crests (real aeolian optics) —
+  // painted only close in; farther out the RELIEF carries the stripes
+  vec2 mRg; float mRip = marsRippleG(vMarsPos.xz, mRg);
+  mBand += (mRip - 0.5) * 0.35 * smoothstep(90.0, 25.0, vMarsDist) * (1.0 - mRocky);
+  // sand grain inside arm's reach, gone before it can shimmer
+  mBand += (vnoise(vMarsPos.xz * 15.0) - 0.5) * 0.5 * smoothstep(45.0, 8.0, vMarsDist);
+  diffuseColor.rgb *= 1.0 + mBand * 2.0 * uAlbedoAmp;
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.70, 0.67),
+    mRocky * min(1.0, uAlbedoAmp * 8.0));
 }`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
 if (uNormalAmp > 0.001) {
-  // per-pixel normal detail: the fbm read as a height field, its XZ
-  // gradient tilting the smooth analytic normal. Shading only — the
-  // drawn surface never moves (the walked-surface contract).
+  // per-pixel normal detail: height fields read as gradients tilting the
+  // smooth analytic normal. Shading only — the drawn surface never moves
+  // (the walked-surface contract).
   float e = 0.35;
-  float hC = marsDetailH(vMarsPos.xz);
-  float hX = marsDetailH(vMarsPos.xz + vec2(e, 0.0));
-  float hZ = marsDetailH(vMarsPos.xz + vec2(0.0, e));
-  vec3 wPerturb = vec3(-(hX - hC) / e, 0.0, -(hZ - hC) / e) * uNormalAmp;
+  // the metre rubble is sub-pixel past ~90 m: fade it before it shimmers
+  float mRubbleW = 0.65 * smoothstep(90.0, 20.0, vMarsDist);
+  float hC = marsDetailH(vMarsPos.xz, mRubbleW);
+  float hX = marsDetailH(vMarsPos.xz + vec2(e, 0.0), mRubbleW);
+  float hZ = marsDetailH(vMarsPos.xz + vec2(0.0, e), mRubbleW);
+  vec2 mG = vec2(hX - hC, hZ - hC) / e;
+  // the ripple relief: a few centimetres of analytic corduroy, low sun
+  // rakes it into stripes; dies on rocky slopes and with distance
+  float mNearFade = smoothstep(150.0, 30.0, vMarsDist);
+  float mSlope = clamp(1.0 - vMarsNrm.y, 0.0, 1.0);
+  float mRocky = smoothstep(0.10, 0.32, mSlope);
+  vec2 mRg; marsRippleG(vMarsPos.xz, mRg);
+  mG += mRg * 0.045 * mNearFade * (1.0 - mRocky);
+  // grain relief only inside ~40 m: crisp boots-level sparkle, no shimmer
+  float mGFade = smoothstep(40.0, 7.0, vMarsDist);
+  if (mGFade > 0.001) {
+    float ge = 0.09;
+    float gC = vnoise(vMarsPos.xz * 15.0);
+    mG += vec2(vnoise((vMarsPos.xz + vec2(ge, 0.0)) * 15.0) - gC,
+               vnoise((vMarsPos.xz + vec2(0.0, ge)) * 15.0) - gC) / ge * 0.02 * mGFade;
+  }
+  vec3 wPerturb = vec3(-mG.x, 0.0, -mG.y) * uNormalAmp;
   normal = normalize(normal + (viewMatrix * vec4(wPerturb, 0.0)).xyz);
 }`);
     };
