@@ -24,7 +24,7 @@ function box(w, h, d, colour) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colour));
 }
 
-export const TRACK = 0.95;      // half-width to wheel centres
+export const TRACK = 1.02;     // half-width to wheel centres (physics HALF_TRACK)
 export const WHEELBASE = 1.05;  // half-length to the front axle (rear is 1.15)
 
 export class BuggyLayer {

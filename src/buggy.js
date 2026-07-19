@@ -44,12 +44,12 @@ import { G_MARS } from './physics.js';
 export const MASS = 780;          // kg — bigger tyres, sturdier frame, planted
 export const WHEELBASE_F = 1.05;  // m, CoM to front axle
 export const WHEELBASE_R = 1.15;  // m, CoM to rear axle
-export const HALF_TRACK = 0.95;   // m to the wheel centres
+export const HALF_TRACK = 1.02;   // m to the wheel centres — wide stance
 export const WHEEL_R = 0.62;      // m — LARGE mesh drums; rocks are speed bumps
 export const YAW_INERTIA = 1050;  // kg m^2
 export const PITCH_INERTIA = 950; // kg m^2 — the dive/squat axis
 export const ROLL_INERTIA = 430;  // kg m^2 — the lean axis
-export const H_CG = 0.55;         // m, centre-of-mass height — the tipping lever
+export const H_CG = 0.48;         // m, CoM height — batteries in the floor
 
 export const MU = 1.25;           // grousered wheels, DFA-1 arcade grip —
                                   // NOT regolith-honest, deliberately (see header)
@@ -70,7 +70,9 @@ export const FRONT_SPLIT = 0.35;  // AWD, rear-biased: the rally layout
 export const PITCH_RATE = 2.6;    // rad/s of airborne pitch authority
 export const ROLL_RATE = 3.2;     // rad/s of airborne roll authority
 export const CLEAN_ATT = 0.5;     // rad from level that still lands clean
-export const TRIP_V = 4.5;        // m/s sideways: fast enough to trip a rollover
+export const TRIP_V = 6.0;        // m/s sideways: fast enough to trip a rollover
+export const LTR_TRIP_S = 0.25;   // s the tipping ledger must stay red to roll —
+                                  // one-substep spikes off rock bumps never flip
 export const BODY_R = 1.15;       // m — the chassis disc boulders push against
 
 // ---- suspension (DFA-1 §2: quarter-car, critically-ish damped) ------------
@@ -111,6 +113,7 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
     pitch: 0, roll: 0,      // sprung body attitude (nose-down +, right-up +)
     pitchV: 0, rollV: 0,    // ...and its rates
     susp: [SUSP_STATIC, SUSP_STATIC, SUSP_STATIC, SUSP_STATIC], // per-wheel
+    ltrT: 0,                // seconds the tipping ledger has stayed red
     rollKick: 0,            // rad/s imposed by a rollover launch
     airSpin: 0,             // |rotation| accumulated this flight (flips!)
     wheelSpin: 0,           // rolling phase for the visual layer
@@ -260,13 +263,18 @@ export function stepBuggy(s, input, ground, dt) {
     tRoll -= fyTotal * H_CG;
 
     // ---- lateral stability: the tipping ledger (LTR + trip rollover).
-    // Slides before it tips on the flat; side-slopes and trips roll it.
+    // Slides before it tips on the flat; side-slopes and trips roll it —
+    // but only a SUSTAINED overload does (LTR_TRIP_S): rock bumps spike
+    // the lateral numbers for a substep and that must never flip the car.
     const aLat = fyTotal / MASS + G_MARS * gxB;
     const ltr = Math.abs(aLat) * H_CG / (G_MARS * HALF_TRACK)
-      + Math.abs(gxB) * 0.6; // side-slope adds its own lever
+      + Math.abs(gxB) * 0.35; // side-slope adds its own lever
     const tripped = Math.abs(s.v) > TRIP_V && Math.sign(s.v) * gxB < -0.12;
-    if ((ltr > 1 || tripped) && Math.abs(s.u) + Math.abs(s.v) > 3) {
+    const tipping = (ltr > 1.1 || tripped) && Math.abs(s.u) + Math.abs(s.v) > 5;
+    s.ltrT = tipping ? s.ltrT + dt : 0;
+    if (s.ltrT >= LTR_TRIP_S) {
       flags.rollover = true;
+      s.ltrT = 0;
       s.vy = Math.max(s.vy, 1.6);
       s.rollKick = (Math.sign(aLat || s.v) || 1) * 4.5;
     }
@@ -332,6 +340,26 @@ export function stepBuggy(s, input, ground, dt) {
     // rest snap: kill the last micro-motion so a settled buggy is STILL
     if (Math.abs(s.vy) < 0.01 && Math.abs(s.pitchV) < 0.01 && Math.abs(s.rollV) < 0.01) {
       s.vy *= 0.8; s.pitchV *= 0.8; s.rollV *= 0.8;
+    }
+  }
+
+  // ---- bottoming: past full travel the CHASSIS takes the hit (the DFA
+  // rule: bottoming is a hard contact, never a spring spike) — the body
+  // can NEVER sink through its wheels into the landscape. Positional
+  // clamp + a dead thud (small restitution), not a force.
+  {
+    const pe = Math.max(-0.35, Math.min(0.35, s.pitch));
+    const re = Math.max(-0.35, Math.min(0.35, s.roll));
+    let worst = 0;
+    for (let i = 0; i < 4; i++) {
+      const { lx, lz } = WHEELS[i];
+      const over = SUSP_STATIC + (wh[i] - (s.y - lz * pe + lx * re)) - SUSP_TRAVEL;
+      if (over > worst) worst = over;
+    }
+    if (worst > 0) {
+      s.y += worst;
+      if (s.vy < 0) s.vy = -s.vy * 0.2;
+      s.pitchV *= 0.5; s.rollV *= 0.5;
     }
   }
 

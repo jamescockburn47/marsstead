@@ -299,6 +299,61 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
   check('and the buggy drives on through', s.u > 5 && s.z > 15, `u=${s.u.toFixed(1)} z=${s.z.toFixed(1)}`);
 }
 
+// ---- the floor is the floor: the chassis can never clip through it
+
+// 21b. a hard drop bottoms out on the chassis, never through the ground:
+// at every step the ground-line datum stays above ground minus travel
+{
+  const s = createBuggy(); s.y = 8; // a real slam — terminal-ish arrival
+  let worst = 99;
+  for (let t = 0; t < 6; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    worst = Math.min(worst, s.y);
+  }
+  check('slam landing never punches through', worst > -(SUSP_TRAVEL - SUSP_STATIC) - 0.02,
+    `worst y=${worst.toFixed(3)}`);
+  check('and it still settles', Math.abs(s.y) < 0.1 && Math.abs(s.vy) < 0.05,
+    `y=${s.y.toFixed(3)} vy=${s.vy.toFixed(3)}`);
+}
+
+// 21c. charging up a steep rising ramp at speed: the chassis rides the
+// slope, it does not spear into it
+{
+  const s = settled(); s.u = 16;
+  const ramp = (st) => st.z < 10
+    ? { h: 0, gx: 0, gz: 0 }
+    : { h: (st.z - 10) * 0.45, gx: 0, gz: 0.45 };
+  let worstBelow = 99;
+  for (let t = 0; t < 4; t += DT) {
+    const g = ramp(s);
+    stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, g, DT);
+    worstBelow = Math.min(worstBelow, s.y - g.h);
+  }
+  check('steep ramp never swallows the chassis', worstBelow > -(SUSP_TRAVEL + 0.1),
+    `worst below-ground=${worstBelow.toFixed(3)}`);
+}
+
+// 21d. hammering across a field of rock bumps at speed must NOT flip it —
+// single-substep lateral spikes are filtered by the LTR persistence gate
+{
+  const s = settled(); s.u = 12;
+  let rolled = false;
+  const bumpfield = (st) => {
+    const wh = [0, 0, 0, 0];
+    // staggered domes under alternating wheels every ~4 m of travel
+    const phase = Math.floor(st.z / 4) % 2;
+    const k = phase === 0 ? 0 : 1;
+    const local = st.z % 4;
+    if (local < 1.2) wh[k] = wh[k + 2] = 0.3 * Math.sin((local / 1.2) * Math.PI);
+    return { h: 0, gx: 0, gz: 0, wh };
+  };
+  for (let t = 0; t < 6; t += DT) {
+    const f = stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, bumpfield(s), DT);
+    if (f.rollover) rolled = true;
+  }
+  check('rock-bump hammering never flips it', rolled === false);
+}
+
 // ---- boulders: deflect, thump, NEVER trap (the reverse-out guarantee)
 
 // 22. drive straight into a boulder: it stops you, then reverse pulls
@@ -398,9 +453,10 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
   check('flat ground: slides, never tips', rolled === false);
 }
 
-// 29. sliding sideways fast into rising ground trips a rollover
+// 29. sliding sideways FAST into rising ground trips a rollover — the
+// slide must be sustained (LTR_TRIP_S), so it takes a real one
 {
-  const s = settled(); s.u = 6; s.v = 6; // a hard sideways slide...
+  const s = settled(); s.u = 6; s.v = 9; // a violent sideways slide...
   const bank = { h: 0, gx: -0.3, gz: 0 };    // ...into ground rising that way
   let rolled = false;
   for (let t = 0; t < 2 && !rolled; t += DT) {
@@ -412,7 +468,7 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
 
 // 30. the rollover ends in a judged landing, never a hang
 {
-  const s = settled(); s.u = 6; s.v = 6;
+  const s = settled(); s.u = 6; s.v = 9;
   const bank = { h: 0, gx: -0.3, gz: 0 };
   let landed = false;
   for (let t = 0; t < 10 && !landed; t += DT) {

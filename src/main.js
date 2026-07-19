@@ -34,6 +34,7 @@ import {
 import { TerrainLayer } from './terrain.js';
 import { RockLayer } from './rocklayer.js';
 import { collidersNear, bumpsNear, bumpHeightAt } from './rocks.js';
+import { resolveCircle, buggyDiscs } from './collide.js';
 import { SkyDome } from './sky.js';
 import { DustLayer } from './dustlayer.js';
 import {
@@ -1167,14 +1168,17 @@ class Game {
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
     this.resolveWalls(px, pz);
-    // the big rocks are real: the boot pushes off any boulder in reach
-    for (const c of collidersNear(this.pos.x, this.pos.z)) {
-      const d = Math.hypot(this.pos.x - c.x, this.pos.z - c.z);
-      if (d < c.r + 0.35 && d > 1e-6) {
-        const push = (c.r + 0.35 - d) / d;
-        this.pos.x += (this.pos.x - c.x) * push;
-        this.pos.z += (this.pos.z - c.z) * push;
-      }
+    // the big rocks are real — and so is everything parked or built: the
+    // boot pushes off boulders, the buggy, the lander's hull, machines
+    // and the rig alike (one shared rule, collide.js)
+    {
+      const solids = [
+        ...collidersNear(this.pos.x, this.pos.z),
+        ...this.worldSolids(),
+        ...buggyDiscs(this.buggy.x, this.buggy.z, this.buggy.heading),
+      ];
+      const res = resolveCircle(this.pos.x, this.pos.z, 0.35, solids);
+      this.pos.x = res.x; this.pos.z = res.z;
     }
     if (this.vel.lengthSq() > 0.05) {
       this.heading = Math.atan2(this.vel.x, this.vel.z);
@@ -1469,6 +1473,16 @@ class Game {
     return { h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh };
   }
 
+  // everything parked or built is SOLID — one shared disc list (collide.js
+  // resolves the walker against it; deflectBuggy answers for the chassis):
+  // the lander's hull, every machine, the rig when it isn't being towed.
+  worldSolids() {
+    const solids = [{ x: this.landerPos.x, z: this.landerPos.z, r: 2.1 }];
+    for (const m of this.machines) solids.push({ x: m.x, z: m.z, r: 0.7 });
+    if (this.rig && !this.rig.hitched) solids.push({ x: this.rig.x, z: this.rig.z, r: 0.95 });
+    return solids;
+  }
+
   frameDriving(dt) {
     const input = {
       throttle: (this.keys.KeyW ? 1 : 0) + (this.keys.KeyS && this.buggy.u <= 0.5 ? -0.85 : 0),
@@ -1476,25 +1490,26 @@ class Game {
       steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
       handbrake: !!this.keys.Space,
     };
-    // ground: per-wheel heights (terrain + rock bumps) for the springs,
-    // gradient from central differences (drives the slope forces)
-    const e = 0.7, bx = this.buggy.x, bz = this.buggy.z;
-    const bx0 = bx, bz0 = bz; // pre-step, for the wall check below
-    const wg = this.wheelGround(bx, bz, this.buggy.heading);
-    const h = wg.h;
-    const ground = {
-      h,
-      wh: wg.wh,
-      gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
-      gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
-    };
     // fixed-substep integration: cover the WHOLE frame dt in 120 Hz slices,
-    // so the dynamics run true at any framerate (and stay stable)
+    // and sample the ground FRESH each slice — at speed a frame-stale
+    // terrain read lets the chassis clip into rising ground
+    const e = 0.7;
+    const bx0 = this.buggy.x, bz0 = this.buggy.z; // pre-step, for the wall check
     const total = Math.min(dt, 0.1);
     const n = Math.max(1, Math.ceil(total / (1 / 120)));
     const h2 = total / n;
     let flags = { skidF: false, skidR: false, airborne: false, landed: false, impact: 0 };
+    let wg = null, h = 0;
     for (let i = 0; i < n; i++) {
+      const bx = this.buggy.x, bz = this.buggy.z;
+      wg = this.wheelGround(bx, bz, this.buggy.heading);
+      h = wg.h;
+      const ground = {
+        h,
+        wh: wg.wh,
+        gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
+        gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
+      };
       const f = stepBuggy(this.buggy, input, ground, h2);
       flags = {
         skidF: flags.skidF || f.skidF, skidR: flags.skidR || f.skidR,
@@ -1529,10 +1544,11 @@ class Game {
       if (blocked) { this.buggy.u *= -0.2; this.buggy.v = 0; }
     }
 
-    // ---- boulders deflect the buggy: the chassis glances off the stone
-    // (inward speed dies, tangential survives) and NOTHING eats outbound
-    // speed — nose into a boulder and reversing out just works
-    for (const c of collidersNear(this.buggy.x, this.buggy.z)) {
+    // ---- boulders AND the built world deflect the buggy: the chassis
+    // glances off stone, hull, machine and rig alike (inward speed dies,
+    // tangential survives) and NOTHING eats outbound speed — nose into
+    // anything and reversing out just works
+    for (const c of [...collidersNear(this.buggy.x, this.buggy.z), ...this.worldSolids()]) {
       const hit = deflectBuggy(this.buggy, c.x, c.z, c.r);
       if (hit > 3 && this.buggyFlags) this.buggyFlags.impact = Math.max(this.buggyFlags.impact, hit);
     }
