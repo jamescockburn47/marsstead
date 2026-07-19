@@ -150,6 +150,60 @@ export function isBedworthy(b) {
   return false;
 }
 
+// ---- the point of it all: the WARREN REPORT --------------------------------
+// Layout is a design problem with survival-sim consequences (James's rule:
+// a hab designed correctly must pay). Three scores, all 0..1, all legible:
+//   shelter — the best bunk: depth is regolith over your head (radiation,
+//     thermal mass), a garden next door runs an air loop (+), a works bay
+//     next door is noise (−). Waking in a good bunk leaves you RESTED:
+//     slower warmth and air drain for hours of sol.
+//   air — lit gardens scrub and top the suit up at the crown. Light-pipes
+//     only reach LIGHT_REACH deep, so gardens want shallow while bunks
+//     want deep: the warren's founding tension.
+//   haul — a store beside the shaft stages the drones' spoil runs: the
+//     whole warren digs faster. Logistics, made spatial.
+export const LIGHT_REACH = 2; // deepest level a light-pipe still feeds
+
+function adjacentPieces(b, col, depth) {
+  const out = [];
+  for (const [dc, dd] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    const cell = b.cells.get(key(col + dc, depth + dd));
+    if (cell && cell.dug >= 1) out.push(cell.piece);
+  }
+  return out;
+}
+
+export function gardenLit(depth) { return depth <= LIGHT_REACH; }
+
+export function warrenReport(b) {
+  const notes = [];
+  let shelter = 0, lit = 0, loops = 0, haul = 0;
+  for (const [k, cell] of b.cells) {
+    if (cell.dug < 1) continue;
+    const { col, depth } = parseKey(k);
+    const near = adjacentPieces(b, col, depth);
+    if (cell.piece === 'bunk') {
+      // depth alone never perfects a bunk: the last step is the air loop
+      let q = depth >= 3 ? 0.85 : depth === 2 ? 0.6 : 0.3;
+      if (near.includes('garden')) { q += 0.15; loops++; notes.push({ key: k, kind: 'bonus', why: 'air loop — garden next door' }); }
+      if (near.includes('bay')) { q -= 0.3; notes.push({ key: k, kind: 'penalty', why: 'workshop noise next door' }); }
+      if (depth < 2) notes.push({ key: k, kind: 'penalty', why: 'shallow — thin regolith overhead' });
+      else if (depth >= 3 && !near.includes('bay')) notes.push({ key: k, kind: 'bonus', why: 'deep — metres of shielding' });
+      shelter = Math.max(shelter, Math.max(0, Math.min(1, q)));
+    }
+    if (cell.piece === 'garden') {
+      if (gardenLit(depth)) { lit++; notes.push({ key: k, kind: 'bonus', why: 'light-pipe reaches — growing' }); }
+      else notes.push({ key: k, kind: 'penalty', why: 'too deep — the pipe cannot feed it' });
+    }
+    if (cell.piece === 'store' && Math.abs(col) <= 2) {
+      haul = Math.min(0.5, haul + 0.25);
+      notes.push({ key: k, kind: 'bonus', why: 'stages the shaft — drones haul faster' });
+    }
+  }
+  const air = Math.max(0, Math.min(1, lit * 0.55 + loops * 0.2));
+  return { shelter, air, haul, notes };
+}
+
 export function takeSpoil(b) {
   const out = { ...b.spoil };
   b.spoil = { regolith: 0, ore: 0 };

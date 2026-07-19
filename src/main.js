@@ -43,7 +43,7 @@ import {
 import {
   createBurrow, plan as planBurrow, cancelPlan as cancelBurrowPlan,
   tick as burrowTick, installRing, isPressurised as burrowPressurised,
-  isBedworthy as burrowBedworthy, takeSpoil,
+  isBedworthy as burrowBedworthy, takeSpoil, warrenReport,
   serialize as serializeBurrow, deserialize as deserializeBurrow,
 } from './burrow.js';
 import { BurrowConsole } from './burrowconsole.js';
@@ -405,6 +405,7 @@ class Game {
     this.missionStart = s.missionStart ?? this.simMillis;
     this.trail = deserializeTrail(s.trail); // the old marks still stand
     this.burrow = deserializeBurrow(s.burrow); // the warren keeps its shape
+    this.restedQ = s.restedQ; this.restedUntil = s.restedUntil;
     if (!this.settlerName) this.settlerName = s.settlerName || '';
     // she remembers: the last exchanges and the count of talks ride the
     // save, so rapport survives the browser closing
@@ -438,6 +439,8 @@ class Game {
       machines: this.machines,
       trail: serializeTrail(this.trail),
       burrow: serializeBurrow(this.burrow),
+      restedQ: this.restedQ || 0,
+      restedUntil: this.restedUntil || 0,
       settlerName: this.settlerName,
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
@@ -991,6 +994,8 @@ class Game {
     const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
     const wake = wakeMillis(this.simMillis, lat, lon);
     if (wake === null) return; // polar night: no dawn to wake into
+    // where you sleep matters: the warren's shelter score follows you out
+    this.sleepingBelow = burrowBedworthy(this.burrow) && this.distToCrown() < 7;
     this.sleepAnim = { t: 0, wake, jumped: false };
     this.say('sleep');
     this.hud.setVeil(1);
@@ -1515,6 +1520,10 @@ class Game {
       s.jumped = true;
       this.simMillis = s.wake;
       this.air = 1; this.warm = 1;
+      // the rested buff: a well-designed bunk pays for hours of sol —
+      // slower warmth and air drain (the lander's cot is a fixed 0.3)
+      this.restedQ = this.sleepingBelow ? warrenReport(this.burrow).shelter : 0.3;
+      this.restedUntil = this.simMillis + (3 + 5 * this.restedQ) * 3698968.5;
       this.hud.setVeil(this.inLander ? 0.55 : 0); // the cabin keeps its dim
       if (!this.sleptOnce) {
         this.sleptOnce = true; // shakedown over: the hull becomes inventory
@@ -1830,10 +1839,16 @@ class Game {
     this.rocks.update(this.pos.x, this.pos.z);
     this.trackLayer.update(this.pos.x, this.pos.z, this.trail, meshGroundHeight);
 
-    // ---- the Burrow: the hands dig in real seconds; spoil is ore
+    // ---- the Burrow: the hands dig in real seconds; spoil is ore — and
+    // DESIGN PAYS: a staged store speeds the haul, lit gardens top your
+    // air at the crown, a good bunk sends you out rested (warrenReport)
     const wasHome = burrowPressurised(this.burrow);
-    for (const e of burrowTick(this.burrow, dt, this.droneCount)) {
+    const rep = warrenReport(this.burrow);
+    for (const e of burrowTick(this.burrow, dt, this.droneCount * (1 + rep.haul))) {
       if (e.type === 'dug') this.sayOnce('burrow-room');
+    }
+    if (rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7) {
+      this.air = Math.min(1, this.air + dt * 0.03 * rep.air);
     }
     if (!wasHome && burrowPressurised(this.burrow)) this.sayOnce('burrow-home');
     if (this.distToCrown() < 7 && this.burrow.spoil.ore > 0) {
@@ -1868,8 +1883,12 @@ class Game {
     // switches on (PHASE2) — a 5h bottle and a colder night.
     const temp = surfaceTempC(sunEl, tau);
     const bottleHours = this.everPressurised ? 5 : 8;
-    this.air = Math.max(0, this.air - dt / (bottleHours * 3600 / TIME_SCALE));
-    const chill = temp < -60 ? ((-60 - temp) / 40) * (this.everPressurised ? 1.5 : 1) : 0;
+    // rested (a good night in a good bunk): the body spends slower
+    const rested = this.simMillis < (this.restedUntil || 0) ? (this.restedQ || 0) : 0;
+    this.air = Math.max(0, this.air
+      - (dt / (bottleHours * 3600 / TIME_SCALE)) * (1 - 0.25 * rested));
+    const chill = temp < -60
+      ? ((-60 - temp) / 40) * (this.everPressurised ? 1.5 : 1) * (1 - 0.35 * rested) : 0;
     this.warm = Math.max(0, Math.min(1, this.warm + (0.05 - chill * 0.02) * dt));
     if (this.warm < 0.35) this.sayOnce('cold');
     if (this.air < 0.25) this.sayOnce('air-low');

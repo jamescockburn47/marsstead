@@ -8,7 +8,7 @@
 // burrow.js owns every truth; this only draws it. Zero assets.
 
 import {
-  BURROW_PIECES, COLS, DEPTHS, canPlan, parseKey,
+  BURROW_PIECES, COLS, DEPTHS, canPlan, parseKey, warrenReport,
 } from './burrow.js';
 
 const CS = 64;
@@ -48,6 +48,14 @@ const CSS = `
   #bvesper { font-size: 11.5px; line-height: 1.55; font-style: italic; opacity: .85; }
   #bstats { font-size: 11.5px; line-height: 1.9; margin-top: 8px; }
   #bstats b { color: #e8c46a; }
+  .bmeter { margin: 5px 0 8px; }
+  .bmeter .ml { display: flex; justify-content: space-between;
+    font-size: 10px; letter-spacing: 2px; opacity: .75; margin-bottom: 3px; }
+  .bmeter .mb { height: 5px; border-radius: 3px; background: rgba(246,237,226,.1);
+    overflow: hidden; }
+  .bmeter .mb i { display: block; height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, #c9a04a, #e8c46a); transition: width .4s; }
+  .bmeter.cool .mb i { background: linear-gradient(90deg, #2c9b95, #3fd0c9); }
   #bscene { position: relative; border: 1px solid rgba(232,196,106,.28);
     border-radius: 5px; overflow: hidden; min-height: 0; background: #0e0703; }
   #bscene::before, #bscene::after { content: ''; position: absolute;
@@ -160,6 +168,7 @@ export class BurrowConsole {
       <div id="bmain">
         <div id="bside">
           <aside class="bpanel"><h2>PIECES</h2><div id="bcards"></div></aside>
+          <aside class="bpanel"><h2>WARREN REPORT</h2><div id="breport"></div></aside>
           <aside class="bpanel"><h2>VESPER</h2><div id="bvesper"></div>
             <div id="bstats"></div></aside>
         </div>
@@ -419,6 +428,30 @@ export class BurrowConsole {
       }
     }
 
+    // ---- the report's verdict marks, drawn ON the rooms: a teal leaf-tick
+    // for every bonus earned, a rust flag for every penalty — the design
+    // teaches itself at a glance
+    const rep = warrenReport(b);
+    const byKey = new Map();
+    for (const n of rep.notes) {
+      if (!byKey.has(n.key)) byKey.set(n.key, []);
+      byKey.get(n.key).push(n);
+    }
+    for (const [k, notes] of byKey) {
+      const { col, depth } = parseKey(k);
+      const x = X(col), y = Y(depth);
+      notes.slice(0, 2).forEach((n, i) => {
+        const mx = x + CS - 11 - i * 13, my = y + 11;
+        svg += n.kind === 'bonus'
+          ? `<g><circle cx="${mx}" cy="${my}" r="6" fill="rgba(63,208,201,.18)" stroke="#3fd0c9" stroke-width="1.2"/>
+             <path d="M${mx - 2.6} ${my} l2 2.4 l3.4 -4.4" stroke="#3fd0c9" stroke-width="1.5" fill="none"/>
+             <title>${n.why}</title></g>`
+          : `<g><circle cx="${mx}" cy="${my}" r="6" fill="rgba(209,104,90,.18)" stroke="#d1685a" stroke-width="1.2"/>
+             <path d="M${mx} ${my - 3.2} v3.6 m0 1.8 v.8" stroke="#d1685a" stroke-width="1.6"/>
+             <title>${n.why}</title></g>`;
+      });
+    }
+
     // the instrument vignette over everything
     svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#bvig)" pointer-events="none"/>`;
 
@@ -426,6 +459,13 @@ export class BurrowConsole {
     el.setAttribute('viewBox', `0 0 ${W} ${H}`);
     el.innerHTML = svg;
 
+    const meter = (label, v, cool) => `<div class="bmeter${cool ? ' cool' : ''}">
+      <div class="ml"><span>${label}</span><span>${Math.round(v * 100)}%</span></div>
+      <div class="mb"><i style="width:${Math.round(v * 100)}%"></i></div></div>`;
+    this.root.querySelector('#breport').innerHTML = meter('SHELTER — wake rested', rep.shelter)
+      + meter('AIR — gardens scrub', rep.air, true)
+      + meter('HAUL — stores stage', rep.haul * 2)
+      + `<div style="font-size:10px;opacity:.55;line-height:1.5">deep bunks shield · gardens beside bunks loop air · light-pipes reach ${2 * 3} m · stores near the spine speed the dig</div>`;
     this.root.querySelector('#bvesper').textContent = `“${this.h.line()}”`;
     this.root.querySelector('#bstats').innerHTML = `drones <b>${this.h.getDroneCount()}</b> · queue <b>${b.queue.length}</b><br>
       spoil — regolith <b>${b.spoil.regolith}</b> · ore <b>${b.spoil.ore}</b>`;

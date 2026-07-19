@@ -3,9 +3,9 @@
 // rebuilds the same home.
 
 import {
-  BURROW_PIECES, COLS, DEPTHS, createBurrow, canPlan, plan, cancelPlan,
-  tick, installRing, isPressurised, isBedworthy, takeSpoil, spoilFor,
-  digCost, serialize, deserialize,
+  BURROW_PIECES, COLS, DEPTHS, LIGHT_REACH, createBurrow, canPlan, plan,
+  cancelPlan, tick, installRing, isPressurised, isBedworthy, takeSpoil,
+  spoilFor, digCost, serialize, deserialize, warrenReport, gardenLit,
 } from '../src/burrow.js';
 
 let failed = 0;
@@ -87,6 +87,75 @@ const digAll = (b, drones = 4) => { let guard = 0; while (b.queue.length && guar
   check('…and digs on to a home (the bunk completes)', isPressurised(back) && isBedworthy(back));
   check('garbage in, empty warren out', deserialize(null).cells.size === 0
     && deserialize({ cells: [[1, 2], ['x,y', 'nonsense', 9]] }).cells.size === 0);
+}
+
+// 5. the warren report: design has consequences, and the rules are legible
+{
+  // dig a shaft three deep with corridors at each level
+  const base = () => {
+    const b = createBurrow();
+    plan(b, 'shaft', 0, 1); digAll(b);
+    plan(b, 'shaft', 0, 2); digAll(b);
+    plan(b, 'shaft', 0, 3); digAll(b);
+    installRing(b);
+    return b;
+  };
+
+  // depth protects: the same bunk scores better deeper
+  const shallow = base();
+  plan(shallow, 'corridor', 1, 1); digAll(shallow);
+  plan(shallow, 'bunk', 2, 1); digAll(shallow);
+  const deep = base();
+  plan(deep, 'corridor', 1, 3); digAll(deep);
+  plan(deep, 'bunk', 2, 3); digAll(deep);
+  check('depth protects the bunk',
+    warrenReport(deep).shelter > warrenReport(shallow).shelter,
+    `${warrenReport(deep).shelter} vs ${warrenReport(shallow).shelter}`);
+
+  // the air loop: a garden stacked beside the bunk pays; a bay costs
+  const looped = base();
+  plan(looped, 'corridor', 1, 3); digAll(looped);
+  plan(looped, 'bunk', 2, 3); digAll(looped);
+  plan(looped, 'corridor', 1, 2); digAll(looped);
+  plan(looped, 'garden', 2, 2); digAll(looped);
+  check('a garden next to the bunk is an air loop',
+    warrenReport(looped).shelter > warrenReport(deep).shelter);
+  const noisy = base();
+  plan(noisy, 'corridor', 1, 3); digAll(noisy);
+  plan(noisy, 'bunk', 2, 3); digAll(noisy);
+  plan(noisy, 'corridor', 1, 2); digAll(noisy);
+  plan(noisy, 'bay', 2, 2); digAll(noisy);
+  check('a works bay next to the bunk is noise',
+    warrenReport(noisy).shelter < warrenReport(deep).shelter);
+
+  // light-pipes have a reach: gardens go dark too deep
+  check('light reaches the shallows', gardenLit(1) && gardenLit(LIGHT_REACH));
+  check('light fails the deeps', !gardenLit(LIGHT_REACH + 1));
+  const dark = base();
+  plan(dark, 'corridor', 1, 3); digAll(dark);
+  plan(dark, 'garden', 2, 3); digAll(dark);
+  check('a dark garden scrubs nothing', warrenReport(dark).air === 0);
+  check('a lit garden pays air', warrenReport(looped).air > 0);
+
+  // staging: a store beside the shaft speeds the haul, and it caps
+  const staged = base();
+  plan(staged, 'corridor', 1, 2); digAll(staged);
+  plan(staged, 'corridor', -1, 2); digAll(staged);
+  // stores flanking the shaft: rooms attach to corridors, and the cells
+  // beside a shaft ARE corridor-adjacent from the far side
+  plan(staged, 'corridor', 2, 2); digAll(staged);
+  plan(staged, 'corridor', 3, 2); digAll(staged);
+  plan(staged, 'store', 4, 2); digAll(staged);
+  check('a store far from the shaft stages nothing', warrenReport(staged).haul === 0);
+  plan(staged, 'store', 2, 3); // needs its own corridor — prove placement law
+  check('rooms still obey the corridors', !staged.cells.has('2,3'));
+  plan(staged, 'store', -2, 2); digAll(staged);
+  check('a store by the spine stages the haul', warrenReport(staged).haul === 0.25);
+  const rep = warrenReport(looped);
+  check('report bounded', [rep.shelter, rep.air, rep.haul].every((v) => v >= 0 && v <= 1));
+  check('report deterministic',
+    JSON.stringify(warrenReport(looped)) === JSON.stringify(warrenReport(looped)));
+  check('notes name their reasons', rep.notes.every((n) => n.key && n.kind && n.why.length > 4));
 }
 
 if (failed) { console.error(`verify-burrow: ${failed} FAILED`); process.exit(1); }
