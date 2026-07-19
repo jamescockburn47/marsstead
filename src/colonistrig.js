@@ -109,7 +109,7 @@ export function smoother01(t) {
 // at a foot plant can ever survive as a snap. Scaled up with the bound —
 // a Mars lope is allowed faster limbs than a walk.
 export const JOINT_CAP = {
-  hip: 260, knee: 420, ankle: 320, shoulder: 230, elbow: 230, torso: 110,
+  hip: 260, knee: 420, ankle: 320, shoulder: 300, elbow: 300, torso: 110,
 };
 
 // ---- analytic two-bone IK (law of cosines), sagittal plane --------------
@@ -354,13 +354,15 @@ export class ColonistRig {
     const pelvisYaw = clamp(legDelta * 0.16, -0.2, 0.2);
     springStep(this.torsoYawS, -pelvisYaw * 1.5, 9, 1, dt);
 
-    // arms: targets from the OPPOSITE leg, delivered late by their spring
-    // (overlapping action — distal parts lag). Suit shoulders ride wide.
-    const armAmp = 0.5 + 0.45 * b;
-    const tL = airborne ? -0.55 : (pose.legR.hipPitch || 0) * armAmp;
-    const tR = airborne ? -0.55 : (pose.legL.hipPitch || 0) * armAmp;
-    springStep(this.armS[0], tL, 9, 0.85, dt);
-    springStep(this.armS[1], tR, 9, 0.85, dt);
+    // arms swing from the shoulder like loose pendulums, opposite the legs.
+    // A bigger arc than the legs' drive alone, and an UNDER-damped spring
+    // (zeta < 1) so the swing overshoots and settles — that follow-through
+    // is what reads as a loose shoulder instead of a locked one.
+    const armAmp = 0.9 + 0.5 * b;
+    const tL = airborne ? -0.5 : (pose.legR.hipPitch || 0) * armAmp;
+    const tR = airborne ? -0.5 : (pose.legL.hipPitch || 0) * armAmp;
+    springStep(this.armS[0], tL, 7, 0.62, dt);
+    springStep(this.armS[1], tR, 7, 0.62, dt);
 
     // breathing is the ONLY idle motion — a slow swell of the chest, and
     // nothing that rotates a joint. No drift, no fidgets: a standing figure
@@ -378,16 +380,20 @@ export class ColonistRig {
     pose.torsoPitch = 0;
     pose.breath = breathe;
     pose.packOff = clamp(this.packS.x - this.hipYS.x, -0.05, 0.05);
-    const bend = 0.5 + 0.3 * b;   // the suit's pre-bent elbows
+    // the suit holds the arms OUT (never flat to the sides) and keeps a
+    // pre-bent elbow that pumps a little as the hand swings forward; the
+    // shoulder opens a touch further as the arm travels back.
+    const bend = 0.3 + 0.25 * b;
+    const swL = this.armS[0].x, swR = this.armS[1].x;
     pose.armL = {
-      shoulderPitch: this.armS[0].x,
-      elbowFlex: airborne ? 0.9 : bend + Math.max(0, this.armS[0].x) * 0.6,
-      abduct: 0.16 + 0.05 * b,
+      shoulderPitch: swL,
+      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swL) * 0.55,
+      abduct: 0.28 + 0.06 * b + Math.max(0, -swL) * 0.12,
     };
     pose.armR = {
-      shoulderPitch: this.armS[1].x,
-      elbowFlex: airborne ? 0.9 : bend + Math.max(0, this.armS[1].x) * 0.6,
-      abduct: 0.16 + 0.05 * b,
+      shoulderPitch: swR,
+      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swR) * 0.55,
+      abduct: 0.28 + 0.06 * b + Math.max(0, -swR) * 0.12,
     };
 
     // ---- the naturalistic cap: SmoothDamp every joint, then hold it to a

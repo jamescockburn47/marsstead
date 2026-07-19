@@ -350,12 +350,13 @@ export class Colonist {
       leg.ankle.rotation.x = -out.anklePitch;
     }
 
-    // arms
+    // arms. abduct swings each arm AWAY from the torso: left toward -x
+    // (negative z-rot), right toward +x (positive z-rot).
     this.armL.shoulder.rotation.x = -p.armL.shoulderPitch;
-    this.armL.shoulder.rotation.z = p.armL.abduct;
+    this.armL.shoulder.rotation.z = -p.armL.abduct;
     this.armL.forePivot.rotation.x = -p.armL.elbowFlex;
     this.armR.shoulder.rotation.x = -p.armR.shoulderPitch;
-    this.armR.shoulder.rotation.z = -p.armR.abduct;
+    this.armR.shoulder.rotation.z = p.armR.abduct;
     this.armR.forePivot.rotation.x = -p.armR.elbowFlex;
 
     // convolute rings fan through half the joint they serve
