@@ -10,7 +10,8 @@ export const RTG_KW = 1.0;          // the lander's steady gift
 export const ARRAY_KW = 3.0;        // one array, noon, clear sky
 export const BATTERY_CAP = 12.0;    // kWh-ish per bank
 export const LOADS = {
-  drone: 0.5,      // per drone, while the queue runs
+  drone: 1.0,      // per drone, while the queue runs — three hands digging
+                   // at night OUTDRAW the RTG: banks or no midnight mining
   fab: 0.8,        // per station, while cooking
   smelter: 1.0,
   electrolyser: 0.8,
@@ -36,7 +37,9 @@ export function solarFactor(sunEl, tau) {
 export const LANDER_BANK_KWH = 6;
 
 export function createPower() {
-  return { charge: LANDER_BANK_KWH / 2 };
+  // the descent burn spent the rest: enough to break the first ground
+  // (the shaft, exactly), not enough for a bench — income before ambition
+  return { charge: 4 };
 }
 
 export function capacity(batteries) { return LANDER_BANK_KWH + batteries * BATTERY_CAP; }
@@ -99,9 +102,9 @@ export function tickPower(p, dtH, arrays, batteries, sunEl, tau, loads) {
 // spends the bank for every placement — matter comes from the spoil,
 // structure comes from the charge. Costs in bank-kWh, legible integers.
 export const BUILD_KWH = {
-  machine: 4,     // any placed bench, array or bank
-  steadPart: 1,   // a wall, roof or surface part
-  drone: 3,       // commissioning a new hand at the crown
+  machine: 6,     // any placed bench, array or bank
+  steadPart: 2,   // a wall, roof or surface part
+  drone: 5,       // commissioning a new hand at the crown
 };
 
 // spend from the bank; refuses rather than overdrafts — the player builds

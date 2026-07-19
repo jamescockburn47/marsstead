@@ -103,8 +103,11 @@ export function spoilFor(col, depth) {
 // can't fund the head of the queue, the whole dig WAITS on charge and
 // self-paces to the settler's income. The hands' wattage (LOADS.drone)
 // is separate and small: that is their motors, this is the print.
+// Priced at INCOME scale (a sol of solar is ~30-60 kWh an array): a room
+// is a real bite of the bank, so a building spree outruns the sun and the
+// queue WAITS — the urgency that makes arrays and banks the true ladder.
 export const DIG_KWH = {
-  shaft: 2, corridor: 2, bunk: 3, store: 3, bay: 4, garden: 4,
+  shaft: 4, corridor: 3, bunk: 6, store: 6, bay: 8, garden: 8,
 };
 
 // the hands: droneCount drones all work the OLDEST unfinished dig (they

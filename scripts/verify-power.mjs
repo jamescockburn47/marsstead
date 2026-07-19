@@ -77,10 +77,10 @@ function check(name, ok, detail = '') {
 
 // 6. the currency: the nanofab spends the bank, never overdrafts
 {
-  const p = createPower(); p.charge = 5;
-  check('a funded build spends', spend(p, BUILD_KWH.machine) && p.charge === 1);
-  check('an unfunded build refuses', !spend(p, BUILD_KWH.machine) && p.charge === 1);
-  check('refusal costs nothing', p.charge === 1);
+  const p = createPower(); p.charge = 8;
+  check('a funded build spends', spend(p, BUILD_KWH.machine) && p.charge === 2);
+  check('an unfunded build refuses', !spend(p, BUILD_KWH.machine) && p.charge === 2);
+  check('refusal costs nothing', p.charge === 2);
   check('build costs are legible integers', Object.values(BUILD_KWH)
     .every((v) => Number.isInteger(v) && v > 0 && v <= BATTERY_CAP));
   // landfall economics: the lander's half-charged cells fund the first

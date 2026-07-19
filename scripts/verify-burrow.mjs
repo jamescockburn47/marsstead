@@ -185,7 +185,12 @@ const digAll = (b, drones = 4) => { let guard = 0; while (b.queue.length && guar
   check('a resumed dig never pays twice', fundsBack === 0 && paidBefore === funds + 0
     && back.cells.get('0,2').dug >= 1);
   check('prices are legible integers', Object.values(DIG_KWH)
-    .every((v) => Number.isInteger(v) && v >= 1 && v <= 6));
+    .every((v) => Number.isInteger(v) && v >= 1 && v <= 10));
+  // the urgency contract: a modest spree outruns the lander bank — the
+  // player MUST build income to keep ahead (James's rule)
+  const { LANDER_BANK_KWH } = await import('../src/power.js');
+  const spree = DIG_KWH.shaft + DIG_KWH.corridor + DIG_KWH.bunk;
+  check('three digs outrun the lander bank', spree > LANDER_BANK_KWH);
 }
 
 if (failed) { console.error(`verify-burrow: ${failed} FAILED`); process.exit(1); }
