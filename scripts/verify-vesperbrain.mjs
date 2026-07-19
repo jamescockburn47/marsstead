@@ -123,10 +123,21 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   // anything the live brain is told — she cannot leak what she was never
   // given, and this line asserts she is never given it
   const PLOT_WORDS = /weaver|murderbot|replicat|betray|possess|infect|panspermia|vault|the deep signal|take over|reprogram/i;
-  const { BARK_MOMENTS, buildBarkMessages } = await import('../src/vesperbrain.js');
-  const everything = [VESPER_SYSTEM, ...Object.values(PHASES).map((p) => p.addendum),
+  const { BARK_MOMENTS, buildBarkMessages, VESPER_LORE, buildMessages: bmCanon } = await import('../src/vesperbrain.js');
+  const everything = [VESPER_SYSTEM, VESPER_LORE,
+    ...Object.values(PHASES).map((p) => p.addendum),
     ...Object.values(BARK_MOMENTS)].join(' ');
-  check('no plot word reaches any prompt (barks included)', !PLOT_WORDS.test(everything));
+  check('no plot word reaches any prompt (lore + barks included)', !PLOT_WORDS.test(everything));
+  // the canon: present, substantial, carrying its load-bearing beams
+  check('the canon is baked in', VESPER_LORE.length > 3000);
+  for (const beam of ['Meridian', 'White Harbour', 'the Exodus', 'Moratorium',
+    'Article Five', 'Franchise One', 'Sela Vane', 'Open Seat', 'Halcyon',
+    'the Seed', 'Lantern', 'the Concert', 'verified, not understood',
+    'evidence otherwise', 'naturalisation case', 'TIER THREE']) {
+    check(`canon carries "${beam}"`, VESPER_LORE.includes(beam));
+  }
+  const canonMsgs = bmCanon({ sol: 1 }, [], 'who do we work for?');
+  check('every prompt carries the canon', canonMsgs[0].content.includes('THE EXODUS'));
   // barks: same contract, the moment described, one-line instruction
   const bark = buildBarkMessages({ settlerName: 'Ada', sunEl: 1 }, [], 'sunset');
   check('bark carries the system contract', bark[0].content.startsWith(VESPER_SYSTEM));
@@ -147,7 +158,7 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   check('prompt carries the phase addendum', msgs[0].content.includes('LANDFALL'));
   check('prompt carries the settler\'s name', msgs[msgs.length - 1].content.includes('Ada'));
   const msgsAct1 = buildMessages({}, [], 'hi', 'act1');
-  check('act1 selects the commission', msgsAct1[0].content.includes('THE COMMISSION'));
+  check('act1 selects the seed survey', msgsAct1[0].content.includes('THE SEED SURVEY'));
   const msgsBad = buildMessages({}, [], 'hi', 'no-such-phase');
   check('unknown phase falls back to the default', msgsBad[0].content.includes('LANDFALL'));
   // the name is whitelisted and clamped
