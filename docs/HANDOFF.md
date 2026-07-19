@@ -63,10 +63,24 @@ LANDFALL ORDERS sheet, chatter discipline).
    gated (verify-regard, extended verify-vesperbrain). The relay file
    changed too — EVO deploys now ship server/vesper-relay.mjs alongside
    the three brain files when the tag contract moves.
-2. **Stage 3 — the hopper** (STRUCTURE.md): plotted semi-cinematic hops,
-   payload/fuel decisions, pads and depots. NEVER continuous low-level
-   flight over streamed terrain. The ascent is the showreel — budget its
-   look accordingly (the altitude sky ladder, the limb band).
+2. **Stage 3 — the hopper** (STRUCTURE.md): the FLIGHT CORE is built and
+   gated (src/hopper.js + verify-hopper, 2026-07-19): honest
+   rocket-equation ranges under 0.38 g (1 tank ≈ 21 km, full rack ≈
+   376 km, the buggy's cradle costs ~45% range), the fuel-circle plot,
+   the staged ascent→arc→descent phase machine (never free flight;
+   position is a function of plot + clock only), mid-hop saves collapse
+   to the landing. STILL TO BUILD, in order: (a) the hop console (map +
+   fuel circle + payload toggle + LIGHT THE ENGINE commit — Sanctum
+   grammar); (b) the cinematic layer: camera rig riding tickHop's
+   altitude, the sky ladder driven by alt (butterscotch→violet→black at
+   noon, stars by day), the limb band (marssky tangent-path), the baked
+   global MOLA vista at the crest, launch scour + landing cloud in the
+   swirl register — THE SHOWREEL, judge by sheets; (c) pads (free
+   landings) + depots (far camps) as placeables; (d) main.js wiring:
+   hopper as an assembler-adjacent build, tanks load from bags,
+   destination streams in during descent. VESPER's brief + gamefacts
+   MUST gain the hopper facts when (d) lands — never before (no
+   describing what doesn't exist).
 3. **Stage 4 — the Seed** stages 1–2 + engineering console (the console
    language exists; the Halcyon glyph for underived choices from day
    one).
