@@ -687,10 +687,12 @@ class Game {
     const q = this.fab.queue.length, o = fabOutCount(this.fab);
     const carryRaw = Object.keys(RECIPES).some((raw) => count(this.suit, raw) > 0
       || (this.distToRover() < 9 && count(this.roverStore, raw) > 0));
-    if (!q && !o && !carryRaw) return '';
     const bits = [];
     if (o) bits.push(`${o} ready`);
     if (q) bits.push(`${q} cooking`);
+    // the bench always announces itself — an empty-handed settler learns
+    // what it EATS instead of walking past a silent door
+    if (!q && !o && !carryRaw) return ' · |*T| fabricator (feed it iron ore → steel panels)';
     return ` · |*T| fabricator${bits.length ? ` (${bits.join(', ')})` : ''}`;
   }
 
@@ -1508,7 +1510,8 @@ class Game {
         + ' · hatch at the ladder',
       );
     } else if (this.distToLander() < 6 && !this.sleptOnce) {
-      this.hud.setPrompt('hull salvage — locked until you’ve rested a night · hatch at the ladder');
+      this.hud.setPrompt('hull salvage — locked until you’ve rested a night · hatch at the ladder'
+        + this.fabLabel());
     } else if (this.distToLander() < 6 && this.fabLabel()) {
       this.hud.setPrompt(this.fabLabel().replace(/^ · /, ''));
     } else if (canSleep(this.sunEl ?? 90) && this.sheltered()) {
