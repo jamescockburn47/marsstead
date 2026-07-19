@@ -42,8 +42,9 @@ import { G_MARS } from './physics.js';
 
 // ---- the vehicle (exported so the verify holds the same numbers) ----------
 export const MASS = 780;          // kg — bigger tyres, sturdier frame, planted
-export const WHEELBASE_F = 1.05;  // m, CoM to front axle
-export const WHEELBASE_R = 1.15;  // m, CoM to rear axle
+export const WHEELBASE_F = 1.18;  // m, CoM to front axle — the mass sits AFT
+export const WHEELBASE_R = 1.02;  // m, CoM to rear axle (seat, solar deck,
+                                  // batteries: ~54% of the weight on the rear)
 export const HALF_TRACK = 1.02;   // m to the wheel centres — wide stance
 export const WHEEL_R = 0.62;      // m — LARGE mesh drums; rocks are speed bumps
 export const YAW_INERTIA = 1050;  // kg m^2
@@ -53,7 +54,10 @@ export const H_CG = 0.48;         // m, CoM height — batteries in the floor
 
 export const MU = 1.25;           // grousered wheels, DFA-1 arcade grip —
                                   // NOT regolith-honest, deliberately (see header)
-export const C_ALPHA = 9800;      // N/rad cornering stiffness per axle
+export const C_ALPHA_F = 8600;    // N/rad cornering stiffness, front axle
+export const C_ALPHA_R = 11000;   // N/rad rear — a rear-heavy car needs the
+                                  // bigger rear tyres or it spins (static
+                                  // margin b·Cr − a·Cf stays positive)
 export const F_DRIVE = 3400;      // N peak drive, both axles together
 export const F_BRAKE = 5200;      // N peak braking demand (circle clamps it)
 export const F_ENGINE_BRAKE = 620;// N regen drag when the throttle lifts —
@@ -154,8 +158,11 @@ export function wheelContactHeight(sample, x, z, dirX, dirZ) {
   return h;
 }
 
-// per-axle vertical load (static split; the friction circle spends it)
-export function axleLoad() { return (MASS * G_MARS) / 2; }
+// per-axle vertical loads from the real CoM position (how vehicles work:
+// the axle nearer the mass carries more of it — here the REAR)
+const WB = WHEELBASE_F + WHEELBASE_R;
+export function axleLoadF() { return MASS * G_MARS * (WHEELBASE_R / WB); }
+export function axleLoadR() { return MASS * G_MARS * (WHEELBASE_F / WB); }
 
 // the headline numbers the HUD and verify can quote: max lateral
 // acceleration and braking distance from speed u — arcade-brisk now
@@ -261,7 +268,7 @@ export function stepBuggy(s, input, ground, dt) {
   let touchVy = 0; // impact speed captured BEFORE depenetration softens vy
 
   if (grounded) {
-    const N = axleLoad();
+    const NF = axleLoadF(), NR = axleLoadR();
     const muF = MU, muR = input.handbrake ? MU * HANDBRAKE_MU : MU;
 
     // parked: static friction is real — no throttle, no way on, and a slope
@@ -281,19 +288,21 @@ export function stepBuggy(s, input, ground, dt) {
     const driveCap = Math.min(F_DRIVE, POWER / Math.max(Math.abs(s.u), 1.5));
     const driving = s.drive * driveCap;
     const braking = -Math.sign(s.u) * input.brake * F_BRAKE;
-    const tCapR = TRACTION * muR * N, tCapF = TRACTION * muF * N;
-    let fxR = Math.max(-tCapR, Math.min(tCapR, driving * (1 - FRONT_SPLIT))) + braking * 0.55;
-    let fxF = Math.max(-tCapF, Math.min(tCapF, driving * FRONT_SPLIT)) + braking * 0.45;
+    // brakes bias FRONT (load transfers forward under braking — rear-biased
+    // brakes are how real cars swap ends); drive stays rear-biased
+    const tCapR = TRACTION * muR * NR, tCapF = TRACTION * muF * NF;
+    let fxR = Math.max(-tCapR, Math.min(tCapR, driving * (1 - FRONT_SPLIT))) + braking * 0.42;
+    let fxF = Math.max(-tCapF, Math.min(tCapF, driving * FRONT_SPLIT)) + braking * 0.58;
 
     // the friction circle, per axle: longitudinal spends first, lateral
     // gets what remains — saturate either and that axle skids
-    const capF = muF * N, capR = muR * N;
+    const capF = muF * NF, capR = muR * NR;
     fxF = Math.max(-capF, Math.min(capF, fxF));
     fxR = Math.max(-capR, Math.min(capR, fxR));
     const lyF = Math.sqrt(Math.max(0.01, capF * capF - fxF * fxF));
     const lyR = Math.sqrt(Math.max(0.01, capR * capR - fxR * fxR));
-    let fyF = C_ALPHA * alphaF;
-    let fyR = C_ALPHA * alphaR;
+    let fyF = C_ALPHA_F * alphaF;
+    let fyR = C_ALPHA_R * alphaR;
     if (Math.abs(fyF) > lyF) { fyF = Math.sign(fyF) * lyF; flags.skidF = true; }
     if (Math.abs(fyR) > lyR) { fyR = Math.sign(fyR) * lyR; flags.skidR = true; }
     // wheelspin: power exceeding the traction share, at speeds where the
@@ -372,15 +381,36 @@ export function stepBuggy(s, input, ground, dt) {
     // time means flip time.
     s.airT += dt;
     s.r *= 1 - Math.min(1, 0.8 * dt);
-    // flip authority needs actual FLIGHT: a body perched on its skid
-    // plate (nose-stand, roof) gets no reaction-wheel tricks
+    // flip authority needs actual FLIGHT — and it is DELIBERATE: tricks
+    // fire only with the handbrake held (Space + throttle/steer). Bare
+    // W/S/A/D do nothing to attitude in the air, because the drive key
+    // must never pitch a traversal vehicle into the ground on an
+    // ordinary crest hop (the "constantly nose-diving" bug: held W was
+    // flipping the buggy forward through every little flight).
     const flying = s.skidT <= 0;
-    const dPitch = flying ? input.throttle * PITCH_RATE * dt : 0;
-    const dRoll = (flying ? -input.steer * ROLL_RATE : 0) * dt + s.rollKick * dt;
+    const trick = flying && input.handbrake;
+    const dPitch = trick ? input.throttle * PITCH_RATE * dt : 0;
+    const dRoll = (trick ? -input.steer * ROLL_RATE : 0) * dt + s.rollKick * dt;
     s.pitch += dPitch;
     s.roll += dRoll;
     s.pitchV = 0; s.rollV = 0; // the flip axes own attitude in the air
     s.airSpin += Math.abs(dPitch) + Math.abs(dRoll);
+    // DFA-1 §6 landing assist: a cleanly-flying car lands clean. Near the
+    // ground, falling, and NOT mid-trick, attitude eases toward the
+    // GROUND PLANE it is about to meet (world-level would dig the tail
+    // in on a downslope and tumble it) — the fix for launching nose-down
+    // off every crest and arriving that way. A deliberate flip (airSpin
+    // banked) or a tumble is never fought.
+    if (flying && s.vy < 0 && s.y - ground.h < 2.0 && s.airSpin < 0.8
+      && Math.abs(s.pitch) < 0.6 && Math.abs(s.roll) < 0.6) {
+      const sinA = Math.sin(s.heading), cosA = Math.cos(s.heading);
+      const clampT = (v) => Math.max(-0.5, Math.min(0.5, v));
+      const pitchT = clampT(-(ground.gx * sinA + ground.gz * cosA));
+      const rollT = clampT(ground.gx * cosA - ground.gz * sinA);
+      const assist = Math.min(1, 2.5 * dt);
+      s.pitch += (pitchT - s.pitch) * assist;
+      s.roll += (rollT - s.roll) * assist;
+    }
     flags.airborne = flying;
   }
   s.airborne = !grounded;

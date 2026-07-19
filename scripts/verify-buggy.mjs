@@ -355,6 +355,63 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
   check('rock-bump hammering never flips it', rolled === false);
 }
 
+// ---- how vehicles really work (James, 2026-07-19: "driving like its
+// centre of mass is at the front, constantly nose diving")
+
+// 20b. the mass sits AFT: at rest the rear springs carry more than the
+// front — the stance settles tail-down, never nose-down
+{
+  const s = settled();
+  check('rear springs carry the mass', s.susp[2] > s.susp[0] && s.susp[3] > s.susp[1],
+    `F=${s.susp[0].toFixed(3)} R=${s.susp[2].toFixed(3)}`);
+  check('standing stance is not nose-down', s.pitch <= 0.005, `pitch=${s.pitch.toFixed(4)}`);
+}
+
+// 20c. lifting off at speed must NOT bury the nose: coasting pitch stays
+// a whisker, not a dive
+{
+  const s = settled(); s.u = 14;
+  let worstDive = 0;
+  for (let t = 0; t < 3; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    worstDive = Math.max(worstDive, s.pitch);
+  }
+  check('coasting never buries the nose', worstDive < 0.03, `dive=${worstDive.toFixed(3)}`);
+}
+
+// 20d. a passive hop off a ledge ARRIVES near level on the flat below
+// (DFA landing assist): no input in the air, and no nose-plant
+{
+  const s = settled(); s.u = 12;
+  const ledge = (st) => st.z < 20
+    ? { h: 0, gx: 0, gz: 0 }
+    : { h: -2, gx: 0, gz: 0 };
+  let landPitch = null;
+  for (let t = 0; t < 10; t += DT) {
+    const f = stepBuggy(s, { throttle: 0.3, steer: 0, brake: 0, handbrake: false }, ledge(s), DT);
+    if (f.landed && landPitch === null) landPitch = Math.abs(s.pitch);
+  }
+  check('ledge hop lands near level', landPitch !== null && landPitch < 0.3,
+    `|pitch| at landing=${landPitch === null ? 'never landed' : landPitch.toFixed(3)}`);
+}
+
+// 20e. ...and descending onto a steep DOWNSLOPE it arrives at the slope's
+// own attitude, not world-level (world-level would tail-strike and tumble)
+{
+  const s = settled(); s.u = 12;
+  const crest = (st) => st.z < 20
+    ? { h: 0, gx: 0, gz: 0 }
+    : { h: -(st.z - 20) * 0.5, gx: 0, gz: -0.5 };
+  let landPitch = null;
+  for (let t = 0; t < 10; t += DT) {
+    const f = stepBuggy(s, { throttle: 0.3, steer: 0, brake: 0, handbrake: false }, crest(s), DT);
+    if (f.landed && landPitch === null) landPitch = s.pitch;
+  }
+  check('downslope arrival matches the slope, no tumble',
+    landPitch !== null && Math.abs(landPitch - 0.46) < 0.4,
+    `pitch at landing=${landPitch === null ? 'never landed' : landPitch.toFixed(3)} (slope attitude ~0.46)`);
+}
+
 // ---- the skid plate: the BODY never enters the terrain (DFA kept its
 // chassis out of the dunes with a real physics-engine collider; ours is
 // the analytic CHASSIS_POINTS set — chassisClearance is the guarantee)
@@ -525,12 +582,16 @@ const mkGround = (at, s) => {
 // ---- the flip layer (the Dune Flip Arena tribute): air control is real,
 // rotations count, landings are judged
 
-// 24. airborne pitch authority integrates the commanded rate
+// 24. airborne pitch authority (Space + throttle: tricks are DELIBERATE)
+// integrates the commanded rate — and bare throttle does NOTHING
 {
   const s = createBuggy(); s.airborne = true; s.vy = 4; s.y = 0; s.u = 10;
   const deep = { h: -200, gx: 0, gz: 0 };
-  for (let t = 0; t < 1; t += DT) stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, deep, DT);
-  check('air pitch authority', Math.abs(s.pitch - 2.6) < 0.1, `pitch=${s.pitch.toFixed(2)}`);
+  for (let t = 0; t < 1; t += DT) stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: true }, deep, DT);
+  check('air pitch authority (with the trick key)', Math.abs(s.pitch - 2.6) < 0.1, `pitch=${s.pitch.toFixed(2)}`);
+  const p = createBuggy(); p.airborne = true; p.vy = 4; p.y = 0; p.u = 10;
+  for (let t = 0; t < 1; t += DT) stepBuggy(p, { throttle: 1, steer: 0, brake: 0, handbrake: false }, deep, DT);
+  check('bare throttle never flips in the air', Math.abs(p.pitch) < 0.05, `pitch=${p.pitch.toFixed(2)}`);
 }
 
 // 25. a full rotation flags a flip; landing level flags it CLEAN
@@ -540,7 +601,7 @@ const mkGround = (at, s) => {
   let flip = false, clean = false;
   for (let t = 0; t < 8; t += DT) {
     const spin = s.airSpin < Math.PI * 2 ? 1 : (Math.abs(((s.pitch % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) > 0.15 ? 1 : 0);
-    const f = stepBuggy(s, { throttle: s.airborne ? spin : 0, steer: 0, brake: 0, handbrake: false }, flat, DT);
+    const f = stepBuggy(s, { throttle: s.airborne ? spin : 0, steer: 0, brake: 0, handbrake: s.airborne && spin > 0 }, flat, DT);
     if (f.flip) flip = true;
     if (f.cleanFlip) clean = true;
     if (f.landed) break;

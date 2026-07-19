@@ -215,7 +215,7 @@ export const BARK_MOMENTS = {
   fall: 'the settler just took a tumble — no harm done, some suit wear',
   'buggy-first': 'the settler just drove the buggy for the first time',
   'buggy-drift': 'the settler just powerslid the buggy sideways through the dust',
-  'buggy-air': 'the buggy just left the ground entirely off a rise',
+  'buggy-air': 'the buggy just left the ground entirely off a rise (mid-air, holding Space with throttle or steer would somersault it — a trick, if the settler fancies one)',
   'buggy-crash': 'the buggy just landed hard',
   'buggy-flip': 'the buggy just did a complete flip and landed on its wheels',
   'buggy-rollover': 'the buggy just rolled over',
