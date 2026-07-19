@@ -81,6 +81,15 @@ Every range is BUILT, not granted. Twenty-ish hours, mapped to the acts:
   (underived choices carry a glyph from hour one — the seam in plain
   sight), LIGHT THE STAGE commits with spectacle, WALK THE SITE flips
   schematic to world. Post-reveal the same console becomes the war room.
+- **Power** (`power.js`, pure — the game's thermostat): SOURCES — the
+  lander's RTG (a small steady floor, night- and storm-proof) + solar
+  arrays (output rides sunEl × the deterministic dust cycle: the weather
+  FORECAST is real, so power planning is real); BANKS — batteries charge
+  by day and carry the night; LOADS — digging drones, cooking benches,
+  the pressurised warren's comforts. Deficit SHEDS in a fixed, visible
+  priority order (assembler → mill → smelter/fab → drones → warren) —
+  the base goes quiet, never dead. Stage 4's rule stands on this: Seed
+  precision parts demand an unbroken baseline through the night.
 - **Saves**: one IndexedDB slot per browser today. Step 1: CHARTER
   RECORD export/import on the title screen (a file, loads anywhere).
   Step 2: cloud saves on the EVO relay keyed to a short charter code.

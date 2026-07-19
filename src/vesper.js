@@ -25,6 +25,7 @@ export const EVENTS = [
   'lander-in', 'not-tired', 'salvage-unlocked',
   'radio-static',
   'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
+  'power-low',
 ];
 
 // the instrument channel: safety and mechanics, spoken plainly and at
@@ -79,6 +80,10 @@ export const INSTRUMENT = {
   'salvage-unlocked': [
     "Shakedown complete. New phase: construction — the hull is inventory now.",
     "You slept and the ship held. Mission rules make her a warehouse from this morning.",
+  ],
+  'power-low': [
+    "Power is short. I shed the benches first, then the hands. Your lights go last.",
+    "Bank under fifteen percent and no sun to lean on. The base is about to go quiet — not dark.",
   ],
   // the one honest failure notice: the mind is off-relay, the numbers remain
   'radio-static': [

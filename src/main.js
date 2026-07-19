@@ -25,7 +25,10 @@ import { buildComposer, resizeComposer, disposeComposer } from './post.js';
 import {
   phobosWorld, deimosWorld, earthElongation, marsEqToWorld,
 } from './marsheavens.js';
-import { tauAt, windAt, cirrusAt } from './dust.js';
+import { tauAt, windAt, cirrusAt, solBase } from './dust.js';
+import {
+  createPower, tickPower, serializePower, deserializePower,
+} from './power.js';
 import { mtc } from './marstime.js';
 import {
   G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0, LOPE_HOP_V0,
@@ -275,9 +278,17 @@ class Game {
       },
       line: () => this.hud.vesperLine.textContent || '…',
     });
+    this.power = createPower();
+    this.grid = null; // last tickPower truth — consoles read it
+    this.saidPowerLow = false;
     this.worksUI = new WorksConsole({
       getFab: () => this.fab,
       getMachines: () => this.machines,
+      getGrid: () => this.grid,
+      getForecast: () => {
+        const sol = Math.floor(this.simMillis / 88775244);
+        return { today: solBase(sol), tomorrow: solBase(sol + 1) };
+      },
       line: () => this.hud.vesperLine.textContent || '…',
     });
     this.anchoring = null;       // { t, need } while planting the rig
@@ -414,6 +425,7 @@ class Game {
     this.trail = deserializeTrail(s.trail); // the old marks still stand
     this.burrow = deserializeBurrow(s.burrow); // the warren keeps its shape
     this.restedQ = s.restedQ; this.restedUntil = s.restedUntil;
+    this.power = deserializePower(s.power); // the bank remembers its charge
     if (!this.settlerName) this.settlerName = s.settlerName || '';
     // she remembers: the last exchanges and the count of talks ride the
     // save, so rapport survives the browser closing
@@ -449,6 +461,7 @@ class Game {
       burrow: serializeBurrow(this.burrow),
       restedQ: this.restedQ || 0,
       restedUntil: this.restedUntil || 0,
+      power: serializePower(this.power),
       settlerName: this.settlerName,
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
@@ -1759,6 +1772,32 @@ class Game {
     const L = lightState(sunEl, tau);
     this.L = L; // renderFrame's drives read the same state this frame set
 
+    // ---- the grid: sources, bank, loads — and the shed ladder when the
+    // arithmetic fails. Computed FIRST: everything below reads this truth.
+    const arrays = this.machines.filter((m) => m.type === 'solar-array').length;
+    const batteries = this.machines.filter((m) => m.type === 'battery').length;
+    const cooking = {};
+    if (this.fab.queue.length) cooking.fab = 1;
+    for (const m of this.machines) {
+      if (m.queue.length) cooking[m.type] = (cooking[m.type] || 0) + 1;
+    }
+    const dugRooms = this.burrow.ringInstalled
+      ? [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length : 0;
+    this.grid = tickPower(this.power, (dt * TIME_SCALE) / 3600,
+      arrays, batteries, sunEl, tau, {
+        drones: this.burrow.queue.length ? this.droneCount : 0,
+        cooking,
+        warrenRooms: dugRooms,
+      });
+    const shed = new Set(this.grid.shed);
+    // the instrument channel keeps watch: warn once per crisis, re-arm on recovery
+    const bankFrac = this.grid.capacity > 0 ? this.grid.charge / this.grid.capacity : 1;
+    if ((shed.size > 0 || bankFrac < 0.15) && this.grid.demand > this.grid.supply) {
+      if (!this.saidPowerLow) { this.saidPowerLow = true; this.say('power-low'); }
+    } else if (bankFrac > 0.4 || this.grid.demand <= this.grid.supply) {
+      this.saidPowerLow = false;
+    }
+
     const sunDir = new THREE.Vector3(
       Math.sin(sunAz * Math.PI / 180) * Math.cos(sunEl * Math.PI / 180),
       Math.sin(sunEl * Math.PI / 180),
@@ -1844,8 +1883,11 @@ class Game {
     const hopperNow = hopperCount(this.rig);
     if (hopperNow >= HOPPER_CAP && this.prevHopper < HOPPER_CAP) this.say('hopper-full');
     this.prevHopper = hopperNow;
-    if (fabTick(this.fab, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
+    // benches cook only while the grid serves them — a shed station holds
+    // its queue warm and waits (quiet, never broken)
+    if (!shed.has('fab') && fabTick(this.fab, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
     for (const m of this.machines) {
+      if (shed.has(m.type)) continue;
       if (machineTick(m, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
     }
     this.machineLayer.update(this.machines, this.t);
@@ -1859,13 +1901,17 @@ class Game {
 
     // ---- the Burrow: the hands dig in real seconds; spoil is ore — and
     // DESIGN PAYS: a staged store speeds the haul, lit gardens top your
-    // air at the crown, a good bunk sends you out rested (warrenReport)
+    // air at the crown, a good bunk sends you out rested (warrenReport).
+    // A shed grid stills the hands and dims the comforts.
     const wasHome = burrowPressurised(this.burrow);
     const rep = warrenReport(this.burrow);
-    for (const e of burrowTick(this.burrow, dt, this.droneCount * (1 + rep.haul))) {
+    const handsPowered = !shed.has('drone');
+    for (const e of burrowTick(this.burrow, dt,
+      handsPowered ? this.droneCount * (1 + rep.haul) : 0)) {
       if (e.type === 'dug') this.sayOnce('burrow-room');
     }
-    if (rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7) {
+    if (rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7
+      && !shed.has('warren')) {
       this.air = Math.min(1, this.air + dt * 0.03 * rep.air);
     }
     if (!wasHome && burrowPressurised(this.burrow)) this.sayOnce('burrow-home');

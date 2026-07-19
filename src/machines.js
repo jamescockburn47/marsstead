@@ -24,6 +24,18 @@ export const MACHINE_TYPES = {
   // ---- STAGE 2, the Works' upper tiers (STRUCTURE.md): panels become
   // parts, parts become the expedition — the chain that ends at the hopper
   // (methane tanks, Stage 3) and the descent (winch rig, Stage 5)
+  // power infrastructure (Stage 2.5): no recipes — arrays feed the grid by
+  // day, banks carry the night; power.js owns the arithmetic
+  'solar-array': {
+    name: 'Solar array',
+    costs: [['glass', 1], ['cable', 1], ['electronics', 1]],
+    recipes: {},
+  },
+  battery: {
+    name: 'Battery bank',
+    costs: [['steel-panel', 1], ['electronics', 1], ['cable', 1]],
+    recipes: {},
+  },
   mill: {
     name: 'Mill',
     costs: [['steel-panel', 2], ['electronics', 1], ['cable', 1]],

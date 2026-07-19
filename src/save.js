@@ -78,6 +78,7 @@ export function snapshotSave(state) {
     burrow: state.burrow && typeof state.burrow === 'object' ? state.burrow : null,
     restedQ: clamp01(state.restedQ, 0),
     restedUntil: fin(state.restedUntil, 0),
+    power: state.power && typeof state.power === 'object' ? state.power : null,
     settlerName: cleanName(state.settlerName || ''),
     // her memory of you (additive): the last exchanges + how often you talk
     vesperLog: Array.isArray(state.vesperLog) ? state.vesperLog.slice(-6) : [],
@@ -215,6 +216,7 @@ export function acceptSave(meta) {
     burrow: meta.burrow && typeof meta.burrow === 'object' ? meta.burrow : null,
     restedQ: clamp01(meta.restedQ, 0),
     restedUntil: fin(meta.restedUntil, 0),
+    power: meta.power && typeof meta.power === 'object' ? meta.power : null,
     // laundered memory: known speakers, plain short strings, six turns max
     vesperLog: Array.isArray(meta.vesperLog)
       ? meta.vesperLog.slice(-6)

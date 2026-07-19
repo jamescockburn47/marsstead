@@ -23,6 +23,17 @@ const CSS = `
   #works header .x { margin-left: auto; cursor: pointer; opacity: .7;
     font-size: 17px; padding: 2px 8px; }
   #works header .x:hover { opacity: 1; }
+  #wgrid { display: flex; align-items: center; gap: 18px; margin: 0 30px;
+    padding: 10px 14px; border: 1px solid rgba(232,196,106,.25);
+    border-radius: 6px; font-size: 11.5px; letter-spacing: 1px;
+    background: linear-gradient(180deg, rgba(38,22,13,.9), rgba(22,12,7,.9)); }
+  #wgrid b { color: #e8c46a; }
+  #wgrid .bank { flex: 1; max-width: 220px; height: 6px; border-radius: 3px;
+    background: rgba(246,237,226,.1); overflow: hidden; }
+  #wgrid .bank i { display: block; height: 100%;
+    background: linear-gradient(90deg, #2c9b95, #3fd0c9); }
+  #wgrid .shed { color: #d1685a; letter-spacing: 2px; }
+  #wgrid .cast { opacity: .7; }
   #wmain { flex: 1; display: flex; align-items: center; padding: 0 30px;
     min-height: 0; overflow-x: auto; gap: 0; }
   .wstation { flex: 1; min-width: 200px; border: 1px solid rgba(232,196,106,.25);
@@ -77,6 +88,7 @@ export class WorksConsole {
       <header><h1>THE WORKS</h1>
         <div class="sub">ore in the west door, the expedition out the east — Stage 2 of the demonstration</div>
         <div class="x" id="wx">✕</div></header>
+      <div id="wgrid"></div>
       <div id="wmain"></div>
       <footer><span class="motto" id="wvesper"></span>
         <span class="hint">T at a bench feeds and empties it · B places new stations · E closes</span></footer>`;
@@ -133,6 +145,27 @@ export class WorksConsole {
       html += stationHtml(st);
     });
     this.root.querySelector('#wmain').innerHTML = html;
+
+    // ---- the grid strip: the thermostat's whole truth in one line
+    const g = this.h.getGrid ? this.h.getGrid() : null;
+    const gridEl = this.root.querySelector('#wgrid');
+    if (g) {
+      const frac = g.capacity > 0 ? g.charge / g.capacity : 0;
+      const cast = this.h.getForecast ? this.h.getForecast() : null;
+      const castTxt = cast
+        ? (cast.tomorrow > cast.today + 0.12
+          ? 'tomorrow runs dustier — charge tonight'
+          : cast.tomorrow < cast.today - 0.12
+            ? 'tomorrow runs clearer' : 'steady skies ahead')
+        : '';
+      gridEl.innerHTML = `<span>GRID <b>${g.supply}</b> kW in · <b>${g.served}</b>/${g.demand} kW served</span>
+        <div class="bank"><i style="width:${Math.round(frac * 100)}%"></i></div>
+        <span>bank <b>${g.charge}</b>/${g.capacity || 0}</span>
+        ${g.shed.length ? `<span class="shed">QUIET: ${g.shed.join(' · ')}</span>` : ''}
+        <span class="cast">${castTxt}</span>`;
+    } else {
+      gridEl.innerHTML = '<span class="cast">grid telemetry warms up with the first frame</span>';
+    }
     this.root.querySelector('#wvesper').textContent = `“${this.h.line()}”`;
   }
 }
