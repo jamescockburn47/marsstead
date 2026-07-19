@@ -41,6 +41,18 @@ const FS = /* glsl */`
     // warm inner glow + the disc itself
     sky += uSunCol * exp(-s * 28.0) * uSunI * 0.8;
     sky += uSunCol * smoothstep(0.026, 0.020, s) * uSunI * 2.0;
+    // the dusty shafts: streaks of forward-scattered sun through the
+    // haze, an angular fbm field around the low sun (sun-local basis,
+    // never atan — no wrap seam). They ride the halo envelope, so they
+    // live at the golden and blue hours and vanish at a clear noon.
+    if (uHaloS > 0.02 && s > 0.02) {
+      vec3 bx = normalize(cross(vec3(0.0, 1.0, 0.0), uSunDir));
+      vec3 by = cross(uSunDir, bx);
+      vec2 ang = vec2(dot(d, bx), dot(d, by)) / max(s, 0.05);
+      float rays = fbm(ang * 2.3 + 3.7);
+      sky += uSunCol * pow(max(0.0, rays - 0.42) * 1.7, 2.0)
+        * exp(-s * 3.1) * uHaloS * 0.14;
+    }
 
     // the Milky Way: hard core, wide glow, and the dark rift down its
     // spine — fractal mottling, vivid on a clear night, gone by day.
@@ -52,11 +64,13 @@ const FS = /* glsl */`
       // seam-free fractal coords: projected direction components, never
       // atan — the azimuth wrap put a hard vertical seam in the sky
       vec2 along = vec2(d.x * 2.6 + d.y * 1.7, d.z * 2.6 - d.y * 0.9);
-      float mottle = 0.30 + 0.85 * fbm(along + 7.0);
-      float rift = 1.0 - 0.75 * core * smoothstep(0.45, 0.75, fbm(along * 1.6 + 31.0));
+      // two mottle octaves: the broad clumping and the fine star-cloud
+      // curdle that makes the core read as BILLIONS, not as fog
+      float mottle = 0.26 + 0.74 * fbm(along + 7.0) + 0.35 * (fbm(along * 3.3 + 51.0) - 0.5) * core;
+      float rift = 1.0 - 0.85 * core * smoothstep(0.42, 0.72, fbm(along * 1.6 + 31.0));
       // levels: a band you can SEE STRUCTURE in, never a floodlight —
       // the night ground stays lit by the stars, not by the galaxy alone
-      sky += (vec3(0.95, 0.93, 1.0) * core * 0.13 + vec3(0.55, 0.62, 0.85) * glow * 0.05)
+      sky += (vec3(0.95, 0.93, 1.0) * core * 0.19 + vec3(0.55, 0.62, 0.85) * glow * 0.075)
         * mottle * rift * uStars;
     }
 
