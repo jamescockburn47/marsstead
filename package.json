@@ -1,7 +1,7 @@
 {
   "name": "marsstead",
   "private": true,
-  "version": "0.0.26",
+  "version": "0.0.27",
   "minClientVersion": "0.0.1",
   "type": "module",
   "description": "A procedural survival-homesteading game on the real Mars — third sibling to Moorstead and Saltstead",
