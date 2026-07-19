@@ -7,8 +7,8 @@
 // deterministic.
 
 import {
-  createBuggy, stepBuggy, deflectBuggy, MU, MASS, TOP_SPEED,
-  SUSP_STATIC, SUSP_TRAVEL, WHEEL_R,
+  createBuggy, stepBuggy, deflectBuggy, chassisClearance, MU, MASS, TOP_SPEED,
+  SUSP_STATIC, SUSP_TRAVEL, WHEEL_R, HALF_TRACK, WHEELBASE_F, WHEELBASE_R,
   maxLatAccel, brakingDistance,
 } from '../src/buggy.js';
 import { G_MARS, jumpApex } from '../src/physics.js';
@@ -352,6 +352,71 @@ check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
     if (f.rollover) rolled = true;
   }
   check('rock-bump hammering never flips it', rolled === false);
+}
+
+// ---- the skid plate: the BODY never enters the terrain (DFA kept its
+// chassis out of the dunes with a real physics-engine collider; ours is
+// the analytic CHASSIS_POINTS set — chassisClearance is the guarantee)
+
+// full ground data from an arbitrary sampler, as main.js builds it
+const mkGround = (at, s) => {
+  const e = 0.7, sin = Math.sin(s.heading), cos = Math.cos(s.heading);
+  const wh = [[-HALF_TRACK, WHEELBASE_F], [HALF_TRACK, WHEELBASE_F],
+    [-HALF_TRACK, -WHEELBASE_R], [HALF_TRACK, -WHEELBASE_R]]
+    .map(([lx, lz]) => at(s.x + lx * cos + lz * sin, s.z - lx * sin + lz * cos));
+  return {
+    h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh, at,
+    gx: (at(s.x + e, s.z) - at(s.x - e, s.z)) / (2 * e),
+    gz: (at(s.x, s.z + e) - at(s.x, s.z - e)) / (2 * e),
+  };
+};
+
+// 21e. a sharp crest bulge between the axles cannot poke the belly
+{
+  const ridge = (x, z) => Math.max(0, 0.7 - Math.abs(z - 25) * 0.7);
+  const s = settled(); s.u = 10;
+  let worst = 99;
+  for (let t = 0; t < 6; t += DT) {
+    stepBuggy(s, { throttle: 0.6, steer: 0, brake: 0, handbrake: false }, mkGround(ridge, s), DT);
+    worst = Math.min(worst, chassisClearance(s, ridge));
+  }
+  check('crest bulge never enters the belly', worst > -0.06, `worst=${worst.toFixed(3)}`);
+  check('and the buggy crosses the ridge', s.z > 30, `z=${s.z.toFixed(1)}`);
+}
+
+// 21f. a nose-down arrival cannot spear the ground: the skid plate
+// catches the nose, the body comes up level
+{
+  const flat = (x, z) => 0;
+  const s = createBuggy(); s.y = 2; s.vy = -4; s.u = 10; s.pitch = 0.45;
+  s.airborne = true;
+  let worst = 99;
+  for (let t = 0; t < 5; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, mkGround(flat, s), DT);
+    worst = Math.min(worst, chassisClearance(s, flat));
+  }
+  check('nose-down arrival never spears', worst > -0.06, `worst=${worst.toFixed(3)}`);
+  check('and it comes up level', Math.abs(s.pitch) < 0.05 && Math.abs(s.roll) < 0.05,
+    `pitch=${s.pitch.toFixed(3)}`);
+}
+
+// 21g. driving along a real cross-slope: the downhill flank stays out of
+// the ground the whole way
+{
+  const slope = (x, z) => x * 0.35;
+  const s = createBuggy(); // settle ON the slope first
+  for (let t = 0; t < 3; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, mkGround(slope, s), DT);
+  }
+  s.u = 10;
+  let worst = 99, rolled = false;
+  for (let t = 0; t < 4; t += DT) {
+    const f = stepBuggy(s, { throttle: 0.6, steer: 0, brake: 0, handbrake: false }, mkGround(slope, s), DT);
+    worst = Math.min(worst, chassisClearance(s, slope));
+    if (f.rollover) rolled = true;
+  }
+  check('cross-slope flank stays clear', worst > -0.06, `worst=${worst.toFixed(3)}`);
+  check('cross-slope cruise does not flip', rolled === false);
 }
 
 // ---- boulders: deflect, thump, NEVER trap (the reverse-out guarantee)

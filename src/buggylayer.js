@@ -30,6 +30,11 @@ export const WHEELBASE = 1.05;  // half-length to the front axle (rear is 1.15)
 export class BuggyLayer {
   constructor(scene) {
     this.group = new THREE.Group();
+    // vehicle Euler order: yaw, THEN pitch, THEN roll — with the default
+    // XYZ order, pitch applies about the WORLD x-axis and on any slope not
+    // aligned north-south the body tilts about the wrong axis and digs its
+    // flank into the ground
+    this.group.rotation.order = 'YXZ';
 
     // ---- the body: a low angular wedge, panels over a visible frame
     const belly = box(1.15, 0.16, 2.4, FRAME); belly.position.y = 0.52;

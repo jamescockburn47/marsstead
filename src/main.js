@@ -1392,7 +1392,7 @@ class Game {
     const pe = 0.7, pbx = this.buggy.x, pbz = this.buggy.z;
     const pwg = this.wheelGround(pbx, pbz, this.buggy.heading);
     const pground = {
-      h: pwg.h, wh: pwg.wh,
+      h: pwg.h, wh: pwg.wh, at: pwg.at,
       gx: (meshGroundHeight(pbx + pe, pbz) - meshGroundHeight(pbx - pe, pbz)) / (2 * pe),
       gz: (meshGroundHeight(pbx, pbz + pe) - meshGroundHeight(pbx, pbz - pe)) / (2 * pe),
     };
@@ -1464,13 +1464,13 @@ class Game {
       bumps = bumpsNear(bx, bz, 6);
       this._bumpCache = { x: bx, z: bz, list: bumps };
     }
-    const at = (lx, lz) => {
-      const x = bx + lx * cos + lz * sin, z = bz - lx * sin + lz * cos;
-      return Math.max(meshGroundHeight(x, z), bumpHeightAt(x, z, bumps));
-    };
+    // the sampler the physics uses for wheels AND the chassis skid plate:
+    // drawn terrain, with the rock domes riding on top
+    const sample = (x, z) => Math.max(meshGroundHeight(x, z), bumpHeightAt(x, z, bumps));
+    const at = (lx, lz) => sample(bx + lx * cos + lz * sin, bz - lx * sin + lz * cos);
     const wh = [at(-TRACK, WHEELBASE_F), at(TRACK, WHEELBASE_F),
       at(-TRACK, -WHEELBASE_R), at(TRACK, -WHEELBASE_R)];
-    return { h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh };
+    return { h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh, at: sample };
   }
 
   // everything parked or built is SOLID — one shared disc list (collide.js
@@ -1507,6 +1507,7 @@ class Game {
       const ground = {
         h,
         wh: wg.wh,
+        at: wg.at,
         gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
         gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
       };

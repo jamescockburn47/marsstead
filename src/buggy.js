@@ -94,6 +94,47 @@ const WHEELS = [
   { lx: HALF_TRACK, lz: -WHEELBASE_R },
 ];
 
+// ---- the skid plate: the chassis' own contact set. Dune Flip Arena kept
+// its chassis out of the dunes with a real physics-engine collider (a
+// round cuboid + nose wedge against the terrain trimesh); this is the
+// procedural analogue — belly, nose and tail points sampled against the
+// terrain in FULL attitude every substep, depenetrated positionally, a
+// strike rotating the body off the ground. The wheels feel the terrain;
+// the skid plate guarantees the BODY never enters it.
+const CHASSIS_POINTS = [
+  { lx: 0, ly: 0.40, lz: 1.45 },     // nose tip
+  { lx: -0.58, ly: 0.44, lz: 1.1 }, { lx: 0.58, ly: 0.44, lz: 1.1 },
+  { lx: 0, ly: 0.44, lz: 0 },        // belly centre — the crest-bulge catcher
+  { lx: -0.58, ly: 0.44, lz: -1.2 }, { lx: 0.58, ly: 0.44, lz: -1.2 },
+  { lx: 0, ly: 0.42, lz: -1.35 },    // tail
+];
+
+// world position of a chassis point under the vehicle Euler order
+// (yaw -> pitch -> roll, matching the render's 'YXZ')
+function chassisPoint(s, p, ch, sh, cp, sp, cr, sr) {
+  const x1 = p.lx * cr - p.ly * sr, y1 = p.lx * sr + p.ly * cr;
+  const y2 = y1 * cp - p.lz * sp, z2 = y1 * sp + p.lz * cp;
+  return {
+    x: s.x + x1 * ch + z2 * sh,
+    y: s.y + y2,
+    z: s.z - x1 * sh + z2 * ch,
+  };
+}
+
+// the lowest chassis clearance over a terrain sampler — exported so the
+// verify can assert the skid plate's guarantee directly
+export function chassisClearance(s, at) {
+  const ch = Math.cos(s.heading), sh = Math.sin(s.heading);
+  const cp = Math.cos(s.pitch), sp = Math.sin(s.pitch);
+  const cr = Math.cos(s.roll), sr = Math.sin(s.roll);
+  let worst = Infinity;
+  for (const p of CHASSIS_POINTS) {
+    const w = chassisPoint(s, p, ch, sh, cp, sp, cr, sr);
+    worst = Math.min(worst, w.y - at(w.x, w.z));
+  }
+  return worst;
+}
+
 // per-axle vertical load (static split; the friction circle spends it)
 export function axleLoad() { return (MASS * G_MARS) / 2; }
 
@@ -107,7 +148,8 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
     x, z, y: 0, heading,
     u: 0, v: 0, r: 0,       // body frame: forward, lateral, yaw rate
     vy: 0, airborne: false,
-    airT: 0, prevAirT: 0,   // seconds since the last wheel touched down
+    airT: 0,                // seconds since anything last touched ground
+    skidTouch: false,       // the chassis skid plate is in contact
     steer: 0,               // smoothed road-wheel angle
     drive: 0,               // smoothed throttle — keys step, engines ramp
     pitch: 0, roll: 0,      // sprung body attitude (nose-down +, right-up +)
@@ -196,9 +238,9 @@ export function stepBuggy(s, input, ground, dt) {
     tRoll += f * lx;  // a loaded right corner drives the right side UP
   }
   const grounded = contacts > 0;
+  let touchVy = 0; // impact speed captured BEFORE depenetration softens vy
 
   if (grounded) {
-    s.airT = 0;
     const N = axleLoad();
     const muF = MU, muR = input.handbrake ? MU * HANDBRAKE_MU : MU;
 
@@ -358,7 +400,7 @@ export function stepBuggy(s, input, ground, dt) {
     }
     if (worst > 0) {
       s.y += worst;
-      if (s.vy < 0) s.vy = -s.vy * 0.2;
+      if (s.vy < 0) { touchVy = Math.max(touchVy, -s.vy); s.vy = -s.vy * 0.2; }
       s.pitchV *= 0.5; s.rollV *= 0.5;
     }
   }
@@ -371,12 +413,83 @@ export function stepBuggy(s, input, ground, dt) {
   s.x += wx * dt;
   s.z += wz * dt;
 
-  // ---- touchdown after a real flight: the LANDING is judged. Attitude
+  // ---- the skid plate: depenetrate the BODY from the terrain (see
+  // CHASSIS_POINTS — this is DFA's chassis collider, done analytically).
+  // ground.at samples terrain+rocks at any point; without one the plane
+  // h + g·(dx,dz) stands in, so analytic verifies get the guarantee too.
+  // Two regimes by the gradient at the strike: gentle ground SKIDS the
+  // body up and off it; a face steeper than any stance is a WALL — it
+  // pushes back horizontally and never lifts (no levitating up cliffs).
+  {
+    const at = ground.at
+      || ((ax, az) => ground.h + ground.gx * (ax - s.x) + ground.gz * (az - s.z));
+    const cp = Math.cos(s.pitch), sp = Math.sin(s.pitch);
+    const cr = Math.cos(s.roll), sr = Math.sin(s.roll);
+    let lift = 0, noseP = 0, tailP = 0, rollP = 0;
+    let wallX = 0, wallZ = 0, wallPen = 0;
+    s.skidTouch = false;
+    for (const p of CHASSIS_POINTS) {
+      const w = chassisPoint(s, p, cos2, sin2, cp, sp, cr, sr);
+      const pen = at(w.x, w.z) - w.y;
+      if (pen <= 0) continue;
+      const e2 = 0.5;
+      const gpx = (at(w.x + e2, w.z) - at(w.x - e2, w.z)) / (2 * e2);
+      const gpz = (at(w.x, w.z + e2) - at(w.x, w.z - e2)) / (2 * e2);
+      const steep = Math.hypot(gpx, gpz);
+      if (steep > 1.2) {
+        // a wall: remember the downhill direction, weighted by depth
+        wallX -= (gpx / steep) * pen; wallZ -= (gpz / steep) * pen;
+        wallPen = Math.max(wallPen, pen);
+        continue;
+      }
+      if (pen > lift) lift = pen;
+      if (p.lz > 0.5) noseP = Math.max(noseP, pen);
+      else if (p.lz < -0.5) tailP = Math.max(tailP, pen);
+      if (p.lx !== 0) rollP += Math.sign(p.lx) * pen;
+    }
+    if (lift > 0) {
+      s.skidTouch = true; // a body in ground contact is not flying
+      s.y += Math.min(lift, 0.15); // the strike lifts the body out (rate-capped)
+      if (s.vy < 0) { touchVy = Math.max(touchVy, -s.vy); s.vy *= -0.2; }
+      // ...rotates it off the strike (grounded springs get a rate kick,
+      // airborne attitude turns directly — the flip axes zero pitchV)...
+      s.pitchV += (tailP - noseP) * 60 * dt;
+      s.rollV += rollP * 60 * dt;
+      s.pitch += (tailP - noseP) * 4 * dt;
+      s.roll += rollP * 4 * dt;
+      // ...and grinding costs speed
+      s.u -= Math.sign(s.u) * Math.min(Math.abs(s.u), lift * 30) * dt;
+      if (lift > 0.12) flags.impact = Math.max(flags.impact, lift * 8);
+    }
+    if (wallPen > 0) {
+      const wl = Math.hypot(wallX, wallZ);
+      if (wl > 1e-6) {
+        const nx = wallX / wl, nz = wallZ / wl; // unit push, away from the face
+        const move = Math.min(wallPen, 0.2);
+        s.x += nx * move; s.z += nz * move;
+        // kill the velocity INTO the face (deflectBuggy's rule): tangential
+        // and outbound speed survive, so you glance off and reverse away
+        let wvx = s.u * sin2 + s.v * cos2;
+        let wvz = s.u * cos2 - s.v * sin2;
+        const vin = wvx * nx + wvz * nz;
+        if (vin < 0) {
+          wvx -= 1.25 * vin * nx; wvz -= 1.25 * vin * nz;
+          s.u = wvx * sin2 + wvz * cos2;
+          s.v = wvx * cos2 - wvz * sin2;
+          flags.impact = Math.max(flags.impact, -vin * 0.5);
+        }
+      }
+    }
+  }
+
+  // ---- touchdown after a real flight: the LANDING is judged — arriving
+  // on the wheels OR on the belly (the skid plate) both count. Attitude
   // near level -> an ordinary scrub; crooked -> a hard scrub; upside
   // down-ish -> a crash-out (speed mostly gone, never death). Brief
   // one-wheel skips over rocks (airT < 0.2 s) are just driving.
-  if (grounded && s.airT === 0 && s.prevAirT > 0.2) {
-    const hit = Math.abs(s.vy);
+  const touched = grounded || s.skidTouch;
+  if (touched && s.airT > 0.2) {
+    const hit = Math.max(Math.abs(s.vy), touchVy);
     const att = Math.max(
       Math.abs(((s.pitch + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI),
       Math.abs(((s.roll + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI),
@@ -392,7 +505,7 @@ export function stepBuggy(s, input, ground, dt) {
     s.rollKick = 0;
     flags.landed = true; flags.impact = att > 2.0 ? Math.max(hit, 6) : hit;
   }
-  s.prevAirT = s.airT;
+  if (touched) s.airT = 0;
 
   // wheel roll phase for the visual layer
   s.wheelSpin += (s.u / WHEEL_R) * dt;
