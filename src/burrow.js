@@ -97,10 +97,22 @@ export function spoilFor(col, depth) {
   return { regolith, ore };
 }
 
+// the nanofab's price to break ground, by piece — power is the currency
+// of ALL building (James's rule): the debit lands when the drones START
+// a cell, never at planning (plans are free intentions). If the bank
+// can't fund the head of the queue, the whole dig WAITS on charge and
+// self-paces to the settler's income. The hands' wattage (LOADS.drone)
+// is separate and small: that is their motors, this is the print.
+export const DIG_KWH = {
+  shaft: 2, corridor: 2, bunk: 3, store: 3, bay: 4, garden: 4,
+};
+
 // the hands: droneCount drones all work the OLDEST unfinished dig (they
 // swarm one face — reads well on the surface and keeps the model simple).
-// Returns events: [{ type:'dug', key, piece, spoil }] for the layer/VESPER.
-export function tick(b, dt, droneCount = 0) {
+// tryFund(kwh) is the bank's hand (power.spend bound by the caller): it
+// is asked ONCE per cell, at ground-breaking. Returns events:
+// [{ type:'dug'|'waiting', key, piece, spoil? }] for the layer/VESPER.
+export function tick(b, dt, droneCount = 0, tryFund = () => true) {
   const events = [];
   if (droneCount <= 0 || dt <= 0) return events;
   let work = dt * DIG_RATE * droneCount;
@@ -108,6 +120,14 @@ export function tick(b, dt, droneCount = 0) {
     const k = b.queue[0];
     const cell = b.cells.get(k);
     if (!cell) { b.queue.shift(); continue; }
+    if (cell.dug === 0 && !cell.funded) {
+      if (!tryFund(DIG_KWH[cell.piece] ?? 2)) {
+        if (!cell.waiting) { cell.waiting = true; events.push({ type: 'waiting', key: k, piece: cell.piece }); }
+        break; // the head waits; order is never jumped
+      }
+      cell.funded = true;
+      cell.waiting = false;
+    }
     const { col, depth } = parseKey(k);
     const need = digCost(cell.piece, depth) * (1 - cell.dug);
     const spend = Math.min(work, need);
@@ -229,7 +249,10 @@ export function deserialize(raw) {
       if (typeof k !== 'string' || !BURROW_PIECES[piece] || !Number.isFinite(dug)) continue;
       const { col, depth } = parseKey(k);
       if (!Number.isFinite(col) || !Number.isFinite(depth)) continue;
-      b.cells.set(k, { piece, dug: Math.max(0, Math.min(1, dug)), planned: dug < 1 });
+      // a half-dug cell was already funded; a never-started one pays on start
+      b.cells.set(k, {
+        piece, dug: Math.max(0, Math.min(1, dug)), planned: dug < 1, funded: dug > 0,
+      });
     }
   }
   if (Array.isArray(raw.queue)) {

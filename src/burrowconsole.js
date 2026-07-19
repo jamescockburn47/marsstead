@@ -8,7 +8,7 @@
 // burrow.js owns every truth; this only draws it. Zero assets.
 
 import {
-  BURROW_PIECES, COLS, DEPTHS, canPlan, parseKey, warrenReport,
+  BURROW_PIECES, COLS, DEPTHS, DIG_KWH, canPlan, parseKey, warrenReport,
 } from './burrow.js';
 
 const CS = 64;
@@ -179,7 +179,7 @@ export class BurrowConsole {
         <div id="bscene"><svg id="bsvg" preserveAspectRatio="xMidYMin meet"></svg></div>
       </div>
       <footer><span class="motto">spoil is ore — the house pays for itself as it is dug</span>
-        <span class="hint">pick a piece · tap a socket · tap a dashed plan to cancel</span>
+        <span class="hint">plans are free · the nanofab debits ⚡ when the drones break ground · the hands draw ½ kW each while they work</span>
         <button id="bdrone"></button>
         <button id="bring"></button></footer>`;
     document.body.appendChild(this.root);
@@ -220,7 +220,7 @@ export class BurrowConsole {
       .map(([id, p]) => `<div class="bcard${id === this.sel ? ' sel' : ''}" data-id="${id}">
         <svg viewBox="0 0 34 34">${GLYPH[id] || ''}</svg>
         <div><b>${p.name.toUpperCase()}</b>
-        <span>${p.bedworthy ? 'sleepable · ' : ''}${p.lightPipe ? 'light-pipe · ' : ''}dig ${Math.round(p.cost)}</span></div></div>`).join('');
+        <span>${p.bedworthy ? 'sleepable · ' : ''}${p.lightPipe ? 'light-pipe · ' : ''}⚡${DIG_KWH[id] ?? 2} kWh · dig ${Math.round(p.cost)}</span></div></div>`).join('');
 
     let deepest = 1;
     for (const k of b.cells.keys()) deepest = Math.max(deepest, parseKey(k).depth);
@@ -416,7 +416,9 @@ export class BurrowConsole {
         }
         svg += `<text x="${x + CS / 2}" y="${y - 4}" text-anchor="middle" fill="#e8c46a" opacity=".8" font-size="10">${Math.round(frac * 100)}%</text>`;
       } else {
-        svg += `<text x="${x + CS / 2}" y="${y + CS / 2 + 4}" text-anchor="middle" fill="#e8c46a" opacity=".55" font-size="9" letter-spacing="1">QUEUED</text>`;
+        const waiting = cell.waiting;
+        svg += `<text x="${x + CS / 2}" y="${y + CS / 2 + 4}" text-anchor="middle"
+          fill="${waiting ? '#d1685a' : '#e8c46a'}" opacity=".7" font-size="9" letter-spacing="1">${waiting ? 'WAITS ON CHARGE' : 'QUEUED'}</text>`;
       }
       svg += '</g>';
     }

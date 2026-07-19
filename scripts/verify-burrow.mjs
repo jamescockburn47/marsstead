@@ -158,5 +158,35 @@ const digAll = (b, drones = 4) => { let guard = 0; while (b.queue.length && guar
   check('notes name their reasons', rep.notes.every((n) => n.key && n.kind && n.why.length > 4));
 }
 
+// 6. the nanofab's debit: funded at ground-breaking, once, never again —
+//    and a broke bank makes the queue WAIT, not fail
+{
+  const { DIG_KWH } = await import('../src/burrow.js');
+  const b = createBurrow();
+  plan(b, 'shaft', 0, 1);
+  const broke = tick(b, 5, 3, () => false);
+  check('a broke bank waits', broke.some((e) => e.type === 'waiting')
+    && b.cells.get('0,1').dug === 0 && b.queue.length === 1);
+  check('waiting reports once, not every tick', tick(b, 5, 3, () => false).length === 0);
+  let funds = 0;
+  const funder = (kwh) => { funds += kwh; return true; };
+  let guard = 0;
+  while (b.queue.length && guard++ < 200) tick(b, 5, 3, funder);
+  check('funding resumes the dig', b.cells.get('0,1').dug >= 1);
+  check('the debit lands once, at the listed price', funds === DIG_KWH.shaft);
+  // a half-dug cell survives the save without paying twice
+  plan(b, 'shaft', 0, 2);
+  tick(b, 2, 3, funder); // starts (pays) and half-digs
+  const paidBefore = funds;
+  const back = deserialize(serialize(b));
+  let fundsBack = 0;
+  guard = 0;
+  while (back.queue.length && guard++ < 200) tick(back, 5, 3, (k) => { fundsBack += k; return true; });
+  check('a resumed dig never pays twice', fundsBack === 0 && paidBefore === funds + 0
+    && back.cells.get('0,2').dug >= 1);
+  check('prices are legible integers', Object.values(DIG_KWH)
+    .every((v) => Number.isInteger(v) && v >= 1 && v <= 6));
+}
+
 if (failed) { console.error(`verify-burrow: ${failed} FAILED`); process.exit(1); }
 console.log('verify-burrow: all green');

@@ -1933,8 +1933,10 @@ class Game {
     const rep = warrenReport(this.burrow);
     const handsPowered = !shed.has('drone');
     for (const e of burrowTick(this.burrow, dt,
-      handsPowered ? this.droneCount * (1 + rep.haul) : 0)) {
+      handsPowered ? this.droneCount * (1 + rep.haul) : 0,
+      (kwh) => spend(this.power, kwh))) {
       if (e.type === 'dug') this.sayOnce('burrow-room');
+      if (e.type === 'waiting') this.say('no-charge'); // the queue waits on income
     }
     if (rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7
       && !shed.has('warren')) {
