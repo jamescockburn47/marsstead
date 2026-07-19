@@ -63,24 +63,24 @@ LANDFALL ORDERS sheet, chatter discipline).
    gated (verify-regard, extended verify-vesperbrain). The relay file
    changed too — EVO deploys now ship server/vesper-relay.mjs alongside
    the three brain files when the tag contract moves.
-2. **Stage 3 — the hopper** (STRUCTURE.md): the FLIGHT CORE is built and
-   gated (src/hopper.js + verify-hopper, 2026-07-19): honest
-   rocket-equation ranges under 0.38 g (1 tank ≈ 21 km, full rack ≈
-   376 km, the buggy's cradle costs ~45% range), the fuel-circle plot,
-   the staged ascent→arc→descent phase machine (never free flight;
-   position is a function of plot + clock only), mid-hop saves collapse
-   to the landing. STILL TO BUILD, in order: (a) the hop console (map +
-   fuel circle + payload toggle + LIGHT THE ENGINE commit — Sanctum
-   grammar); (b) the cinematic layer: camera rig riding tickHop's
-   altitude, the sky ladder driven by alt (butterscotch→violet→black at
-   noon, stars by day), the limb band (marssky tangent-path), the baked
-   global MOLA vista at the crest, launch scour + landing cloud in the
-   swirl register — THE SHOWREEL, judge by sheets; (c) pads (free
-   landings) + depots (far camps) as placeables; (d) main.js wiring:
-   hopper as an assembler-adjacent build, tanks load from bags,
-   destination streams in during descent. VESPER's brief + gamefacts
-   MUST gain the hopper facts when (d) lands — never before (no
-   describing what doesn't exist).
+2. **Stage 3 — the hopper: FLYING since v0.0.49** (2026-07-19). Shipped:
+   the flight core (verify-hopper), the pad + assembly + console
+   (hopconsole.js — fuel circle, honest descent ellipse, cradle, tanks,
+   LIGHT THE ENGINE), the staged flight with the altitudeLight sky
+   ladder + limb band (verify-marslight), the per-hop MOLA vista
+   (vistalayer.js), saves, VESPER moments + facts. Proofs: live-hop.mjs
+   (whole flight in-browser), shot-hop.mjs (ascent/crest/descent
+   frames). KNOW THIS: the world is 1:200 (~107 km around) — hopper
+   reach is world-compressed via hopper.WORLD_RANGE (1 tank ~1.5 km,
+   full rack ~27 km); long hops genuinely change latitude/local time
+   (18 km north is the arctic; east flies into evening) — a feature,
+   surfaced nowhere yet. REMAINING POLISH, in value order: (a) launch
+   scour ring + landing dust cloud in the swirl register (fractal, no
+   particles); (b) the cradled buggy visibly riding the hoops in
+   flight; (c) depots (far camps) as placeables; (d) leg-squash on
+   touchdown; (e) a hop-time/lat-shift readout on the console so the
+   climate swing is legible before ignition; (f) James's eye on the
+   craft + frames — iterate on his notes.
 3. **Stage 4 — the Seed** stages 1–2 + engineering console (the console
    language exists; the Halcyon glyph for underived choices from day
    one).
