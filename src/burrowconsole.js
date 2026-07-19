@@ -68,12 +68,16 @@ const CSS = `
     padding: 8px 22px 14px; font-size: 11.5px; letter-spacing: 1px; }
   #burrow footer .motto { color: #e8c46a; opacity: .85; }
   #burrow footer .hint { opacity: .5; }
-  #bring { margin-left: auto; padding: 10px 26px; cursor: pointer;
+  #bring, #bdrone { padding: 10px 26px; cursor: pointer;
     font-family: inherit; font-size: 12px; letter-spacing: 3px;
     color: #1a0f08; background: linear-gradient(180deg, #e8c46a, #c9a04a);
     border: 1px solid #f2d68a; border-radius: 4px;
     box-shadow: 0 0 18px rgba(232,196,106,.35); }
-  #bring:disabled { color: rgba(246,237,226,.45); background: rgba(232,196,106,.07);
+  #bdrone { margin-left: auto; color: #0c1a18;
+    background: linear-gradient(180deg, #3fd0c9, #2c9b95);
+    border-color: #6fe0d8; box-shadow: 0 0 18px rgba(63,208,201,.3); }
+  #bring:disabled, #bdrone:disabled { color: rgba(246,237,226,.45);
+    background: rgba(232,196,106,.07);
     border-color: rgba(232,196,106,.3); box-shadow: none; cursor: default; }
   #bring.done { color: #3fd0c9; background: rgba(63,208,201,.08);
     border-color: rgba(63,208,201,.5); box-shadow: none; }
@@ -176,10 +180,15 @@ export class BurrowConsole {
       </div>
       <footer><span class="motto">spoil is ore — the house pays for itself as it is dug</span>
         <span class="hint">pick a piece · tap a socket · tap a dashed plan to cancel</span>
+        <button id="bdrone"></button>
         <button id="bring"></button></footer>`;
     document.body.appendChild(this.root);
     this.root.querySelector('#bx').onclick = () => this.close();
     this.root.querySelector('#bring').onclick = () => { this.h.onInstallRing(); this.render(); };
+    this.root.querySelector('#bdrone').onclick = () => {
+      if (this.h.onDeployDrone) this.h.onDeployDrone();
+      this.render();
+    };
     this.root.querySelector('#bcards').onclick = (e) => {
       const card = e.target.closest('.bcard');
       if (card) { this.sel = card.dataset.id; this.render(); }
@@ -467,8 +476,17 @@ export class BurrowConsole {
       + meter('HAUL — stores stage', rep.haul * 2)
       + `<div style="font-size:10px;opacity:.55;line-height:1.5">deep bunks shield · gardens beside bunks loop air · light-pipes reach ${2 * 3} m · stores near the spine speed the dig</div>`;
     this.root.querySelector('#bvesper').textContent = `“${this.h.line()}”`;
+    const bank = this.h.getBank ? this.h.getBank() : null;
     this.root.querySelector('#bstats').innerHTML = `drones <b>${this.h.getDroneCount()}</b> · queue <b>${b.queue.length}</b><br>
-      spoil — regolith <b>${b.spoil.regolith}</b> · ore <b>${b.spoil.ore}</b>`;
+      spoil — regolith <b>${b.spoil.regolith}</b> · ore <b>${b.spoil.ore}</b>
+      ${bank ? `<br>bank <b>${bank.charge}</b>/${bank.capacity} kWh — structure is charge` : ''}`;
+    const droneBtn = this.root.querySelector('#bdrone');
+    const canFrame = this.h.droneCarried && this.h.droneCarried();
+    const funded = bank && bank.charge >= 3;
+    droneBtn.disabled = !(canFrame && funded);
+    droneBtn.textContent = canFrame
+      ? (funded ? '⬡ DEPLOY A HAND · 3 kWh' : '⬡ A HAND WAITS ON CHARGE')
+      : '⬡ A HAND NEEDS A FRAME (THE MILL)';
     const ring = this.root.querySelector('#bring');
     const shaftDug = dugAt(0, 1);
     if (b.ringInstalled) {

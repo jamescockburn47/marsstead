@@ -27,7 +27,8 @@ import {
 } from './marsheavens.js';
 import { tauAt, windAt, cirrusAt, solBase } from './dust.js';
 import {
-  createPower, tickPower, serializePower, deserializePower,
+  createPower, tickPower, spend, BUILD_KWH,
+  serializePower, deserializePower,
 } from './power.js';
 import { mtc } from './marstime.js';
 import {
@@ -276,6 +277,15 @@ class Game {
           this.say('ring-installed');
         }
       },
+      droneCarried: () => count(this.suit, 'drone-frame') > 0,
+      onDeployDrone: () => {
+        if (count(this.suit, 'drone-frame') < 1 || this.droneCount >= 8) return;
+        if (!spend(this.power, BUILD_KWH.drone)) { this.say('no-charge'); return; }
+        remove(this.suit, 'drone-frame', 1);
+        this.droneCount += 1;
+        this.say('drone-deployed');
+      },
+      getBank: () => (this.grid ? { charge: this.grid.charge, capacity: this.grid.capacity } : null),
       line: () => this.hud.vesperLine.textContent || '…',
     });
     this.power = createPower();
@@ -426,6 +436,7 @@ class Game {
     this.burrow = deserializeBurrow(s.burrow); // the warren keeps its shape
     this.restedQ = s.restedQ; this.restedUntil = s.restedUntil;
     this.power = deserializePower(s.power); // the bank remembers its charge
+    this.droneCount = s.drones || 3;        // the fleet you commissioned
     if (!this.settlerName) this.settlerName = s.settlerName || '';
     // she remembers: the last exchanges and the count of talks ride the
     // save, so rapport survives the browser closing
@@ -462,6 +473,7 @@ class Game {
       restedQ: this.restedQ || 0,
       restedUntil: this.restedUntil || 0,
       power: serializePower(this.power),
+      drones: this.droneCount,
       settlerName: this.settlerName,
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
@@ -867,6 +879,8 @@ class Game {
     const { x, z } = this.machineTargetCell();
     if (!canPlaceMachine(type, this.slopeAt(x, z), this.machines, x, z)
       || !this.canAfford(type)) return;
+    // the nanofab spends the bank: structure IS charge (the currency rule)
+    if (!spend(this.power, BUILD_KWH.machine)) { this.say('no-charge'); return; }
     for (const [id, n] of this.costsOf(type)) remove(this.suit, id, n);
     this.machines.push(createMachine(type, x, z, this.camYaw));
     this.machineLayer.sync(this.machines, meshGroundHeight);
@@ -921,6 +935,7 @@ class Game {
     if (this.isMachine(type)) { this.placeMachine(type); return; }
     const key = this.buildCursor(false);
     if (!key || !this.placementOk(key, type)) return;
+    if (!spend(this.power, BUILD_KWH.steadPart)) { this.say('no-charge'); return; }
     if (this.steadBaseY === null) {
       this.steadBaseY = this.buildBaseY();
       this.steadLayer.setBase(this.steadBaseY);
@@ -1438,8 +1453,9 @@ class Game {
         .join(' + ');
       const seal = this.insidePressurised ? ' · PRESSURISED'
         : this.leaks.length ? ' · leaking — follow the markers' : '';
+      const kwh = this.isMachine(type) ? BUILD_KWH.machine : BUILD_KWH.steadPart;
       this.hud.setPrompt(
-        `|*E| place ${t.name.toLowerCase()} (${have}) · |*X| remove`
+        `|*E| place ${t.name.toLowerCase()} (${have} · ⚡${kwh} kWh) · |*X| remove`
         + ` · |*Q| part · |*V| ${this.buildSlot === 'wall' ? 'roof' : 'wall'} · |*B| done${seal}`,
       );
     } else if (this.unbolt) {

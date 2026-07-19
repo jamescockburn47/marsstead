@@ -29,11 +29,17 @@ export function solarFactor(sunEl, tau) {
   return sun * dust;
 }
 
+// the lander's own cells: a small built-in bank (it flew here on them),
+// half-charged at landfall — the float the whole first base is built on.
+// Without it the currency deadlocks: batteries cost charge that only
+// batteries could hold.
+export const LANDER_BANK_KWH = 6;
+
 export function createPower() {
-  return { charge: 0 };
+  return { charge: LANDER_BANK_KWH / 2 };
 }
 
-export function capacity(batteries) { return batteries * BATTERY_CAP; }
+export function capacity(batteries) { return LANDER_BANK_KWH + batteries * BATTERY_CAP; }
 
 export function supplyKw(arrays, sunEl, tau) {
   return RTG_KW + arrays * ARRAY_KW * solarFactor(sunEl, tau);
@@ -87,6 +93,23 @@ export function tickPower(p, dtH, arrays, batteries, sunEl, tau, loads) {
     charge: +p.charge.toFixed(3),
     capacity: cap,
   };
+}
+
+// ---- power as the CURRENCY of building (James's rule): the nanofab
+// spends the bank for every placement — matter comes from the spoil,
+// structure comes from the charge. Costs in bank-kWh, legible integers.
+export const BUILD_KWH = {
+  machine: 4,     // any placed bench, array or bank
+  steadPart: 1,   // a wall, roof or surface part
+  drone: 3,       // commissioning a new hand at the crown
+};
+
+// spend from the bank; refuses rather than overdrafts — the player builds
+// income and storage BEFORE ambition, which is the whole scaling game
+export function spend(p, kwh) {
+  if (p.charge < kwh) return false;
+  p.charge = +(p.charge - kwh).toFixed(6);
+  return true;
 }
 
 export function serializePower(p) { return { charge: +p.charge.toFixed(3) }; }

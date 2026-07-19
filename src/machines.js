@@ -41,6 +41,7 @@ export const MACHINE_TYPES = {
     costs: [['steel-panel', 2], ['electronics', 1], ['cable', 1]],
     recipes: {
       'steel-panel': { out: 'machine-parts', seconds: 14 },
+      'machine-parts': { out: 'drone-frame', seconds: 22 },
     },
   },
   assembler: {

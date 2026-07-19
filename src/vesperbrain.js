@@ -237,6 +237,7 @@ export const BARK_MOMENTS = {
   'burrow-room': 'the drones just finished digging a room of the underground warren; the spoil pays in ore',
   'burrow-home': 'the warren just held pressure for the first time — a home dug into Mars, behind the salvaged ring',
   'ring-installed': 'the settler just installed the salvaged airlock ring — the one irreplaceable part — as the front door of the warren',
+  'drone-deployed': 'a new drone just came online at the crown — another hand for the warren, printed from the mill and paid for in charge',
 };
 
 // bark prompt: same contract, same phase knowledge, but the settler said

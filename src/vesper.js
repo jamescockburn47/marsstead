@@ -25,7 +25,7 @@ export const EVENTS = [
   'lander-in', 'not-tired', 'salvage-unlocked',
   'radio-static',
   'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
-  'power-low',
+  'power-low', 'no-charge', 'drone-deployed',
 ];
 
 // the instrument channel: safety and mechanics, spoken plainly and at
@@ -80,6 +80,10 @@ export const INSTRUMENT = {
   'salvage-unlocked': [
     "Shakedown complete. New phase: construction — the hull is inventory now.",
     "You slept and the ship held. Mission rules make her a warehouse from this morning.",
+  ],
+  'no-charge': [
+    "Not enough in the bank. The nanofab spends charge before anything else — let it fill, or build income first.",
+    "The bank can't fund that yet. Structure is charge, settler; sunlight is money here.",
   ],
   'power-low': [
     "Power is short. I shed the benches first, then the hands. Your lights go last.",

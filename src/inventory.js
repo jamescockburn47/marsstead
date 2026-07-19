@@ -26,6 +26,7 @@ export const ITEMS = {
   // worked — the Works' upper tiers (Stage 2): the expedition is built
   // from these, and Stage 3's hopper drinks from the tanks
   'machine-parts': { name: 'Machine parts', kg: 12, tier: 'worked' },
+  'drone-frame': { name: 'Drone frame', kg: 10, tier: 'worked' },
   'methane-tank': { name: 'Methane tank', kg: 16, tier: 'worked' },
   'winch-rig': { name: 'Winch rig', kg: 14, tier: 'worked' },
 };

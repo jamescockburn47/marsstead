@@ -3,9 +3,9 @@
 // ladder in order: comfort last, never a death spiral.
 
 import {
-  RTG_KW, ARRAY_KW, BATTERY_CAP, LOADS, SHED_ORDER,
+  RTG_KW, ARRAY_KW, BATTERY_CAP, LOADS, SHED_ORDER, BUILD_KWH,
   solarFactor, createPower, capacity, supplyKw, demandLedger, tickPower,
-  serializePower, deserializePower,
+  spend, serializePower, deserializePower,
 } from '../src/power.js';
 
 let failed = 0;
@@ -68,10 +68,28 @@ function check(name, ok, detail = '') {
 {
   const p = createPower(); p.charge = 7.5;
   check('save round-trip', deserializePower(serializePower(p)).charge === 7.5);
-  check('garbage in, empty bank out', deserializePower(null).charge === 0);
+  check('garbage in, landfall float out (old saves are not stranded)',
+    deserializePower(null).charge === createPower().charge);
   check('constants sane', RTG_KW > 0 && ARRAY_KW > RTG_KW && BATTERY_CAP > ARRAY_KW
     && SHED_ORDER[SHED_ORDER.length - 1] === 'warren'
     && Object.values(LOADS).every((v) => v > 0));
+}
+
+// 6. the currency: the nanofab spends the bank, never overdrafts
+{
+  const p = createPower(); p.charge = 5;
+  check('a funded build spends', spend(p, BUILD_KWH.machine) && p.charge === 1);
+  check('an unfunded build refuses', !spend(p, BUILD_KWH.machine) && p.charge === 1);
+  check('refusal costs nothing', p.charge === 1);
+  check('build costs are legible integers', Object.values(BUILD_KWH)
+    .every((v) => Number.isInteger(v) && v > 0 && v <= BATTERY_CAP));
+  // landfall economics: the lander's half-charged cells fund the first
+  // parts but NOT a machine — income before ambition, no deadlock
+  const fresh = createPower();
+  check('landfall funds a part', fresh.charge >= BUILD_KWH.steadPart);
+  check('landfall cannot fund a bench', fresh.charge < BUILD_KWH.machine);
+  check('the lander bank breaks the battery deadlock',
+    capacity(0) > 0 && capacity(0) >= BUILD_KWH.machine);
 }
 
 if (failed) { console.error(`verify-power: ${failed} FAILED`); process.exit(1); }

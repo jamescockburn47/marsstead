@@ -79,6 +79,8 @@ export function snapshotSave(state) {
     restedQ: clamp01(state.restedQ, 0),
     restedUntil: fin(state.restedUntil, 0),
     power: state.power && typeof state.power === 'object' ? state.power : null,
+    drones: Number.isFinite(state.drones)
+      ? Math.max(1, Math.min(8, Math.round(state.drones))) : 3,
     settlerName: cleanName(state.settlerName || ''),
     // her memory of you (additive): the last exchanges + how often you talk
     vesperLog: Array.isArray(state.vesperLog) ? state.vesperLog.slice(-6) : [],
@@ -217,6 +219,8 @@ export function acceptSave(meta) {
     restedQ: clamp01(meta.restedQ, 0),
     restedUntil: fin(meta.restedUntil, 0),
     power: meta.power && typeof meta.power === 'object' ? meta.power : null,
+    drones: Number.isFinite(meta.drones)
+      ? Math.max(1, Math.min(8, Math.round(meta.drones))) : 3,
     // laundered memory: known speakers, plain short strings, six turns max
     vesperLog: Array.isArray(meta.vesperLog)
       ? meta.vesperLog.slice(-6)
