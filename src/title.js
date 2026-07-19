@@ -1,7 +1,9 @@
-// The title — a DOM veil over the dark, in the landing page's registers.
-// Fronts the one-slot save: CONTINUE carries the sol you left; NEW LANDING
-// asks twice before it wipes a life. The Game is not constructed until the
-// choice is made, so nothing ticks, speaks, or persists behind the title.
+// The title — a vignette over the ATTRACT REEL (attract.js): the world
+// itself plays behind these letters — the descent from space, the stead
+// at dusk, the night drive — sealed (no saves, no speech, no input; see
+// main.js's attract mode). Fronts the one-slot save: CONTINUE carries
+// the sol you left; NEW LANDING asks twice before it wipes a life. The
+// choice reloads into a clean real start, so nothing of the reel leaks.
 // ?play in the query skips it (live checks and the dev loop want the game).
 
 import { marsSolDate } from './marstime.js';
@@ -12,8 +14,9 @@ const CSS = `
     flex-direction: column; align-items: center; justify-content: center;
     gap: 8px; color: #f6ede2; text-align: center;
     font-family: Georgia, 'Times New Roman', serif;
-    background: radial-gradient(ellipse at 50% 120%, #7a3a22 0%, #170a06 70%);
-    text-shadow: 0 1px 4px rgba(20,8,4,.85); }
+    background: radial-gradient(ellipse at center,
+      rgba(23,10,6,.10) 0%, rgba(23,10,6,.42) 62%, rgba(23,10,6,.78) 100%);
+    text-shadow: 0 1px 4px rgba(20,8,4,.9), 0 0 22px rgba(20,8,4,.75); }
   #title h1 { margin: 0 0 2px; font-size: 46px; letter-spacing: 10px;
     font-weight: normal; }
   #title .sub { opacity: .78; letter-spacing: 2px; font-size: 13px;

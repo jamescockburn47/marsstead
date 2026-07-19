@@ -70,7 +70,8 @@ ${FBM_GLSL}`)
 {
   float vA = fbm(vVistaPos * 0.0011 + 3.3) - 0.5;
   float vB = fbm(vVistaPos * 0.0058 + 21.0) - 0.5;
-  diffuseColor.rgb *= 1.0 + (vA * 0.30 + vB * 0.16);
+  float vC = fbm(vVistaPos * 0.00016 + 47.0) - 0.5;  // the 40 km provinces
+  diffuseColor.rgb *= 1.0 + (vC * 0.34 + vA * 0.36 + vB * 0.18);
 }`);
     };
     this.mesh = new THREE.Mesh(geo, mat);

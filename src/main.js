@@ -24,6 +24,8 @@ import {
 import { HopperLayer } from './hopperlayer.js';
 import { VistaLayer } from './vistalayer.js';
 import { HopConsole } from './hopconsole.js';
+import { reelAt, shotCam, driveInput } from './attract.js';
+import { rockiness } from './rocks.js';
 import {
   EXPOSURE_BASE, exposureTarget, decideTier, fpsVerdict, median,
   SETTLE_S, WINDOW_S,
@@ -139,7 +141,12 @@ function glRendererString(renderer) {
 }
 
 class Game {
-  constructor(save = null, settlerName = '') {
+  constructor(save = null, settlerName = '', attract = false) {
+    // ATTRACT MODE: the landing page's moving picture — the world runs
+    // behind the title, driven by the pure reel (attract.js), sealed:
+    // no input, no speech, no HUD, and persist() never fires (booted
+    // stays false). The Play choice reloads into a clean real start.
+    this.attract = attract;
     // the settler's name: fresh entry at the title door wins; otherwise
     // the save's (applySave); VESPER falls back to "settler" gracefully
     this.settlerName = cleanName(settlerName);
@@ -434,6 +441,7 @@ class Game {
 
     this.keys = {};
     addEventListener('keydown', (e) => {
+      if (this.attract) return;      // the reel takes no requests
       if (document.activeElement === this.chatBar) return; // words, not verbs
       if (e.key === 'Enter' && !this.buildMode && !this.map.visible) {
         this.chatBar.style.display = 'block';
@@ -448,7 +456,7 @@ class Game {
       if (e.code === 'KeyV') { this.voice.stopListening(); this.hud?.setEar(false); }
     });
     let dragging = false;
-    addEventListener('mousedown', () => { dragging = true; });
+    addEventListener('mousedown', () => { if (!this.attract) dragging = true; });
     addEventListener('mouseup', () => { dragging = false; });
     addEventListener('mousemove', (e) => {
       if (!dragging) return;
@@ -463,7 +471,8 @@ class Game {
     });
 
     if (save) this.applySave(save);
-    this.booted = true; // until now, persist() must stay silent — a page
+    if (this.attract) this.enterAttract(); // stage the demo set, hide the HUD
+    this.booted = !this.attract; // until now, persist() must stay silent — a page
     // interrupted mid-boot must never write half-applied state over a
     // good save (the unload handlers below register with the page alive)
     this.lastPersist = 0;
@@ -933,6 +942,130 @@ class Game {
     return snap.alt;
   }
 
+  // ---- ATTRACT: the landing page's moving picture -------------------------
+  // Stage a lived settlement in memory (persist never fires in attract)
+  // and find the night drive its boulder ridge. Called once, at boot.
+  enterAttract() {
+    document.querySelector('#hud')?.style.setProperty('display', 'none');
+    this.colonist.group.visible = false;
+    // the warren below (the crown's lantern wants a living home)
+    const stage = (piece, c, d) => {
+      planBurrow(this.burrow, piece, c, d);
+      burrowTick(this.burrow, 999, 4);
+    };
+    stage('shaft', 0, 1); installRing(this.burrow);
+    stage('corridor', 1, 1); stage('corridor', -1, 1);
+    stage('bunk', 2, 1); stage('store', -2, 1);
+    stage('shaft', 0, 2); stage('corridor', 1, 2); stage('garden', 2, 2);
+    // the works and the pad, arranged as a yard around the crown
+    const A = this.crownPos;
+    this.attractAnchor = { x: A.x, z: A.z };
+    const put = (type, dx, dz, h) => {
+      this.machines.push(createMachine(type, A.x + dx, A.z + dz, h));
+    };
+    put('solar-array', 10, 5, 0.4); put('solar-array', 13.5, 7, 0.4);
+    put('battery', 9, 9, 0.2); put('smelter', -9, 7, 2.6);
+    put('mill', -13, 3, 2.2); put('assembler', -10, 12, 1.9);
+    put('landing-pad', 21, -9, 0);
+    this.machineLayer.sync(this.machines, meshGroundHeight);
+    this.hopperBuilt = true;
+    this.hopper.x = A.x + 21; this.hopper.z = A.z - 9;
+    this.hopper.fuelKg = 4 * 110;
+    // the drive shot wants the rockiest country within reach
+    let best = { r: -1, x: A.x + 300, z: A.z + 220 };
+    for (let x = -700; x <= 700; x += 70) {
+      for (let z = -700; z <= 700; z += 70) {
+        const rr = rockiness(A.x + x, A.z + z);
+        if (rr > best.r) best = { r: rr, x: A.x + x, z: A.z + z };
+      }
+    }
+    this.attractDriveAt = best;
+    // the buggy parks in the yard for the stead shot (the drive shot
+    // re-seats it at the ridge each pass)
+    this.buggy = createBuggy(A.x + 7, A.z + 15, 2.3);
+    // the descent's vista, built ONCE — rebuilding a 12k-vert far-field
+    // every loop pass is a visible stall; in attract it only ever toggles
+    this.vista.build([A.x, A.z], [A.x, A.z]);
+    if (this.vista.mesh) {
+      this.vista.mesh.position.y = -3;
+      this.vista.setVisible(false);
+    }
+    // the cut veil: every shot change happens behind it
+    this.attractVeil = document.createElement('div');
+    this.attractVeil.style.cssText = 'position:fixed;inset:0;z-index:59;'
+      + 'background:#0c0604;pointer-events:none;opacity:1;';
+    document.body.appendChild(this.attractVeil);
+    this.attractT = 0;
+    this.attractShotId = '';
+  }
+
+  // one frame of the reel: the pure table dictates the clock, the
+  // weather, the camera and the drive — this merely applies them
+  frameAttract(dt) {
+    this.attractT += dt;
+    const { shot, k, veil } = reelAt(this.attractT);
+    const A = this.attractAnchor;
+    if (shot.id !== this.attractShotId) {
+      this.attractShotId = shot.id;
+      this.calibrateToLocalHour(shot.hour);
+      this.attractTau = shot.tau;
+      if (shot.id === 'drive') {
+        const D = this.attractDriveAt;
+        this.buggy = createBuggy(D.x, D.z, 1.15);
+      }
+    }
+    this.air = 1; this.warm = 1;                  // the reel never suffocates
+    const target = shot.id === 'drive'
+      ? [this.buggy.x, this.buggy.z, this.buggy.heading] : null;
+    const c = shotCam(shot.id, k, target);
+    this.hopAlt = c.alt;                          // the light ladder reads this
+    // visibility is DECLARATIVE, every frame — the reel loops and skips
+    // (the shot rig jumps the clock); event-edges desync, states cannot.
+    // The vista itself was built once at enterAttract: only toggles here.
+    const wantVista = shot.id === 'descent' && c.alt >= 1000;
+    const wantFar = wantVista ? 600000 : 6000;
+    if (this.cam.far !== wantFar) {
+      this.cam.far = wantFar;
+      this.cam.updateProjectionMatrix();
+    }
+    this.terrain.setVisible(!wantVista);
+    this.rocks.setVisible(!wantVista);
+    if (this.vista.mesh) this.vista.setVisible(wantVista);
+    // the night drive: scripted hands on a real wheel — and the LAYER
+    // posed here too (the on-foot/driving frames that normally pose it
+    // never run under the reel)
+    if (shot.id === 'drive') {
+      const input = driveInput(k);
+      const e = 0.7;
+      const total = Math.min(dt, 0.1);
+      const n = Math.max(1, Math.ceil(total / (1 / 120)));
+      for (let i = 0; i < n; i++) {
+        const bx = this.buggy.x, bz = this.buggy.z;
+        const wg = this.wheelGround(bx, bz, this.buggy.heading);
+        stepBuggy(this.buggy, input, {
+          h: wg.h, wh: wg.wh, at: wg.at,
+          gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
+          gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
+        }, total / n);
+      }
+    }
+    this.buggyLayer.update(dt, this.buggy,
+      { skidF: false, skidR: false, airborne: false, landed: false });
+    // the camera, applied rigid; streaming follows the LOOK point
+    const wx = c.world ? c.cam[0] : A.x + c.cam[0];
+    const wz = c.world ? c.cam[2] : A.z + c.cam[2];
+    const lx = c.world ? c.look[0] : A.x + c.look[0];
+    const lz = c.world ? c.look[2] : A.z + c.look[2];
+    this.cam.position.set(wx, meshGroundHeight(wx, wz) + c.cam[1], wz);
+    this.cam.lookAt(lx, meshGroundHeight(lx, lz) + c.look[1], lz);
+    // the streamer follows the CAMERA's ground point (dolly-speed slow) —
+    // never the look point, which can race kilometres in a single shot
+    this.pos.set(wx, 0, wz);
+    this.pos.y = meshGroundHeight(wx, wz);
+    this.vel.set(0, 0, 0); this.vy = 0;
+    this.attractVeil.style.opacity = veil.toFixed(3);
+  }
+
   // the flight's frame: the pure phase machine dictates position; the
   // camera rides authored curves; the settler's inputs are dead weight
   frameFlying(dt) {
@@ -1306,6 +1439,7 @@ class Game {
   }
 
   say(event) {
+    if (this.attract) return; // the reel is silent — no barks, no relay
     // ambience yields to conversation (safety and feedback always land)
     if (!shouldBark(event, this.t - this.lastTalk)) return;
     const n = this.saidCounts[event] || 0;
@@ -1462,7 +1596,9 @@ class Game {
     this.t += dt;
     this.simMillis += dt * 1000 * TIME_SCALE;
 
-    if (this.sleepAnim) {
+    if (this.attract) {
+      this.frameAttract(dt);      // the reel owns the frame behind the title
+    } else if (this.sleepAnim) {
       this.frameSleeping(dt);
     } else if (this.hopFlight) {
       this.frameFlying(dt);       // STAGE 3: the staged hop owns the frame
@@ -1817,17 +1953,20 @@ class Game {
     // the parked buggy still needs drawing — and the SPRINGS pose it now:
     // a zero-input step settles it onto its wheels (and onto any rock a
     // wheel is standing on), so parked and driven share one truth
-    const pe = 0.7, pbx = this.buggy.x, pbz = this.buggy.z;
-    const pwg = this.wheelGround(pbx, pbz, this.buggy.heading);
-    const pground = {
-      h: pwg.h, wh: pwg.wh, at: pwg.at,
-      gx: (meshGroundHeight(pbx + pe, pbz) - meshGroundHeight(pbx - pe, pbz)) / (2 * pe),
-      gz: (meshGroundHeight(pbx, pbz + pe) - meshGroundHeight(pbx, pbz - pe)) / (2 * pe),
-    };
-    const ptotal = Math.min(dt, 0.1);
-    const pn = Math.max(1, Math.ceil(ptotal / (1 / 120)));
-    for (let i = 0; i < pn; i++) {
-      stepBuggy(this.buggy, { throttle: 0, steer: 0, brake: 0, handbrake: false }, pground, ptotal / pn);
+    if (!(this.attract && this.attractShotId === 'drive')) {
+      // (the reel's drive shot steps the buggy itself, with real inputs)
+      const pe = 0.7, pbx = this.buggy.x, pbz = this.buggy.z;
+      const pwg = this.wheelGround(pbx, pbz, this.buggy.heading);
+      const pground = {
+        h: pwg.h, wh: pwg.wh, at: pwg.at,
+        gx: (meshGroundHeight(pbx + pe, pbz) - meshGroundHeight(pbx - pe, pbz)) / (2 * pe),
+        gz: (meshGroundHeight(pbx, pbz + pe) - meshGroundHeight(pbx, pbz - pe)) / (2 * pe),
+      };
+      const ptotal = Math.min(dt, 0.1);
+      const pn = Math.max(1, Math.ceil(ptotal / (1 / 120)));
+      for (let i = 0; i < pn; i++) {
+        stepBuggy(this.buggy, { throttle: 0, steer: 0, brake: 0, handbrake: false }, pground, ptotal / pn);
+      }
     }
     this.buggyLayer.update(dt, this.buggy,
       { skidF: false, skidR: false, airborne: false, landed: false });
@@ -2084,7 +2223,8 @@ class Game {
     const sunAz = sunAzimuth(this.simMillis, lat, lon);
     this.sunAz = sunAz;
     const sol = Math.floor(this.simMillis / 88775244);
-    const tau = tauAt(mtc(this.simMillis), sol);
+    const tau = this.attract && this.attractTau != null
+      ? this.attractTau : tauAt(mtc(this.simMillis), sol);
     let L = lightState(sunEl, tau);
     // the altitude ladder: a hop in flight re-lights the whole world —
     // sky drying to black, stars at noon, fog dying, the limb waking
@@ -2211,7 +2351,7 @@ class Game {
     if (this.freshLanding) {
       // the written half: LANDFALL ORDERS open once, before she speaks —
       // read at your pace, reopen with O, ask her the rest with ENTER
-      if (this.t > 4 && !this.ordersShown) {
+      if (this.t > 4 && !this.ordersShown && !this.attract) {
         this.ordersShown = true;
         let seen = null;
         try { seen = localStorage.getItem('marsstead-orders-seen'); } catch { /* fine */ }
@@ -2354,8 +2494,8 @@ class Game {
 
     // the heads-up map: always on while you're in the world — the glance
     // that makes every walk retraceable (the M map stays the instrument)
-    this.minimap.setVisible(!this.burrowUI.visible && !this.worksUI.visible
-      && !this.map.visible && !this.inLander);
+    this.minimap.setVisible(!this.attract && !this.burrowUI.visible
+      && !this.worksUI.visible && !this.map.visible && !this.inLander);
     this.minimap.update(dt, {
       player: {
         x: this.pos.x, z: this.pos.z,
@@ -2432,16 +2572,33 @@ class Game {
   } catch { /* the muster book only ever undercounts */ }
 })();
 
-// boot: the title fronts the save — CONTINUE carries it, NEW LANDING wipes
-// it, ?play skips the ceremony (live checks, the dev loop)
+// boot: the title fronts the save — CONTINUE carries it, NEW LANDING
+// wipes it, ?play skips the ceremony (live checks, the dev loop). The
+// attract reel runs the world behind the title (sealed: no saves, no
+// speech, no input); the Play choice reloads into a clean real start,
+// so nothing of the reel ever leaks into a life.
 loadGame().catch(() => null).then((save) => {
   const start = async (choice, name = '') => {
     if (choice === 'new' && save) await clearSave();
     window.marsstead = new Game(choice === 'continue' ? save : null, name);
   };
-  if (new URLSearchParams(location.search).has('play')) {
+  const params = new URLSearchParams(location.search);
+  let pending = null;
+  try {
+    pending = JSON.parse(sessionStorage.getItem('marsstead-start') || 'null');
+    sessionStorage.removeItem('marsstead-start');
+  } catch { /* fine */ }
+  if (params.has('play')) {
     start(save ? 'continue' : 'new');
+  } else if (pending && (pending.choice === 'continue' || pending.choice === 'new')) {
+    start(pending.choice, pending.name || '');
   } else {
-    new TitleScreen(save, start);
+    window.marssteadAttract = new Game(null, '', true);
+    new TitleScreen(save, (choice, name = '') => {
+      try {
+        sessionStorage.setItem('marsstead-start', JSON.stringify({ choice, name }));
+      } catch { /* fine */ }
+      location.reload();
+    });
   }
 });

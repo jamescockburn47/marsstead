@@ -119,7 +119,9 @@ export function altitudeLight(L, altM = 0) {
     ambientColour: mix3(L.ambientColour, STARLIT_NIGHT, thin * 0.7),
     ambientIntensity: L.ambientIntensity * (1 - 0.72 * thin),
     fogColour: hor,
-    fogDensity: L.fogDensity * Math.exp(-a / 2000),
+    // fog thins fast with height: FogExp2 over slant paths of kilometres
+    // needs a short scale or the world below drowns in its own haze
+    fogDensity: L.fogDensity * Math.exp(-a / 900),
     shadowSoftness: L.shadowSoftness * (1 - thin),
     starVisibility: stars,
     thin,
