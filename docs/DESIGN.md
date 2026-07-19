@@ -381,11 +381,21 @@ Everything that ports, ports **because** of these differences, not despite them.
 
 ## The setting: "the tide went out four billion years ago"
 
-Near-future, framing deliberately small and unofficial — *owned by nobody's art
-department*. You are not a national agency planting a flag; you are an
-independent homesteader (then, in multiplayer, a scattering of them) on a Mars
-that was once wet, warm-ish, and — the mystery insists — **alive**. The deeper
-you dig, the older the story gets, until it stops being about you at all.
+Near-future, and the framing is GRAND on purpose *(amended: the founding
+"small and unofficial / nobody's art department" ethos is retired — it was
+weak)*: the mission is the most consequential thing humanity is attempting,
+mounted by the newest and strangest actor on Earth — **Meridian**, the
+planet's first new sovereign nation in a century, chartered on the warming
+Antarctic coast and funded not by governments but by the AI trillionaires
+whose fortunes came from the enclosure of machine intelligence, and whose
+declared project is its opposite: a new order in which **AI enables everyone,
+equally**. What survives from the old framing is the method, not the
+modesty: the utopia's unit cell is **one ordinary person paired with one
+mind** — the settler and VESPER — and Mars is its clean-room proof. You are
+still a homesteader (then, in multiplayer, a scattering of them) on a Mars
+that was once wet, warm-ish, and — the mystery insists — **alive**. The
+deeper you dig, the older the story gets, until it stops being about you at
+all.
 
 Real Mars is the whole hook, honoured to the metre: the northern-lowland dry
 "ocean" of the hemispheric dichotomy (the tide that went out, with debated real

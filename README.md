@@ -38,4 +38,4 @@ matter).
 Pre–Phase 0. The design is the contract; the landing page is the engine warming
 up. See `docs/DESIGN.md` for the phase plan.
 
-*Procedural-only, owned by nobody's art department.*
+*Procedural-only, to the last polygon.*
