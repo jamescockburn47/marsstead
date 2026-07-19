@@ -88,6 +88,7 @@ import {
 } from './explore.js';
 import { MarsMap } from './marsmap.js';
 import { MiniMap } from './minimap.js';
+import { MissionOrders } from './orders.js';
 import {
   PROSPECT_RADIUS, HOPPER_CAP, depositById, depositsNear, createRig,
   canDeploy, deploy, packUp, drillTick, hopperCount, hopperTake,
@@ -241,6 +242,7 @@ class Game {
     this.lastVisit = { x: 0, z: 0 };
     this.map = new MarsMap(meshGroundHeight);
     this.minimap = new MiniMap();
+    this.orders = new MissionOrders();
 
     // the expedition: the rig sleeps by the lander until it's towed out
     this.rig = createRig(-16, -1, 0.6);
@@ -551,6 +553,7 @@ class Game {
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
     if (e.code === 'KeyM') this.map.toggle();
+    if (e.code === 'KeyO') this.orders.toggle();
     if (e.code === 'KeyH') this.toggleHitch();
     if (e.code === 'KeyT') this.workFab();
     if (e.code === 'KeyX' && !this.buildMode && !this.driving
@@ -1327,7 +1330,8 @@ class Game {
     const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const wish = new THREE.Vector3();
-    if (!this.cycling && !this.burrowUI.visible && !this.worksUI.visible) {
+    if (!this.cycling && !this.burrowUI.visible && !this.worksUI.visible
+      && !this.orders.visible) {
       if (this.keys.KeyW) wish.add(fwd);
       if (this.keys.KeyS) wish.sub(fwd);
       if (this.keys.KeyA) wish.add(right);
@@ -1926,6 +1930,17 @@ class Game {
     // but remembers nothing of the mechanics — staged over the first two
     // minutes, live in her own voice, once ever (sayOnce rides the save)
     if (this.freshLanding) {
+      // the written half: LANDFALL ORDERS open once, before she speaks —
+      // read at your pace, reopen with O, ask her the rest with ENTER
+      if (this.t > 4 && !this.ordersShown) {
+        this.ordersShown = true;
+        let seen = null;
+        try { seen = localStorage.getItem('marsstead-orders-seen'); } catch { /* fine */ }
+        if (!seen) {
+          this.orders.open();
+          try { localStorage.setItem('marsstead-orders-seen', '1'); } catch { /* fine */ }
+        }
+      }
       if (this.t > 8) this.sayOnce('brief-wake');
       if (this.t > 32) this.sayOnce('brief-power');
       if (this.t > 58) this.sayOnce('brief-dig');
