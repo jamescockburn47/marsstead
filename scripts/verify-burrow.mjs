@@ -1,0 +1,93 @@
+// verify-burrow: the warren's contract — socket rules hold, drones dig in
+// order, spoil is ore, the ring is the boundary, and a save round-trip
+// rebuilds the same home.
+
+import {
+  BURROW_PIECES, COLS, DEPTHS, createBurrow, canPlan, plan, cancelPlan,
+  tick, installRing, isPressurised, isBedworthy, takeSpoil, spoilFor,
+  digCost, serialize, deserialize,
+} from '../src/burrow.js';
+
+let failed = 0;
+function check(name, ok, detail = '') {
+  if (ok) { console.log(`  ok  ${name}`); } else { failed++; console.error(`FAIL  ${name} ${detail}`); }
+}
+
+const digAll = (b, drones = 4) => { let guard = 0; while (b.queue.length && guard++ < 500) tick(b, 10, drones); };
+
+// 1. socket rules
+{
+  const b = createBurrow();
+  check('shaft starts at the top, column 0', canPlan(b, 'shaft', 0, 1));
+  check('no shaft off-column', !canPlan(b, 'shaft', 1, 1));
+  check('no deep shaft before shallow is DUG', plan(b, 'shaft', 0, 1) && !canPlan(b, 'shaft', 0, 2));
+  check('no corridor off undug shaft', !canPlan(b, 'corridor', 1, 1));
+  digAll(b);
+  check('deeper shaft after digging', canPlan(b, 'shaft', 0, 2));
+  check('corridor off dug shaft', plan(b, 'corridor', 1, 1));
+  check('no room off the shaft directly', !canPlan(b, 'bunk', -1, 1));
+  digAll(b);
+  check('room off dug corridor', plan(b, 'bunk', 2, 1));
+  check('no double occupancy', !canPlan(b, 'store', 2, 1));
+  check('bounds hold', !canPlan(b, 'corridor', COLS + 2, 1) && !canPlan(b, 'shaft', 0, DEPTHS + 1));
+}
+
+// 2. the hands: oldest dig first, spoil pays, cancel only before the spade
+{
+  const b = createBurrow();
+  plan(b, 'shaft', 0, 1);
+  const before = tick(b, 0.5, 2);
+  check('digging is gradual', before.length === 0 && b.cells.get('0,1').dug > 0);
+  check('a started dig cannot be cancelled', !cancelPlan(b, 0, 1));
+  const events = [];
+  let guard = 0;
+  while (b.queue.length && guard++ < 200) events.push(...tick(b, 5, 3));
+  check('the dig completes with an event', events.some((e) => e.type === 'dug' && e.key === '0,1'));
+  const s = takeSpoil(b);
+  check('spoil is ore (the house pays)', s.regolith > 0);
+  check('spoil drawer empties', takeSpoil(b).regolith === 0);
+  check('no drones, no progress', (plan(b, 'shaft', 0, 2), tick(b, 100, 0).length === 0));
+  check('spoil deterministic', JSON.stringify(spoilFor(3, 4)) === JSON.stringify(spoilFor(3, 4)));
+  check('depth digs slower', digCost('bunk', 5) > digCost('bunk', 1));
+}
+
+// 3. the ring and the pressure boundary
+{
+  const b = createBurrow();
+  check('no ring on unbroken ground', !installRing(b));
+  plan(b, 'shaft', 0, 1); digAll(b);
+  check('ring caps a dug shaft', installRing(b));
+  check('ring installs once', !installRing(b));
+  check('shaft alone is not a home', !isPressurised(b));
+  plan(b, 'corridor', 1, 1); digAll(b);
+  plan(b, 'store', 2, 1); digAll(b);
+  check('a dug room behind the ring holds pressure', isPressurised(b));
+  check('a store is not a bed', !isBedworthy(b));
+  plan(b, 'bunk', -1, 1);
+  check('rooms never hang off the shaft', !b.cells.has('-1,1'));
+  plan(b, 'corridor', -1, 1); digAll(b);
+  plan(b, 'bunk', -2, 1); digAll(b);
+  check('a dug bunk is bedworthy', isBedworthy(b));
+}
+
+// 4. save round-trip
+{
+  const b = createBurrow();
+  plan(b, 'shaft', 0, 1); digAll(b); installRing(b);
+  plan(b, 'corridor', 1, 1); digAll(b);
+  plan(b, 'bunk', 2, 1); tick(b, 3, 1); // leave it half-dug
+  const back = deserialize(serialize(b));
+  check('round-trip keeps the cells', back.cells.size === b.cells.size);
+  check('round-trip keeps the ring', back.ringInstalled === true);
+  check('round-trip keeps the half-dug queue', back.queue.length === 1
+    && back.cells.get('2,1').dug > 0 && back.cells.get('2,1').dug < 1);
+  check('round-trip stays pressurised… wait — no room is dug yet',
+    isPressurised(back) === false);
+  digAll(back);
+  check('…and digs on to a home (the bunk completes)', isPressurised(back) && isBedworthy(back));
+  check('garbage in, empty warren out', deserialize(null).cells.size === 0
+    && deserialize({ cells: [[1, 2], ['x,y', 'nonsense', 9]] }).cells.size === 0);
+}
+
+if (failed) { console.error(`verify-burrow: ${failed} FAILED`); process.exit(1); }
+console.log('verify-burrow: all green');
