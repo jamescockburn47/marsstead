@@ -115,6 +115,11 @@ export const BUILD_KWH = {
   drone: 5,       // commissioning a new hand at the crown
 };
 
+// the drones fetch a stranded buggy home (the cliff-bottom rule: the
+// planet may cost you, it may never strand you) — priced like a room:
+// a real bite, never a wall
+export const RECALL_KWH = 5;
+
 // spend from the bank; refuses rather than overdrafts — the player builds
 // income and storage BEFORE ambition, which is the whole scaling game
 export function spend(p, kwh) {

@@ -63,16 +63,10 @@ vec2 marsAniso(vec2 p) {
 float marsDetailH(vec2 p, float rubbleW) {
   return fbm(p * 1.7) * rubbleW + fbm(marsAniso(p) * 0.23 + 5.0) * 0.35;
 }
-// THE SECOND PASS — aeolian ripples: ~0.7 m ridges transverse to the
-// prevailing wind, crests wandered by fbm so no two fields repeat.
-// Returns 0 (trough) .. 1 (crest) and the analytic phase gradient (the
-// wander's own gradient is dropped: this is shading, not survey data).
-const vec2 MARSWIND = vec2(0.879, 0.477);
-float marsRippleG(vec2 p, out vec2 grad) {
-  float ph = dot(p, MARSWIND) * 8.8 + fbm(p * 0.33 + 3.1) * 4.2;
-  grad = cos(ph) * 8.8 * MARSWIND;
-  return sin(ph) * 0.5 + 0.5;
-}`)
+// NOTE (James's eye, 2026-07-19, twice): periodic ripple fields are OUT.
+// Uniform corduroy read artificial; patchy variable-frequency ripples
+// moiréd into fringes at grazing sun. The ground's character comes from
+// the aperiodic fbm bands alone — no sin() anywhere in this material.`)
         .replace('#include <color_fragment>', `#include <color_fragment>
 if (uAlbedoAmp > 0.001) {
   // per-pixel albedo, all bands MULTIPLICATIVE so the vertex palette's
@@ -86,10 +80,6 @@ if (uAlbedoAmp > 0.001) {
   float aN = fbm(marsAniso(vMarsPos.xz) * 0.45) - 0.5; // 2 m wind-streaked mottle
   float aF = fbm(vMarsPos.xz * 3.1 + 17.3) - 0.5;      // 30 cm speckle
   float mBand = aP * 0.28 + aN * 0.32 + aF * 0.25;
-  // ripples sort the bright dust to their crests (real aeolian optics) —
-  // painted only close in; farther out the RELIEF carries the stripes
-  vec2 mRg; float mRip = marsRippleG(vMarsPos.xz, mRg);
-  mBand += (mRip - 0.5) * 0.35 * smoothstep(90.0, 25.0, vMarsDist) * (1.0 - mRocky);
   // sand grain inside arm's reach, gone before it can shimmer
   mBand += (vnoise(vMarsPos.xz * 15.0) - 0.5) * 0.5 * smoothstep(45.0, 8.0, vMarsDist);
   diffuseColor.rgb *= 1.0 + mBand * 2.0 * uAlbedoAmp;
@@ -108,13 +98,6 @@ if (uNormalAmp > 0.001) {
   float hX = marsDetailH(vMarsPos.xz + vec2(e, 0.0), mRubbleW);
   float hZ = marsDetailH(vMarsPos.xz + vec2(0.0, e), mRubbleW);
   vec2 mG = vec2(hX - hC, hZ - hC) / e;
-  // the ripple relief: a few centimetres of analytic corduroy, low sun
-  // rakes it into stripes; dies on rocky slopes and with distance
-  float mNearFade = smoothstep(150.0, 30.0, vMarsDist);
-  float mSlope = clamp(1.0 - vMarsNrm.y, 0.0, 1.0);
-  float mRocky = smoothstep(0.10, 0.32, mSlope);
-  vec2 mRg; marsRippleG(vMarsPos.xz, mRg);
-  mG += mRg * 0.045 * mNearFade * (1.0 - mRocky);
   // grain relief only inside ~40 m: crisp boots-level sparkle, no shimmer
   float mGFade = smoothstep(40.0, 7.0, vMarsDist);
   if (mGFade > 0.001) {

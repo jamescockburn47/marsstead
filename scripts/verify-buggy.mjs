@@ -676,5 +676,19 @@ check('large wheels', WHEEL_R >= 0.6, `${WHEEL_R}`);
 check('long-travel suspension', SUSP_TRAVEL >= 0.4 && SUSP_STATIC < SUSP_TRAVEL * 0.3,
   `travel=${SUSP_TRAVEL} static=${SUSP_STATIC.toFixed(3)}`);
 
+// 32. the recall (the cliff-bottom rule): a stranded buggy is fetchable,
+// the tow time is bounded, monotone in distance, and near buggies don't
+// qualify — the planet may cost you, it may never strand you
+{
+  const { recallSeconds, RECALL_MIN_M } = await import('../src/buggy.js');
+  const { RECALL_KWH } = await import('../src/power.js');
+  check('recall has a real minimum range', RECALL_MIN_M >= 50);
+  check('a short tow is still an errand', recallSeconds(RECALL_MIN_M) >= 20);
+  check('tow time grows with distance', recallSeconds(3000) > recallSeconds(400));
+  check('the longest tow never outstays four minutes', recallSeconds(1e9) <= 240);
+  check('the recall price is a legible integer',
+    Number.isInteger(RECALL_KWH) && RECALL_KWH >= 1 && RECALL_KWH <= 10);
+}
+
 if (failed) { console.error(`verify-buggy: ${failed} FAILED`); process.exit(1); }
 console.log('verify-buggy: all green');

@@ -10,6 +10,8 @@
 import {
   BURROW_PIECES, COLS, DEPTHS, DIG_KWH, canPlan, parseKey, warrenReport,
 } from './burrow.js';
+import { BUILD_KWH, LOADS, RECALL_KWH } from './power.js';
+import { recallSeconds, RECALL_MIN_M } from './buggy.js';
 
 const CS = 64;
 const SKY_H = CS * 1.6;
@@ -68,7 +70,7 @@ const CSS = `
     padding: 8px 22px 14px; font-size: 11.5px; letter-spacing: 1px; }
   #burrow footer .motto { color: #e8c46a; opacity: .85; }
   #burrow footer .hint { opacity: .5; }
-  #bring, #bdrone { padding: 10px 26px; cursor: pointer;
+  #bring, #bdrone, #brecall { padding: 10px 26px; cursor: pointer;
     font-family: inherit; font-size: 12px; letter-spacing: 3px;
     color: #1a0f08; background: linear-gradient(180deg, #e8c46a, #c9a04a);
     border: 1px solid #f2d68a; border-radius: 4px;
@@ -76,7 +78,10 @@ const CSS = `
   #bdrone { margin-left: auto; color: #0c1a18;
     background: linear-gradient(180deg, #3fd0c9, #2c9b95);
     border-color: #6fe0d8; box-shadow: 0 0 18px rgba(63,208,201,.3); }
-  #bring:disabled, #bdrone:disabled { color: rgba(246,237,226,.45);
+  #brecall { color: #0c1a18;
+    background: linear-gradient(180deg, #3fd0c9, #2c9b95);
+    border-color: #6fe0d8; box-shadow: 0 0 18px rgba(63,208,201,.3); }
+  #bring:disabled, #bdrone:disabled, #brecall:disabled { color: rgba(246,237,226,.45);
     background: rgba(232,196,106,.07);
     border-color: rgba(232,196,106,.3); box-shadow: none; cursor: default; }
   #bring.done { color: #3fd0c9; background: rgba(63,208,201,.08);
@@ -179,14 +184,19 @@ export class BurrowConsole {
         <div id="bscene"><svg id="bsvg" preserveAspectRatio="xMidYMin meet"></svg></div>
       </div>
       <footer><span class="motto">spoil is ore — the house pays for itself as it is dug</span>
-        <span class="hint">plans are free · the nanofab debits ⚡ when the drones break ground · the hands draw ½ kW each while they work</span>
+        <span class="hint">plans are free · the nanofab debits ⚡ when the drones break ground · the hands draw ${LOADS.drone} kW each while they cut</span>
         <button id="bdrone"></button>
+        <button id="brecall"></button>
         <button id="bring"></button></footer>`;
     document.body.appendChild(this.root);
     this.root.querySelector('#bx').onclick = () => this.close();
     this.root.querySelector('#bring').onclick = () => { this.h.onInstallRing(); this.render(); };
     this.root.querySelector('#bdrone').onclick = () => {
       if (this.h.onDeployDrone) this.h.onDeployDrone();
+      this.render();
+    };
+    this.root.querySelector('#brecall').onclick = () => {
+      if (this.h.onRecall) this.h.onRecall();
       this.render();
     };
     this.root.querySelector('#bcards').onclick = (e) => {
@@ -484,11 +494,30 @@ export class BurrowConsole {
       ${bank ? `<br>bank <b>${bank.charge}</b>/${bank.capacity} kWh — structure is charge` : ''}`;
     const droneBtn = this.root.querySelector('#bdrone');
     const canFrame = this.h.droneCarried && this.h.droneCarried();
-    const funded = bank && bank.charge >= 3;
+    const funded = bank && bank.charge >= BUILD_KWH.drone;
     droneBtn.disabled = !(canFrame && funded);
     droneBtn.textContent = canFrame
-      ? (funded ? '⬡ DEPLOY A HAND · 3 kWh' : '⬡ A HAND WAITS ON CHARGE')
+      ? (funded ? `⬡ DEPLOY A HAND · ${BUILD_KWH.drone} kWh` : '⬡ A HAND WAITS ON CHARGE')
       : '⬡ A HAND NEEDS A FRAME (THE MILL)';
+    // the recall: only offered when the buggy is genuinely away; while
+    // the tow runs the button is the countdown
+    const recallBtn = this.root.querySelector('#brecall');
+    const away = this.h.buggyAwayM ? this.h.buggyAwayM() : 0;
+    const towing = this.h.recallState ? this.h.recallState() : null;
+    if (towing) {
+      recallBtn.style.display = '';
+      recallBtn.disabled = true;
+      recallBtn.textContent = `⟲ HANDS FETCHING THE BUGGY · ${Math.ceil(towing.rem)} s`;
+    } else if (away >= RECALL_MIN_M) {
+      recallBtn.style.display = '';
+      const canFund = bank && bank.charge >= RECALL_KWH;
+      recallBtn.disabled = !canFund;
+      recallBtn.textContent = canFund
+        ? `⟲ RECALL THE BUGGY · ${RECALL_KWH} kWh · ~${recallSeconds(away)} s`
+        : '⟲ THE RECALL WAITS ON CHARGE';
+    } else {
+      recallBtn.style.display = 'none';
+    }
     const ring = this.root.querySelector('#bring');
     const shaftDug = dugAt(0, 1);
     if (b.ringInstalled) {

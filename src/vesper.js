@@ -25,7 +25,7 @@ export const EVENTS = [
   'lander-in', 'not-tired', 'salvage-unlocked',
   'radio-static',
   'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
-  'power-low', 'no-charge', 'drone-deployed',
+  'power-low', 'no-charge', 'drone-deployed', 'buggy-recalled',
   'brief-wake', 'brief-power', 'brief-dig', 'brief-works',
   'pairing-review',
 ];

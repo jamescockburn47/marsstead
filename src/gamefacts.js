@@ -52,7 +52,7 @@ export const GAME_FACTS = [
   { topic: 'world', keywords: ['map', 'lost', 'retrace', 'tracks', 'trail', 'home', 'way', 'minimap', 'compass'],
     text: 'The compass ring (bottom left) always shows your trail and the way home; M opens the full surveyor\'s map — terrain draws where you have walked, and your bootprints and wheel ruts are permanent.' },
   { topic: 'world', keywords: ['rover', 'buggy', 'drive', 'vehicle', 'rig', 'drill', 'deposit', 'prospect'],
-    text: 'E at the buggy drives it (F/G load and unload the deck). Prospecting is being there: ore bodies mark themselves as you range. Tow the drill rig (H hitches it) onto marked ore and E anchors it to drill.' },
+    text: 'E at the buggy drives it (F/G load and unload the deck). Prospecting is being there: ore bodies mark themselves as you range. Tow the drill rig (H hitches it) onto marked ore and E anchors it to drill. A buggy stranded far away — down a cliff, out of reach — is never lost: the Burrow console offers RECALL THE BUGGY and the drones tow it home for a few kilowatt-hours.' },
   { topic: 'world', keywords: ['storm', 'dust', 'weather', 'forecast', 'tau', 'clear', 'sky'],
     text: 'Dust is weather with a real forecast: clear spells and dusty spells run in sols-long runs. Dust taxes solar and thickens the sky; deep storms are coming in a later phase but have not arrived yet.' },
   { topic: 'meta', keywords: ['orders', 'help', 'controls', 'keys', 'manual', 'instructions'],

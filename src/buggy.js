@@ -585,3 +585,16 @@ export function stepBuggy(s, input, ground, dt) {
   s.wheelSpin += (s.u / WHEEL_R) * dt;
   return flags;
 }
+
+// ---- the recall (the cliff-bottom rule) ------------------------------------
+// A buggy the terrain has beaten — over a cliff lip it cannot climb, out
+// past a walk's worth of air — is never lost: VESPER's hands go and
+// fetch it. Deterministic tow time from straight-line distance; the
+// price (power.RECALL_KWH) is the one universal cost, charge. Doctrine
+// 4 (no damage economy) and the buggy verdict (never trap) both hold:
+// the planet may cost you, it may never strand you.
+export const RECALL_MIN_M = 150;   // nearer than this, just walk to it
+export const RECALL_SPEED = 11;    // m/s of tow-team progress (game-scale)
+export function recallSeconds(distM) {
+  return Math.max(25, Math.min(240, Math.round(distM / RECALL_SPEED)));
+}

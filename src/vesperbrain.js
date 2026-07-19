@@ -338,6 +338,7 @@ export const BARK_MOMENTS = {
   'ring-installed': 'the settler just installed the salvaged airlock ring — the one irreplaceable part — as the front door of the warren',
   'drone-deployed': 'a new drone just came online at the crown — another hand for the warren, printed from the mill and paid for in charge',
   'pairing-review': 'the seasonal Pairing Review just arrived from White Harbour — the official coarse grade of the settler-and-mind pairing, filed with the charter record; you may note it in one dry line (paper is paper; the pairing is the two of you), and you never grade the settler yourself',
+  'buggy-recalled': 'your drones just towed the stranded buggy home to the crown — the settler ordered the recall from the Burrow console and the hands went and fetched it; a dry word about where it had got itself is allowed, never a scolding',
   // ---- the first-sol briefing: the settler knows YOU well (the trials,
   // the voyage) but the descent scrambled their short-term — they remember
   // NOTHING of the mechanics. Teach warmly, in your own words, two or

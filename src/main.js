@@ -27,7 +27,7 @@ import {
 } from './marsheavens.js';
 import { tauAt, windAt, cirrusAt, solBase } from './dust.js';
 import {
-  createPower, tickPower, spend, BUILD_KWH,
+  createPower, tickPower, spend, BUILD_KWH, RECALL_KWH,
   serializePower, deserializePower,
 } from './power.js';
 import { mtc } from './marstime.js';
@@ -62,7 +62,7 @@ import { WakeLayer } from './wakelayer.js';
 import { Colonist } from './colonist.js';
 import {
   createBuggy, stepBuggy, deflectBuggy, wheelContactHeight,
-  WHEELBASE_F, WHEELBASE_R,
+  WHEELBASE_F, WHEELBASE_R, recallSeconds, RECALL_MIN_M,
 } from './buggy.js';
 import { BuggyLayer, TRACK } from './buggylayer.js';
 import { Hud } from './hud.js';
@@ -298,8 +298,20 @@ class Game {
         this.say('drone-deployed');
       },
       getBank: () => (this.grid ? { charge: this.grid.charge, capacity: this.grid.capacity } : null),
+      // the recall (the cliff-bottom rule): the hands fetch a stranded
+      // buggy home for charge — the planet may cost you, never strand you
+      buggyAwayM: () => Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z),
+      recallState: () => this.recall,
+      onRecall: () => {
+        if (this.recall || this.driving) return;
+        const away = Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z);
+        if (away < RECALL_MIN_M) return;
+        if (!spend(this.power, RECALL_KWH)) { this.say('no-charge'); return; }
+        this.recall = { rem: recallSeconds(away) };
+      },
       line: () => this.hud.vesperLine.textContent || '…',
     });
+    this.recall = null;
     this.power = createPower();
     this.grid = null; // last tickPower truth — consoles read it
     this.saidPowerLow = false;
@@ -506,7 +518,11 @@ class Game {
       simMillis: this.simMillis,
       pos: this.pos, heading: this.heading,
       air: this.air, warm: this.warm,
-      buggy: this.buggy,
+      // a recall in flight collapses to its arrival (refresh is never a
+      // rescue, and the charge is already spent — the tow just finishes)
+      buggy: this.recall
+        ? { ...this.buggy, x: this.crownPos.x + 7, z: this.crownPos.z + 6, u: 0, v: 0 }
+        : this.buggy,
       suit: this.suit.slots, rover: this.roverStore.slots,
       lander: this.lander.stock,
       stead: steadSerialize(this.stead),
@@ -517,7 +533,9 @@ class Game {
       inLander: this.inLander,
       sleptOnce: this.sleptOnce,
       missionStart: this.missionStart,
-      rig: this.rig,
+      rig: this.recall && this.rig.hitched
+        ? { ...this.rig, x: this.crownPos.x + 3.6, z: this.crownPos.z + 6 }
+        : this.rig,
       prospected: this.prospected,
       fab: this.fab,
       machines: this.machines,
@@ -1896,6 +1914,28 @@ class Game {
       this.lastRegardSol = sol;
       regardDecay(this.regard, sol);
     }
+    // the recall in progress: the hands tow; driving the buggy yourself
+    // cancels the errand (you clearly reached it after all — no refund,
+    // the team was already out)
+    if (this.recall) {
+      if (this.driving) {
+        this.recall = null;
+      } else {
+        this.recall.rem -= dt;
+        if (this.recall.rem <= 0) {
+          this.recall = null;
+          this.buggy.x = this.crownPos.x + 7;
+          this.buggy.z = this.crownPos.z + 6;
+          this.buggy.u = 0; this.buggy.v = 0;
+          if (this.rig.hitched) {
+            this.rig.x = this.buggy.x - 3.4;
+            this.rig.z = this.buggy.z;
+          }
+          this.say('buggy-recalled');
+        }
+      }
+    }
+
     const seas = season(this.simMillis);
     if (this.lastSeason && seas !== this.lastSeason && this.booted) {
       this.hud.say(`PAIRING REVIEW — WHITE HARBOUR: ${regardVerdict(this.regard)}. Filed with the charter record.`, this.t, 9);
