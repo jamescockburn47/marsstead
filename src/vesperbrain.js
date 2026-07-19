@@ -232,6 +232,11 @@ export const BARK_MOMENTS = {
   'pack-up': 'the rig is packed and ready to tow again',
   'fab-first-steel': 'the fabricator just produced the first steel panel made from Martian ground',
   'lander-in': 'the settler just came inside the lander cabin — warmth and pressure',
+  'crown-first': 'the settler just opened the Burrow console for the first time — the plan of the underground home, where your drones do the digging',
+  'dig-start': 'the settler just marked the first dig — your drones are starting to excavate the underground warren',
+  'burrow-room': 'the drones just finished digging a room of the underground warren; the spoil pays in ore',
+  'burrow-home': 'the warren just held pressure for the first time — a home dug into Mars, behind the salvaged ring',
+  'ring-installed': 'the settler just installed the salvaged airlock ring — the one irreplaceable part — as the front door of the warren',
 };
 
 // bark prompt: same contract, same phase knowledge, but the settler said

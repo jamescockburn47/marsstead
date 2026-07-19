@@ -24,6 +24,7 @@ export const EVENTS = [
   'drill-first-ore', 'hopper-full', 'pack-up', 'fab-first-steel',
   'lander-in', 'not-tired', 'salvage-unlocked',
   'radio-static',
+  'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
 ];
 
 // the instrument channel: safety and mechanics, spoken plainly and at

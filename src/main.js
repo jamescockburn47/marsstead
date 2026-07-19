@@ -40,6 +40,14 @@ import { DustLayer } from './dustlayer.js';
 import {
   createTrail, appendTrack, serializeTrail, deserializeTrail,
 } from './tracks.js';
+import {
+  createBurrow, plan as planBurrow, cancelPlan as cancelBurrowPlan,
+  tick as burrowTick, installRing, isPressurised as burrowPressurised,
+  isBedworthy as burrowBedworthy, takeSpoil,
+  serialize as serializeBurrow, deserialize as deserializeBurrow,
+} from './burrow.js';
+import { BurrowConsole } from './burrowconsole.js';
+import { CrownLayer } from './crownlayer.js';
 import { TrackLayer } from './tracklayer.js';
 import { WakeLayer } from './wakelayer.js';
 import { Colonist } from './colonist.js';
@@ -233,6 +241,37 @@ class Game {
     this.fab = createFab();      // the lander's ISRU bench
     this.machines = [];          // the built refinery (step 5)
     this.machineLayer = new MachineLayer(this.scene);
+
+    // ---- the Burrow: the underground home (never walked — doctrine 1);
+    // the crown is its surface presence, the console is its interior
+    this.burrow = createBurrow();
+    this.droneCount = 3; // VESPER's hands, deployed from the lander's cargo
+    this.crownPos = { x: -4, z: -16 };
+    this.crownLayer = new CrownLayer(this.scene, this.crownPos.x, this.crownPos.z, meshGroundHeight);
+    this.burrowUI = new BurrowConsole({
+      getBurrow: () => this.burrow,
+      getDroneCount: () => this.droneCount,
+      // the ring is HEAVY: it rides the rover's deck, not the suit — the
+      // console accepts it from either, with the rover parked at the crown
+      ringCarried: () => count(this.suit, 'airlock-ring') > 0
+        || (Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z) < 9
+          && count(this.roverStore, 'airlock-ring') > 0),
+      onPlan: (piece, c, d) => {
+        if (planBurrow(this.burrow, piece, c, d)) this.sayOnce('dig-start');
+      },
+      onCancel: (c, d) => cancelBurrowPlan(this.burrow, c, d),
+      onInstallRing: () => {
+        const fromSuit = count(this.suit, 'airlock-ring') > 0;
+        const fromDeck = count(this.roverStore, 'airlock-ring') > 0
+          && Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z) < 9;
+        if (!fromSuit && !fromDeck) return;
+        if (installRing(this.burrow)) {
+          remove(fromSuit ? this.suit : this.roverStore, 'airlock-ring', 1);
+          this.say('ring-installed');
+        }
+      },
+      line: () => this.hud.vesperLine.textContent || '…',
+    });
     this.anchoring = null;       // { t, need } while planting the rig
     this.swayTimer = 0;
     this.prevHopper = 0;
@@ -365,6 +404,7 @@ class Game {
     this.sleptOnce = s.sleptOnce;
     this.missionStart = s.missionStart ?? this.simMillis;
     this.trail = deserializeTrail(s.trail); // the old marks still stand
+    this.burrow = deserializeBurrow(s.burrow); // the warren keeps its shape
     if (!this.settlerName) this.settlerName = s.settlerName || '';
     // she remembers: the last exchanges and the count of talks ride the
     // save, so rapport survives the browser closing
@@ -397,6 +437,7 @@ class Game {
       fab: this.fab,
       machines: this.machines,
       trail: serializeTrail(this.trail),
+      burrow: serializeBurrow(this.burrow),
       settlerName: this.settlerName,
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
@@ -670,6 +711,12 @@ class Game {
 
   // E is THE doing key: the cabin door, the rover, the rig, the bolts
   interact() {
+    if (this.burrowUI.visible) { this.burrowUI.close(); return; }
+    if (!this.inLander && !this.driving && this.distToCrown() < 4) {
+      this.burrowUI.open();
+      this.sayOnce('crown-first');
+      return;
+    }
     if (this.inLander) { this.exitLander(); return; }
     if (this.driving) { this.toggleBuggy(); return; }
     if (this.distToLadder() < 3.6) { this.enterLander(); return; }
@@ -743,9 +790,14 @@ class Game {
 
   // a bed for the night: the lander's hull, or a pressurised hab that
   // BEATS the lander (bedworthy — small sealed volumes shelter, not sleep)
+  distToCrown() {
+    return Math.hypot(this.pos.x - this.crownPos.x, this.pos.z - this.crownPos.z);
+  }
+
   sheltered() {
     return this.distToLander() < 7
-      || (this.insidePressurised && bedworthy(this.insideVolume));
+      || (this.insidePressurised && bedworthy(this.insideVolume))
+      || (burrowBedworthy(this.burrow) && this.distToCrown() < 7);
   }
 
   // ---- building --------------------------------------------------------
@@ -1169,7 +1221,7 @@ class Game {
     const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const wish = new THREE.Vector3();
-    if (!this.cycling) {
+    if (!this.cycling && !this.burrowUI.visible) {
       if (this.keys.KeyW) wish.add(fwd);
       if (this.keys.KeyS) wish.sub(fwd);
       if (this.keys.KeyA) wish.add(right);
@@ -1362,6 +1414,12 @@ class Game {
     } else if (this.anchoring) {
       const pct = Math.round((this.anchoring.t / this.anchoring.need) * 100);
       this.hud.setPrompt(`anchoring the rig… ${pct}%`);
+    } else if (this.burrowUI.visible) {
+      this.hud.setPrompt('THE BURROW · |*E| back to the surface');
+    } else if (this.distToCrown() < 4) {
+      const home = burrowBedworthy(this.burrow);
+      this.hud.setPrompt('|*E| the Burrow console'
+        + (home && canSleep(this.sunEl ?? 90) ? ' · |*R| sleep below' : ''));
     } else if (this.distToLadder() < 3.6) {
       this.hud.setPrompt('|*E| climb into the lander'
         + (canSleep(this.sunEl ?? 90) ? ' · |*R| sleep till dawn' : ''));
@@ -1771,6 +1829,27 @@ class Game {
     this.terrain.update(this.pos.x, this.pos.z);
     this.rocks.update(this.pos.x, this.pos.z);
     this.trackLayer.update(this.pos.x, this.pos.z, this.trail, meshGroundHeight);
+
+    // ---- the Burrow: the hands dig in real seconds; spoil is ore
+    const wasHome = burrowPressurised(this.burrow);
+    for (const e of burrowTick(this.burrow, dt, this.droneCount)) {
+      if (e.type === 'dug') this.sayOnce('burrow-room');
+    }
+    if (!wasHome && burrowPressurised(this.burrow)) this.sayOnce('burrow-home');
+    if (this.distToCrown() < 7 && this.burrow.spoil.ore > 0) {
+      // the house pays: banked ore walks into the bags when you pass
+      let moved = 0;
+      while (this.burrow.spoil.ore > 0 && canAdd(this.suit, 'iron-ore', 1)) {
+        this.burrow.spoil.ore -= 1;
+        add(this.suit, 'iron-ore', 1);
+        moved += 1;
+      }
+      if (moved) this.sayOnce('drill-first-ore');
+    }
+    this.crownLayer.update(this.t, this.burrow.queue.length > 0,
+      [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length,
+      this.burrow.ringInstalled, (this.sunEl ?? 10) < 0);
+    this.burrowUI.update(dt);
     this.wake.update(dt, this.buggy, this.buggyFlags, L.sunIntensity);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
     // dust is sunlit matter: it fades with the light (never glows at night).

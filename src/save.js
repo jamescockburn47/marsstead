@@ -75,6 +75,7 @@ export function snapshotSave(state) {
     // the trail (additive, version stays 1: an older save just wakes on
     // unmarked ground) — already flat-encoded by tracks.serializeTrail
     trail: Array.isArray(state.trail) ? state.trail : [],
+    burrow: state.burrow && typeof state.burrow === 'object' ? state.burrow : null,
     settlerName: cleanName(state.settlerName || ''),
     // her memory of you (additive): the last exchanges + how often you talk
     vesperLog: Array.isArray(state.vesperLog) ? state.vesperLog.slice(-6) : [],
@@ -208,6 +209,8 @@ export function acceptSave(meta) {
     // bounded pass-through: tracks.deserializeTrail launders the quads
     trail: Array.isArray(meta.trail) ? meta.trail.slice(0, 48000) : [],
     settlerName: cleanName(meta.settlerName || ''),
+    // bounded pass-through: burrow.deserialize launders the lattice
+    burrow: meta.burrow && typeof meta.burrow === 'object' ? meta.burrow : null,
     // laundered memory: known speakers, plain short strings, six turns max
     vesperLog: Array.isArray(meta.vesperLog)
       ? meta.vesperLog.slice(-6)
