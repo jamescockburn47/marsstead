@@ -38,4 +38,12 @@ matter).
 Pre–Phase 0. The design is the contract; the landing page is the engine warming
 up. See `docs/DESIGN.md` for the phase plan.
 
+## Credits
+
+The buggy's vehicle dynamics follow the **DFA-1 arcade-car model** from Dan's
+[Dune Flip Arena](https://github.com/golnuggit/dune-flip-arena) — quarter-car
+suspension, exaggerated grip over honest ballistics, judged flips — adapted to
+Mars gravity and reimplemented procedurally. Used with permission; thank you,
+Dan.
+
 *Procedural-only, to the last polygon.*

@@ -119,6 +119,47 @@ function buildRocks(cx, cz) {
   return out.length > MAX_PER_CHUNK ? out.slice(0, MAX_PER_CHUNK) : out;
 }
 
+// ---- the buggy's bump field: rocks as SURFACE, not walls. The big tyres
+// (WHEEL_R 0.62) roll and BOUNCE over anything up to boulder scale — each
+// wheel reads the dome of nearby rocks as extra ground height and the
+// suspension answers. Boulders and slabs stay colliders for the chassis
+// (deflectBuggy), but even their dome edges lift a wheel that noses in.
+// Pebbles are beneath the tyres' notice.
+const BUMP_KINDS = { rock: 0.8, boulder: 0.7, slab: 0.55 }; // dome fraction felt
+
+// shortlist the bump-relevant rocks near (x, z) — call once per frame,
+// then probe the four wheels against it with bumpHeightAt.
+export function bumpsNear(x, z, reach = 6) {
+  const ccx = Math.floor(x / CHUNK), ccz = Math.floor(z / CHUNK);
+  const found = [];
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (const rk of rocksInChunk(ccx + dx, ccz + dz)) {
+        const felt = BUMP_KINDS[rk.kind];
+        if (!felt) continue;
+        const rr = (rk.sx + rk.sz) * 0.5 * 0.9; // footprint of the dome
+        if (Math.hypot(rk.x - x, rk.z - z) < rr + reach) {
+          found.push({ x: rk.x, z: rk.z, rr, y: rk.y, sy: rk.sy * felt });
+        }
+      }
+    }
+  }
+  return found;
+}
+
+// the rock-dome surface height at (x, z) over the shortlist — -Infinity
+// when no dome covers the point (caller maxes with the terrain).
+export function bumpHeightAt(x, z, bumps) {
+  let h = -Infinity;
+  for (const b of bumps) {
+    const d = Math.hypot(x - b.x, z - b.z);
+    if (d >= b.rr) continue;
+    const dome = b.y + b.sy * Math.sqrt(1 - (d / b.rr) * (d / b.rr));
+    if (dome > h) h = dome;
+  }
+  return h;
+}
+
 // the big rocks near (x, z) within reach, as push-out discs for the walker
 // and the buggy. Cheap: scans the 3x3 chunks around the point.
 export function collidersNear(x, z, reach = 3) {

@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { hash2 } from './noise.js';
+import { WHEEL_R, SUSP_STATIC, WHEELBASE_F, WHEELBASE_R } from './buggy.js';
 
 const PANEL = 0xd8cec0;   // dust-white body panels
 const RUST = 0xb34a2a;    // the family rust accent
@@ -24,8 +25,7 @@ function box(w, h, d, colour) {
 }
 
 export const TRACK = 0.95;      // half-width to wheel centres
-export const WHEELBASE = 1.05;  // half-length to axle centres
-const WHEEL_R = 0.5;
+export const WHEELBASE = 1.05;  // half-length to the front axle (rear is 1.15)
 
 export class BuggyLayer {
   constructor(scene) {
@@ -61,13 +61,16 @@ export class BuggyLayer {
     const solarRim = box(1.16, 0.05, 0.86, FRAME);
     solarRim.position.set(0, 0.80, -0.95); solarRim.rotation.x = -0.22;
 
-    // ---- wheels: LARGE open-mesh drums with spokes, on wishbone arms
-    const rimGeo = new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.36, 10);
+    // ---- wheels: LARGE open-mesh drums with spokes, on wishbone arms —
+    // order FL, FR, RL, RR to match the physics' s.susp array, and each
+    // pivot's y rides its spring travel every frame (rocks kick wheels)
+    const rimGeo = new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.42, 12);
     rimGeo.rotateZ(Math.PI / 2);
     this.wheels = [];
     this.steerPivots = [];
-    for (const [x, z, front] of [[-TRACK, WHEELBASE, true], [TRACK, WHEELBASE, true],
-      [-TRACK, -WHEELBASE, false], [TRACK, -WHEELBASE, false]]) {
+    this.pivots = [];
+    for (const [x, z, front] of [[-TRACK, WHEELBASE_F, true], [TRACK, WHEELBASE_F, true],
+      [-TRACK, -WHEELBASE_R, false], [TRACK, -WHEELBASE_R, false]]) {
       const wheel = new THREE.Group();
       const drum = new THREE.Mesh(rimGeo, new THREE.MeshPhongMaterial({
         color: TYRE, shininess: 4,
@@ -92,6 +95,7 @@ export class BuggyLayer {
       arm.rotation.z = Math.sign(x) * 0.28;
       pivot.add(arm);
       this.wheels.push(wheel);
+      this.pivots.push(pivot);
       if (front) this.steerPivots.push(pivot);
       this.group.add(pivot);
     }
@@ -122,26 +126,22 @@ export class BuggyLayer {
     this.barMat.emissive.setHex(on ? 0xffe9b0 : 0x000000);
   }
 
-  // place + pose from the dynamics state each frame. groundPitch/groundRoll
-  // come from the four wheel-contact heights (main.js samples them) so the
-  // body RIDES the slope instead of hovering flat over it. puffs is the
-  // shared fine-dust PuffCloud: roostertails and landing thumps spawn into
-  // it and it handles flight, settling and death — nothing hangs forever.
-  update(dt, s, flags, groundY, groundPitch = 0, groundRoll = 0, puffs = null) {
+  // place + pose from the dynamics state each frame. The body's attitude
+  // IS the sprung chassis now — s.pitch/s.roll carry terrain, brake dive,
+  // squat and cornering lean in one honest number — and each wheel drops
+  // or tucks with its own spring (s.susp), so rocks visibly kick wheels.
+  // puffs is the shared fine-dust PuffCloud: roostertails and landing
+  // thumps spawn into it — nothing hangs forever.
+  update(dt, s, flags, puffs = null) {
     this.group.position.set(s.x, s.y, s.z);
-    this.group.rotation.set(0, s.heading, 0);
-    if (flags.airborne) {
-      // in the air the flip axes own the attitude
-      this.group.rotation.x = s.pitch;
-      this.group.rotation.z = s.roll;
-    } else {
-      // on the ground: terrain attitude + a body lean under drive/corner
-      this.group.rotation.x = groundPitch + s.pitch - s.u * 0.002;
-      this.group.rotation.z = groundRoll + s.roll + s.r * Math.min(1, Math.abs(s.u) / 6) * 0.06;
-    }
+    this.group.rotation.set(s.pitch, s.heading, s.roll);
 
     for (const p of this.steerPivots) p.rotation.y = s.steer;
-    for (const w of this.wheels) w.rotation.x = s.wheelSpin;
+    for (let i = 0; i < 4; i++) {
+      const susp = s.susp ? s.susp[i] : SUSP_STATIC;
+      this.pivots[i].position.y = WHEEL_R + (susp - SUSP_STATIC);
+      this.wheels[i].rotation.x = s.wheelSpin;
+    }
 
     if (puffs) {
       const sin = Math.sin(s.heading), cos = Math.cos(s.heading);

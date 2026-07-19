@@ -33,7 +33,7 @@ import {
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
 import { RockLayer } from './rocklayer.js';
-import { collidersNear } from './rocks.js';
+import { collidersNear, bumpsNear, bumpHeightAt } from './rocks.js';
 import { SkyDome } from './sky.js';
 import { DustLayer } from './dustlayer.js';
 import {
@@ -42,8 +42,8 @@ import {
 import { TrackLayer } from './tracklayer.js';
 import { WakeLayer } from './wakelayer.js';
 import { Colonist } from './colonist.js';
-import { createBuggy, stepBuggy } from './buggy.js';
-import { BuggyLayer, TRACK, WHEELBASE } from './buggylayer.js';
+import { createBuggy, stepBuggy, deflectBuggy, WHEELBASE_F, WHEELBASE_R } from './buggy.js';
+import { BuggyLayer, TRACK } from './buggylayer.js';
 import { Hud } from './hud.js';
 import { createLander, available, unboltSeconds, takeOne, remaining, remainingTotal } from './salvage.js';
 import { LanderLayer } from './landerlayer.js';
@@ -1039,7 +1039,9 @@ class Game {
   }
 
   frame(now) {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // clamped both ways: a backwards timestamp must never feed the physics
+    // a negative dt (anti-damped springs explode)
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.t += dt;
     this.simMillis += dt * 1000 * TIME_SCALE;
@@ -1380,11 +1382,23 @@ class Game {
         ? `rover ${loadLabel(this.roverStore)}` : null,
     );
 
-    // the parked buggy still needs drawing — seated on its wheels
-    const pwg = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading);
-    this.buggy.y = pwg.h;
-    this.buggyLayer.update(dt, this.buggy, { skidF: false, skidR: false, airborne: false, landed: false },
-      pwg.h, pwg.pitch, pwg.roll);
+    // the parked buggy still needs drawing — and the SPRINGS pose it now:
+    // a zero-input step settles it onto its wheels (and onto any rock a
+    // wheel is standing on), so parked and driven share one truth
+    const pe = 0.7, pbx = this.buggy.x, pbz = this.buggy.z;
+    const pwg = this.wheelGround(pbx, pbz, this.buggy.heading);
+    const pground = {
+      h: pwg.h, wh: pwg.wh,
+      gx: (meshGroundHeight(pbx + pe, pbz) - meshGroundHeight(pbx - pe, pbz)) / (2 * pe),
+      gz: (meshGroundHeight(pbx, pbz + pe) - meshGroundHeight(pbx, pbz - pe)) / (2 * pe),
+    };
+    const ptotal = Math.min(dt, 0.1);
+    const pn = Math.max(1, Math.ceil(ptotal / (1 / 120)));
+    for (let i = 0; i < pn; i++) {
+      stepBuggy(this.buggy, { throttle: 0, steer: 0, brake: 0, handbrake: false }, pground, ptotal / pn);
+    }
+    this.buggyLayer.update(dt, this.buggy,
+      { skidF: false, skidR: false, airborne: false, landed: false });
     this.hud.setSpeed(null);
   }
 
@@ -1433,39 +1447,44 @@ class Game {
     this.hud.setSpeed(null);
   }
 
-  // sample the drawn surface under all four wheel contacts: the body's
-  // height AND attitude come from where the wheels actually stand — the
-  // same "stand on what is drawn" rule the walker follows (no floating
-  // flat over a slope, no downhill wheels in the air)
+  // sample the surface under all four wheel contacts: the drawn terrain
+  // PLUS the rock-dome bump field (rocks.js) — the big tyres ride and
+  // bounce over sub-boulder rocks instead of ghosting through them. The
+  // suspension in buggy.js turns these four heights into body attitude,
+  // so this returns the raw per-wheel array the physics wants.
   wheelGround(bx, bz, heading) {
     const sin = Math.sin(heading), cos = Math.cos(heading);
-    const at = (lx, lz) => meshGroundHeight(bx + lx * cos + lz * sin, bz - lx * sin + lz * cos);
-    const hFL = at(-TRACK, WHEELBASE), hFR = at(TRACK, WHEELBASE);
-    const hRL = at(-TRACK, -WHEELBASE), hRR = at(TRACK, -WHEELBASE);
-    const hF = (hFL + hFR) / 2, hR = (hRL + hRR) / 2;
-    const hL = (hFL + hRL) / 2, hRt = (hFR + hRR) / 2;
-    return {
-      h: (hF + hR) / 2,
-      pitch: Math.atan2(hR - hF, 2 * WHEELBASE),
-      roll: Math.atan2(hRt - hL, 2 * TRACK),
+    const c = this._bumpCache;
+    let bumps;
+    if (c && Math.hypot(c.x - bx, c.z - bz) < 2) { bumps = c.list; } else {
+      bumps = bumpsNear(bx, bz, 6);
+      this._bumpCache = { x: bx, z: bz, list: bumps };
+    }
+    const at = (lx, lz) => {
+      const x = bx + lx * cos + lz * sin, z = bz - lx * sin + lz * cos;
+      return Math.max(meshGroundHeight(x, z), bumpHeightAt(x, z, bumps));
     };
+    const wh = [at(-TRACK, WHEELBASE_F), at(TRACK, WHEELBASE_F),
+      at(-TRACK, -WHEELBASE_R), at(TRACK, -WHEELBASE_R)];
+    return { h: (wh[0] + wh[1] + wh[2] + wh[3]) / 4, wh };
   }
 
   frameDriving(dt) {
     const input = {
-      throttle: (this.keys.KeyW ? 1 : 0) + (this.keys.KeyS && this.buggy.u <= 0.5 ? -0.6 : 0),
+      throttle: (this.keys.KeyW ? 1 : 0) + (this.keys.KeyS && this.buggy.u <= 0.5 ? -0.85 : 0),
       brake: this.keys.KeyS && this.buggy.u > 0.5 ? 1 : 0,
       steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
       handbrake: !!this.keys.Space,
     };
-    // ground: height + attitude from the four wheel contacts, gradient
-    // from central differences (drives the slope forces)
+    // ground: per-wheel heights (terrain + rock bumps) for the springs,
+    // gradient from central differences (drives the slope forces)
     const e = 0.7, bx = this.buggy.x, bz = this.buggy.z;
     const bx0 = bx, bz0 = bz; // pre-step, for the wall check below
     const wg = this.wheelGround(bx, bz, this.buggy.heading);
     const h = wg.h;
     const ground = {
       h,
+      wh: wg.wh,
       gx: (meshGroundHeight(bx + e, bz) - meshGroundHeight(bx - e, bz)) / (2 * e),
       gz: (meshGroundHeight(bx, bz + e) - meshGroundHeight(bx, bz - e)) / (2 * e),
     };
@@ -1510,16 +1529,12 @@ class Game {
       if (blocked) { this.buggy.u *= -0.2; this.buggy.v = 0; }
     }
 
-    // ---- boulders stop the buggy too: drive around the country,
-    // never through it (speed scrubs off on the stone)
+    // ---- boulders deflect the buggy: the chassis glances off the stone
+    // (inward speed dies, tangential survives) and NOTHING eats outbound
+    // speed — nose into a boulder and reversing out just works
     for (const c of collidersNear(this.buggy.x, this.buggy.z)) {
-      const d = Math.hypot(this.buggy.x - c.x, this.buggy.z - c.z);
-      if (d < c.r + 1.1 && d > 1e-6) {
-        const push = (c.r + 1.1 - d) / d;
-        this.buggy.x += (this.buggy.x - c.x) * push;
-        this.buggy.z += (this.buggy.z - c.z) * push;
-        this.buggy.u *= 0.5;
-      }
+      const hit = deflectBuggy(this.buggy, c.x, c.z, c.r);
+      if (hit > 3 && this.buggyFlags) this.buggyFlags.impact = Math.max(this.buggyFlags.impact, hit);
     }
 
     // ---- the tow: the rig chases the pin; geometry raises the flags
@@ -1539,7 +1554,7 @@ class Game {
 
     // no puffs handed over: the rover's spray particles are retired — the
     // wake belongs to the fractal dust registers (no-particles verdict)
-    this.buggyLayer.update(dt, this.buggy, flags, h, wg.pitch, wg.roll);
+    this.buggyLayer.update(dt, this.buggy, flags);
 
     // VESPER reads the same flags the physics raises
     if (flags.skidR && Math.abs(this.buggy.v) > 1.5) {

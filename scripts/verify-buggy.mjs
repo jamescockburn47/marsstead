@@ -1,11 +1,14 @@
-// verify-buggy: the dynamics hold their theory. Braking distance and
-// cornering limits match the closed forms (mu*m*g is the whole game);
-// throttle oversteer and handbrake drift EMERGE (rear saturates first);
-// the friction circle never leaks; crests launch ballistic hops that obey
-// G_MARS; everything deterministic.
+// verify-buggy: the dynamics hold their theory — the DFA-1 arcade-car
+// model (Dan's Dune Flip Arena, used with permission) on honest Mars
+// ballistics. Grip is deliberately exaggerated (MU is arcade, not
+// regolith); airtime, suspension and slopes obey G_MARS. The quarter-car
+// suspension settles like the model says, rocks kick wheels without
+// stopping the car, boulders deflect and NEVER trap, and everything is
+// deterministic.
 
 import {
-  createBuggy, stepBuggy, MU, MASS, F_DRIVE, TOP_SPEED,
+  createBuggy, stepBuggy, deflectBuggy, MU, MASS, TOP_SPEED,
+  SUSP_STATIC, SUSP_TRAVEL, WHEEL_R,
   maxLatAccel, brakingDistance,
 } from '../src/buggy.js';
 import { G_MARS, jumpApex } from '../src/physics.js';
@@ -29,53 +32,68 @@ const drive = (s, input, ground, seconds) => {
   }
   return out;
 };
+// a buggy already settled on its springs (most tests want to skip the drop)
+const settled = (x = 0, z = 0, heading = 0) => {
+  const s = createBuggy(x, z, heading);
+  drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, 3);
+  return s;
+};
 
-// 1. the low-grip headline numbers the design quotes
-check('max lateral accel ~2.4 m/s^2', Math.abs(maxLatAccel() - MU * G_MARS) < 1e-12);
-check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
+// 1. the headline numbers: arcade grip (DFA-1), quoted by the HUD
+check('max lateral accel = MU * g (arcade)', Math.abs(maxLatAccel() - MU * G_MARS) < 1e-12);
+check('braking 15 m/s -> ~24 m', Math.abs(brakingDistance(15) - 24.19) < 0.15,
   `${brakingDistance(15).toFixed(2)}`);
 
-// 2. it accelerates, tops out near TOP_SPEED, and never exceeds it wildly
+// 2. BRISK: pulls away hard, 90% of top speed inside 8 s, tops out sane
 {
-  const s = createBuggy();
-  drive(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, 25);
+  const s = settled();
+  let t90 = null;
+  for (let t = 0; t < 25; t += DT) {
+    stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    if (t90 === null && s.u > TOP_SPEED * 0.9) t90 = t;
+  }
   check('reaches near top speed', s.u > TOP_SPEED * 0.85 && s.u < TOP_SPEED * 1.25, `u=${s.u.toFixed(1)}`);
+  check('90% of top speed inside 9 s (was ~13, and the first 3 s are brisk)',
+    t90 !== null && t90 < 9 && t90 > 2,
+    `t90=${t90 === null ? 'never' : t90.toFixed(1)}s`);
 }
 
-// 3. braking distance matches the closed form (the Mars lesson: ~2.6x Earth)
+// 3. braking distance matches the closed form
 {
-  const s = createBuggy(); s.u = 15;
-  const x0 = s.z; // heading 0 => forward is +z
+  const s = settled(); s.u = 15;
   let dist = 0, prev = { x: s.x, z: s.z };
   for (let t = 0; t < 12 && Math.abs(s.u) > 0.05; t += DT) {
     stepBuggy(s, { throttle: 0, steer: 0, brake: 1, handbrake: false }, FLAT, DT);
     dist += Math.hypot(s.x - prev.x, s.z - prev.z);
     prev = { x: s.x, z: s.z };
   }
-  // tyres are clamped at mu*N (the circle), but rolling resistance and
-  // drag also retard — so the stop lands NEAR the tyre-only ideal, a
-  // little under it, never dramatically off in either direction
   const ideal = brakingDistance(15);
-  check('braking distance ~ friction-limited', dist > ideal * 0.75 && dist < ideal * 1.4,
+  check('braking distance ~ friction-limited', dist > ideal * 0.7 && dist < ideal * 1.4,
     `${dist.toFixed(1)} m vs tyre-only ideal ${ideal.toFixed(1)} m`);
 }
 
-// 4. cornering below the limit tracks the wheel; above it, understeer
+// 4. ROLLS TO A REAL STOP: lift off at speed, regen + rolling drag bring
+// it to rest in seconds, not most of a minute
 {
-  const gentle = createBuggy(); gentle.u = 6;
-  drive(gentle, { throttle: 0.28, steer: 0.5, brake: 0, handbrake: false }, FLAT, 6);
-  const yawGentle = Math.abs(gentle.r);
-  check('gentle corner develops yaw', yawGentle > 0.15, `r=${yawGentle.toFixed(3)}`);
+  const s = settled(); s.u = 15;
+  let tStop = null;
+  for (let t = 0; t < 30; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    if (tStop === null && s.u === 0) { tStop = t; break; }
+  }
+  check('coasts to a stop inside 16 s (was ~50)', tStop !== null && tStop < 16,
+    `tStop=${tStop === null ? 'never' : tStop.toFixed(1)}s`);
+}
 
-  const hot = createBuggy(); hot.u = 15;
-  // measure the TRUE lateral acceleration: the rate the velocity VECTOR
-  // turns times the speed — in a slide, heading and velocity part company
-  // and u*r stops meaning anything; the friction circle caps this number
+// 5. cornering below the limit tracks the wheel; above it, the circle caps
+{
+  const gentle = settled(); gentle.u = 6;
+  drive(gentle, { throttle: 0.28, steer: 0.5, brake: 0, handbrake: false }, FLAT, 6);
+  check('gentle corner develops yaw', Math.abs(gentle.r) > 0.15, `r=${gentle.r.toFixed(3)}`);
+
+  const hot = settled(); hot.u = 16;
   let worstLat = 0, prevAng = null, skidF = 0, skidR = 0;
   for (let t = 0; t < 3; t += DT) {
-    const preU = hot.u, preV = hot.v, preH = hot.heading;
-    const wx0 = preU * Math.sin(preH) + preV * Math.cos(preH);
-    const wz0 = preU * Math.cos(preH) - preV * Math.sin(preH);
     const f = stepBuggy(hot, { throttle: 0.6, steer: 1, brake: 0, handbrake: false }, FLAT, DT);
     if (f.skidF) skidF++;
     if (f.skidR) skidR++;
@@ -83,57 +101,53 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
     const wz1 = hot.u * Math.cos(hot.heading) - hot.v * Math.sin(hot.heading);
     const sp = Math.hypot(wx1, wz1);
     const ang = Math.atan2(wx1, wz1);
-    // guard: above the parking-cleanup regime (|u| < 1 applies an
-    // intentionally non-physical settle that can spin the velocity vector)
     if (prevAng !== null && sp > 4 && Math.abs(hot.u) > 4) {
       const dAng = Math.abs(((ang - prevAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
       worstLat = Math.max(worstLat, (dAng / DT) * sp);
     }
     prevAng = ang;
-    void wx0; void wz0;
   }
-  // demanded lateral accel at 15 m/s full lock >> mu g: the tyres HAVE to wash
   check('hot corner saturates (skids)', skidF + skidR > 50, `skid frames F=${skidF} R=${skidR}`);
   check('velocity turn rate <= mu*g ceiling', worstLat < maxLatAccel() * 1.25,
     `${worstLat.toFixed(2)} vs ${maxLatAccel().toFixed(2)} m/s^2`);
 }
 
-// 5. throttle oversteer: the same corner sheds MORE rear grip under power
+// 6. throttle oversteer: the same corner sheds MORE rear grip under power
 {
-  const a = createBuggy(); a.u = 8;
+  const a = settled(); a.u = 8;
   const fa = drive(a, { throttle: 0, steer: 0.6, brake: 0, handbrake: false }, FLAT, 2.5);
-  const b = createBuggy(); b.u = 8;
+  const b = settled(); b.u = 8;
   const fb = drive(b, { throttle: 1, steer: 0.6, brake: 0, handbrake: false }, FLAT, 2.5);
   check('power-on sheds rear grip', fb.skidR > fa.skidR, `with=${fb.skidR} without=${fa.skidR}`);
 }
 
-// 6. the handbrake drift: same corner, handbrake on -> far more yaw
+// 7. the handbrake drift: same corner, handbrake on -> far more yaw
 {
-  const a = createBuggy(); a.u = 10;
+  const a = settled(); a.u = 10;
   drive(a, { throttle: 0, steer: 0.7, brake: 0, handbrake: false }, FLAT, 1.2);
-  const b = createBuggy(); b.u = 10;
+  const b = settled(); b.u = 10;
   const fb = drive(b, { throttle: 0, steer: 0.7, brake: 0, handbrake: true }, FLAT, 1.2);
   check('handbrake breaks the rear loose', Math.abs(b.r) > Math.abs(a.r) * 1.3 && fb.skidR > 0,
     `r ${b.r.toFixed(3)} vs ${a.r.toFixed(3)}`);
-  // and the tail actually steps out: lateral velocity grows
   check('the tail steps out', Math.abs(b.v) > Math.abs(a.v),
     `v ${b.v.toFixed(2)} vs ${a.v.toFixed(2)}`);
 }
 
-// 7. the crest hop: ground falls away -> ballistic flight under G_MARS
+// 8. the crest hop: ground falls away -> ballistic flight under G_MARS
 {
-  const s = createBuggy(); s.u = 14;
-  // a ramp up then a sharp drop: h rises at 12% then falls away hard
+  const s = settled(); s.u = 14;
   const terrain = (st) => st.z < 30
     ? { h: st.z * 0.12, gx: 0, gz: 0.12 }
     : { h: 30 * 0.12 - (st.z - 30) * 1.2, gx: 0, gz: -1.2 };
-  const f = drive(s, { throttle: 0.4, steer: 0, brake: 0, handbrake: false }, terrain, 6);
+  // 12 s window: the springs launch the hop with honest UPWARD vy now, so
+  // the flight is the long 0.38 g float the design wants — it takes a while
+  const f = drive(s, { throttle: 0.4, steer: 0, brake: 0, handbrake: false }, terrain, 12);
   check('crest launches the buggy', f.air > 30, `air frames=${f.air}`);
   check('it lands again', f.landed === true);
   check('landing has an impact reading', f.impact > 0.5, `${f.impact.toFixed(2)}`);
 }
 
-// 8. ballistic honesty: launched with known vy, apex matches physics
+// 9. ballistic honesty: launched with known vy, apex matches physics
 {
   const s = createBuggy(); s.u = 10; s.airborne = true; s.vy = 3; s.y = 0;
   const deep = { h: -100, gx: 0, gz: 0 };
@@ -143,22 +157,22 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
     `${apex.toFixed(3)} vs ${jumpApex(3).toFixed(3)}`);
 }
 
-// 9. determinism: same inputs, same trajectory, twice (invariant 4)
+// 10. determinism: same inputs, same trajectory, twice (invariant 4)
 {
   const run = () => {
     const s = createBuggy();
     for (let i = 0; i < 2000; i++) {
       stepBuggy(s, { throttle: 0.8, steer: Math.sin(i / 60) * 0.5, brake: 0, handbrake: i % 500 < 60 }, FLAT, DT);
     }
-    return [s.x, s.z, s.u, s.v, s.r, s.heading];
+    return [s.x, s.z, s.u, s.v, s.r, s.heading, s.y, s.pitch, s.roll];
   };
   const A = run(), B = run();
   check('deterministic', A.every((v, i) => v === B[i]));
 }
 
-// 10. reverse works and stays tame
+// 11. reverse works and stays tame
 {
-  const s = createBuggy();
+  const s = settled();
   drive(s, { throttle: -1, steer: 0, brake: 0, handbrake: false }, FLAT, 5);
   check('reverses', s.u < -1.5, `u=${s.u.toFixed(2)}`);
 }
@@ -166,20 +180,20 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
 // ---- the playtest regressions (James, 2026-07-17): "spins on the spot,
 // no traction, can't hold a straight line, slides around when parked"
 
-// 11. full throttle, no steer: the buggy holds a STRAIGHT line
+// 12. full throttle, no steer: the buggy holds a STRAIGHT line
 {
-  const s = createBuggy();
+  const s = settled();
   drive(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, 10);
   check('full throttle holds a straight line',
     Math.abs(s.heading) < 0.02 && Math.abs(s.x) < 1.5 && Math.abs(s.v) < 0.3,
     `heading=${s.heading.toFixed(4)} x-drift=${s.x.toFixed(2)} v=${s.v.toFixed(2)}`);
-  check('and actually goes somewhere', s.z > 50 && s.u > 9, `z=${s.z.toFixed(0)} u=${s.u.toFixed(1)}`);
+  check('and actually goes somewhere', s.z > 70 && s.u > 12, `z=${s.z.toFixed(0)} u=${s.u.toFixed(1)}`);
 }
 
-// 12. full throttle + full lock FROM STANDSTILL: pulls away in an arc,
+// 13. full throttle + full lock FROM STANDSTILL: pulls away in an arc,
 // does not pirouette (yaw rate stays near the kinematic circle's)
 {
-  const s = createBuggy();
+  const s = settled();
   drive(s, { throttle: 1, steer: 1, brake: 0, handbrake: false }, FLAT, 4);
   const kinCap = Math.abs(s.u) * Math.tan(0.55) / 2.2 + 0.35;
   check('standing-start full lock arcs, no pirouette', Math.abs(s.r) < kinCap * 1.4,
@@ -187,14 +201,14 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('the arc makes way', Math.hypot(s.x, s.z) > 6);
 }
 
-// 13. steer at a genuine standstill: nothing rotates
+// 14. steer at a genuine standstill: nothing rotates
 {
-  const s = createBuggy();
+  const s = settled();
   drive(s, { throttle: 0, steer: 1, brake: 0, handbrake: false }, FLAT, 3);
   check('no yaw at standstill', Math.abs(s.r) < 0.01 && Math.abs(s.heading) < 0.01);
 }
 
-// 14. parked on a real slope: static friction holds it still
+// 15. parked on a real slope: static friction holds it still
 {
   const slope = { h: 0, gx: 0.18, gz: 0.10 }; // ~20% grade, well inside mu
   const s = createBuggy();
@@ -203,25 +217,129 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
     `crept ${Math.hypot(s.x, s.z).toFixed(3)} m`);
 }
 
-// 15. ...but a slope STEEPER than the friction cone does slide (honesty)
+// 16. ...but a slope STEEPER than the friction cone does slide (honesty —
+// with arcade MU the cone holds to ~51 deg, so the probe is a real cliff)
 {
-  const cliff = { h: 0, gx: 1.0, gz: 0 };
+  const cliff = { h: 0, gx: 2.2, gz: 0 };
   const s = createBuggy();
   drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, cliff, 6);
   check('over-steep slope still slides', Math.hypot(s.x, s.z) > 1);
 }
 
-// 16. rolling to a stop, it STOPS (no perpetual glide)
+// 17. rolling to a stop, it STOPS (no perpetual glide)
 {
-  const s = createBuggy(); s.u = 6;
+  const s = settled(); s.u = 6;
   drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, 30);
   check('coasts to a real stop', s.u === 0 && Math.abs(s.v) < 0.01, `u=${s.u} v=${s.v.toFixed(3)}`);
+}
+
+// ---- the suspension (DFA-1 quarter-car): the low-g look lives here
+
+// 18. S1 drop test: released from ~1 m, the buggy settles on its springs —
+// a soft low-g arrival, level, still, and at the static ride height
+{
+  const s = createBuggy(); s.y = 1;
+  drive(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, FLAT, 6);
+  check('drop: settles level and still',
+    Math.abs(s.pitch) < 0.02 && Math.abs(s.roll) < 0.02 && Math.abs(s.vy) < 0.05,
+    `pitch=${s.pitch.toFixed(3)} roll=${s.roll.toFixed(3)} vy=${s.vy.toFixed(3)}`);
+  check('drop: rests near the ground line', Math.abs(s.y) < 0.1, `y=${s.y.toFixed(3)}`);
+}
+
+// 19. G1 anti-bounce axiom: full-speed cruise on flat ground never leaves
+// it — zero airborne frames, tiny vertical motion
+{
+  const s = settled(); s.u = TOP_SPEED;
+  const f = drive(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, 8);
+  check('flat-out cruise never bounces airborne', f.air === 0, `air frames=${f.air}`);
+  check('cruise vertical stays quiet', Math.abs(s.vy) < 0.1 && Math.abs(s.y) < 0.15,
+    `vy=${s.vy.toFixed(3)} y=${s.y.toFixed(3)}`);
+}
+
+// 20. brake dive and throttle squat EMERGE from load transfer
+{
+  const s = settled(); s.u = 14;
+  let dive = 0;
+  for (let t = 0; t < 1.2; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 1, handbrake: false }, FLAT, DT);
+    dive = Math.max(dive, s.pitch); // nose-down is positive
+  }
+  check('braking dives the nose', dive > 0.015, `dive=${dive.toFixed(3)} rad`);
+  const q = settled();
+  let squat = 0;
+  for (let t = 0; t < 1.5; t += DT) {
+    stepBuggy(q, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    squat = Math.min(squat, q.pitch); // nose-up is negative
+  }
+  check('throttle squats the tail', squat < -0.008, `squat=${squat.toFixed(3)} rad`);
+}
+
+// 21. a rock under one front wheel kicks that wheel and rolls the body —
+// and the buggy DRIVES OVER it (speed survives; no wall, no stop)
+{
+  const s = settled(); s.u = 8;
+  // a 0.35 m dome in the left front wheel's path only, 6 m ahead
+  const terrain = (st) => {
+    const wh = [0, 0, 0, 0];
+    const sin = Math.sin(st.heading), cos = Math.cos(st.heading);
+    const wx = st.x + (-0.95) * cos + 1.05 * sin;
+    const wz = st.z - (-0.95) * sin + 1.05 * cos;
+    const d = Math.hypot(wx - (-0.95), wz - 6);
+    if (d < 0.8) wh[0] = 0.35 * Math.sqrt(1 - (d / 0.8) * (d / 0.8));
+    return { h: 0, gx: 0, gz: 0, wh };
+  };
+  let maxSusp = 0, maxRollV = 0;
+  for (let t = 0; t < 3; t += DT) {
+    stepBuggy(s, { throttle: 0.5, steer: 0, brake: 0, handbrake: false }, terrain(s), DT);
+    maxSusp = Math.max(maxSusp, s.susp[0] - SUSP_STATIC);
+    maxRollV = Math.max(maxRollV, Math.abs(s.rollV));
+  }
+  check('rock compresses the struck wheel', maxSusp > 0.08, `travel=${maxSusp.toFixed(3)} m`);
+  check('rock excites the body (the bounce)', maxRollV > 0.1, `rollV=${maxRollV.toFixed(3)}`);
+  check('and the buggy drives on through', s.u > 5 && s.z > 15, `u=${s.u.toFixed(1)} z=${s.z.toFixed(1)}`);
+}
+
+// ---- boulders: deflect, thump, NEVER trap (the reverse-out guarantee)
+
+// 22. drive straight into a boulder: it stops you, then reverse pulls
+// straight back out — nothing eats outbound speed
+{
+  const s = settled(); s.u = 8;
+  const rockAt = { x: 0, z: 12, r: 1.4 };
+  let hit = 0;
+  for (let t = 0; t < 4; t += DT) {
+    stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    hit = Math.max(hit, deflectBuggy(s, rockAt.x, rockAt.z, rockAt.r));
+  }
+  check('boulder registers a hit', hit > 2, `inward speed killed=${hit.toFixed(1)}`);
+  const dAtRock = Math.hypot(s.x - rockAt.x, s.z - rockAt.z);
+  check('boulder holds the line', dAtRock >= 1.4 + 1.1, `d=${dAtRock.toFixed(2)}`);
+  // now reverse out for 3 s: the buggy must actually get away
+  for (let t = 0; t < 3; t += DT) {
+    stepBuggy(s, { throttle: -1, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    deflectBuggy(s, rockAt.x, rockAt.z, rockAt.r);
+  }
+  const dAfter = Math.hypot(s.x - rockAt.x, s.z - rockAt.z);
+  check('reverse pulls it straight back out', dAfter > dAtRock + 3,
+    `d=${dAfter.toFixed(1)} (was ${dAtRock.toFixed(1)})`);
+}
+
+// 23. a glancing hit keeps most speed (tangential survives)
+{
+  const s = settled(); s.u = 10;
+  const wasU = 10;
+  // rock offset from the path: a graze, not a head-on
+  for (let t = 0; t < 2; t += DT) {
+    stepBuggy(s, { throttle: 0.5, steer: 0, brake: 0, handbrake: false }, FLAT, DT);
+    deflectBuggy(s, 1.9, 10, 1.0);
+  }
+  check('glancing boulder hit keeps most speed', s.u > wasU * 0.5, `u=${s.u.toFixed(1)}`);
 }
 
 // ---- the flip layer (the Dune Flip Arena tribute): air control is real,
 // rotations count, landings are judged
 
-// 17. airborne pitch authority integrates the commanded rate
+// 24. airborne pitch authority integrates the commanded rate
 {
   const s = createBuggy(); s.airborne = true; s.vy = 4; s.y = 0; s.u = 10;
   const deep = { h: -200, gx: 0, gz: 0 };
@@ -229,13 +347,12 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('air pitch authority', Math.abs(s.pitch - 2.6) < 0.1, `pitch=${s.pitch.toFixed(2)}`);
 }
 
-// 18. a full rotation flags a flip; landing level flags it CLEAN
+// 25. a full rotation flags a flip; landing level flags it CLEAN
 {
-  const s = createBuggy(); s.airborne = true; s.vy = 6; s.y = 0; s.u = 12;
+  const s = createBuggy(); s.airborne = true; s.vy = 6; s.y = 0.6; s.u = 12;
   const flat = { h: 0, gx: 0, gz: 0 };
   let flip = false, clean = false;
-  for (let t = 0; t < 6; t += DT) {
-    // pitch hard until one full rotation is banked, then level out
+  for (let t = 0; t < 8; t += DT) {
     const spin = s.airSpin < Math.PI * 2 ? 1 : (Math.abs(((s.pitch % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) > 0.15 ? 1 : 0);
     const f = stepBuggy(s, { throttle: s.airborne ? spin : 0, steer: 0, brake: 0, handbrake: false }, flat, DT);
     if (f.flip) flip = true;
@@ -245,9 +362,9 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('full rotation lands a clean flip', flip && clean, `flip=${flip} clean=${clean}`);
 }
 
-// 19. landing inverted crashes out (speed mostly gone), never "dies"
+// 26. landing inverted crashes out (speed mostly gone), never "dies"
 {
-  const s = createBuggy(); s.airborne = true; s.vy = 3; s.y = 0; s.u = 14;
+  const s = createBuggy(); s.airborne = true; s.vy = 3; s.y = 0.6; s.u = 14;
   s.pitch = Math.PI; // upside down, no time to recover
   const flat = { h: 0, gx: 0, gz: 0 };
   let impact = 0;
@@ -258,20 +375,21 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('inverted landing crashes out', s.u < 14 * 0.35 && impact >= 6, `u=${s.u.toFixed(1)} impact=${impact.toFixed(1)}`);
 }
 
-// 20. grounded attitude settles level again
+// 27. grounded attitude settles level again (springs, then mercy for
+// crashed attitudes beyond them)
 {
-  const s = createBuggy(); s.pitch = 0.4; s.roll = -0.3; s.u = 5;
-  drive(s, { throttle: 0.3, steer: 0, brake: 0, handbrake: false }, FLAT, 2);
-  check('attitude settles on the ground', Math.abs(s.pitch) < 0.02 && Math.abs(s.roll) < 0.02);
+  const s = settled(); s.pitch = 0.4; s.roll = -0.3; s.u = 5;
+  drive(s, { throttle: 0.3, steer: 0, brake: 0, handbrake: false }, FLAT, 3);
+  check('attitude settles on the ground', Math.abs(s.pitch) < 0.03 && Math.abs(s.roll) < 0.03,
+    `pitch=${s.pitch.toFixed(3)} roll=${s.roll.toFixed(3)}`);
 }
 
-// ---- lateral stability (docs/DYNAMICS.md): slides before tipping on the
-// flat; rolls on side-slopes and trips; rollovers hand off to the judged
-// landing
+// ---- lateral stability: slides before tipping on the flat; rolls on
+// side-slopes and trips; rollovers hand off to the judged landing
 
-// 21. flat-ground max-effort cornering NEVER rolls (LTR tops out ~0.38)
+// 28. flat-ground max-effort cornering NEVER rolls
 {
-  const s = createBuggy(); s.u = 16;
+  const s = settled(); s.u = 16;
   let rolled = false;
   for (let t = 0; t < 5; t += DT) {
     const f = stepBuggy(s, { throttle: 0.8, steer: 1, brake: 0, handbrake: false }, FLAT, DT);
@@ -280,9 +398,9 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('flat ground: slides, never tips', rolled === false);
 }
 
-// 22. sliding sideways fast into rising ground trips a rollover
+// 29. sliding sideways fast into rising ground trips a rollover
 {
-  const s = createBuggy(); s.u = 6; s.v = 6; // a hard sideways slide...
+  const s = settled(); s.u = 6; s.v = 6; // a hard sideways slide...
   const bank = { h: 0, gx: -0.3, gz: 0 };    // ...into ground rising that way
   let rolled = false;
   for (let t = 0; t < 2 && !rolled; t += DT) {
@@ -292,17 +410,23 @@ check('braking 15 m/s -> ~46.5 m', Math.abs(brakingDistance(15) - 46.53) < 0.1,
   check('trip rollover on a bank', rolled === true);
 }
 
-// 23. the rollover ends in a judged (usually crashed) landing, never a hang
+// 30. the rollover ends in a judged landing, never a hang
 {
-  const s = createBuggy(); s.u = 6; s.v = 6;
+  const s = settled(); s.u = 6; s.v = 6;
   const bank = { h: 0, gx: -0.3, gz: 0 };
   let landed = false;
-  for (let t = 0; t < 8 && !landed; t += DT) {
+  for (let t = 0; t < 10 && !landed; t += DT) {
     const f = stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, bank, DT);
     if (f.landed) landed = true;
   }
   check('rollover comes back down', landed === true);
 }
+
+// 31. sanity: the wheel is genuinely bigger than the old one, and the
+// suspension has real travel (the "larger tyres which bounce" contract)
+check('large wheels', WHEEL_R >= 0.6, `${WHEEL_R}`);
+check('long-travel suspension', SUSP_TRAVEL >= 0.4 && SUSP_STATIC < SUSP_TRAVEL * 0.3,
+  `travel=${SUSP_TRAVEL} static=${SUSP_STATIC.toFixed(3)}`);
 
 if (failed) { console.error(`verify-buggy: ${failed} FAILED`); process.exit(1); }
 console.log('verify-buggy: all green');
