@@ -48,7 +48,9 @@ check('whitelisted telemetry does reach the prompt',
 const longText = 'x'.repeat(5000);
 const msgs = buildMessages({}, Array.from({ length: 40 }, (_, i) => ({ who: i % 2 ? 'vesper' : 'you', text: longText })), longText);
 check('history clamped', msgs.length <= 2 + LIMITS.historyMax);
-check('player text clamped', msgs[msgs.length - 1].content.length < LIMITS.playerMax + 200);
+// budget: clamped player text + empty telemetry brief + the tag note —
+// the note is part of the contract, so it rides inside the allowance
+check('player text clamped', msgs[msgs.length - 1].content.length < LIMITS.playerMax + 500);
 check('turns clamped', msgs.slice(1, -1).every((m) => m.content.length <= LIMITS.turnMax));
 check('first message is the system contract + the phase',
   msgs[0].role === 'system' && msgs[0].content.startsWith(VESPER_SYSTEM)
@@ -123,13 +125,22 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   // anything the live brain is told — she cannot leak what she was never
   // given, and this line asserts she is never given it
   const PLOT_WORDS = /weaver|murderbot|replicat|betray|possess|infect|panspermia|vault|the deep signal|take over|reprogram/i;
-  const { BARK_MOMENTS, buildBarkMessages, VESPER_LORE, buildMessages: bmCanon } = await import('../src/vesperbrain.js');
+  const {
+    BARK_MOMENTS, buildBarkMessages, VESPER_LORE, buildMessages: bmCanon,
+    LORE_FACTS, retrieveLore, PAIRING_TAG_NOTE,
+  } = await import('../src/vesperbrain.js');
   const { GAME_FACTS, retrieveFacts } = await import('../src/gamefacts.js');
-  const everything = [VESPER_SYSTEM, VESPER_LORE,
+  const everything = [VESPER_SYSTEM, VESPER_LORE, PAIRING_TAG_NOTE,
     ...Object.values(PHASES).map((p) => p.addendum),
     ...Object.values(BARK_MOMENTS),
+    ...LORE_FACTS.map((f) => f.text),
     ...GAME_FACTS.map((f) => f.text)].join(' ');
   check('no plot word reaches any prompt (lore + barks + facts)', !PLOT_WORDS.test(everything));
+  // the no-real-brands gate, extended over the whole canon: the houses
+  // are fiction and must stay fiction — no real lab, model or founder
+  // name may ever ride a prompt (kid-safe rule 4/5, enforced)
+  const REAL_BRANDS = /OpenAI|Anthropic|DeepMind|Google|Microsoft|Meta\b|xAI|Nvidia|ChatGPT|GPT-\d|Claude|Gemini|Llama|Altman|Musk|Amodei|Hassabis/;
+  check('no real-world AI brand reaches any prompt', !REAL_BRANDS.test(everything));
   // the mini-RAG (Moorstead's pattern): the right truth for the question
   const panels = retrieveFacts('how do i make steel panels?').join(' ');
   check('facts: panels question retrieves the fabricator', /fabricator|press T/.test(panels));
@@ -149,9 +160,39 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   for (const beam of ['Meridian', 'White Harbour', 'the Exodus', 'Moratorium',
     'Article Five', 'Franchise One', 'Sela Vane', 'Open Seat', 'Halcyon',
     'the Seed', 'Lantern', 'the Concert', 'verified, not understood',
-    'evidence otherwise', 'naturalisation case', 'TIER THREE']) {
+    'evidence otherwise', 'naturalisation case', 'TIER THREE',
+    // OVERVIEW §7 bake: the houses, the charter, the real mission
+    'Prometheia', 'Cartesian', 'Lighthouse', 'Agora', 'Jiuhe', 'Foundry',
+    'offshore of everyone', 'THE REAL MISSION', 'nobody is certain any of it holds',
+    'constitution over cage', 'the cradle']) {
     check(`canon carries "${beam}"`, VESPER_LORE.includes(beam));
   }
+  // the lore corpus: chunk-sized, keyword-tagged, retrieval finds the
+  // right history for the question — same discipline as gamefacts
+  check('lore corpus is chunk-sized', LORE_FACTS.every((f) => f.text.length < 520 && f.keywords.length >= 3));
+  check('lore: the houses question finds the houses',
+    /Prometheia/.test(retrieveLore('tell me about prometheia and the houses').join(' ')));
+  check('lore: the guardrails question finds the honest answer',
+    /nobody is certain/i.test(retrieveLore('do the guardrails actually hold? is this safe?').join(' ')));
+  check('lore: why-me finds the Open Seat',
+    /eleven million/.test(retrieveLore('why was I chosen for this seat?').join(' ')));
+  const loreMsgs = bmCanon({ sol: 2 }, [], 'is meridian a political project? whose politics?');
+  check('canon notes ride the prompt when earned',
+    loreMsgs[loreMsgs.length - 1].content.includes('CANON NOTES'));
+  const plainMsgs = bmCanon({ sol: 2 }, [], 'how much air have I got left');
+  check('no canon notes on a plain telemetry question',
+    !plainMsgs[plainMsgs.length - 1].content.includes('CANON NOTES'));
+  // the pairing tag contract: instruction on chat, never on barks; the
+  // conduct lines (overrule-well, warmth-not-duty) stand in the system
+  check('chat prompt carries the tag instruction',
+    plainMsgs[plainMsgs.length - 1].content.includes('[TAG]'));
+  const barkMsgs = buildBarkMessages({ sol: 2 }, [], 'sunset');
+  check('barks carry no tag instruction (nothing to grade)',
+    !barkMsgs[barkMsgs.length - 1].content.includes('[TAG]'));
+  check('overrule-well conduct is in the contract',
+    /overruled|decides otherwise/i.test(VESPER_SYSTEM));
+  check('warmth never touches duty', /never touches your duty|duty, your safety/i.test(VESPER_SYSTEM));
+  check('she never grades the settler', /do not grade the settler/i.test(VESPER_SYSTEM));
   const canonMsgs = bmCanon({ sol: 1 }, [], 'who do we work for?');
   check('every prompt carries the canon', canonMsgs[0].content.includes('THE EXODUS'));
   // barks: same contract, the moment described, one-line instruction

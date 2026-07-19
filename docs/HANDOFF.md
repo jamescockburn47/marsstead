@@ -58,11 +58,11 @@ LANDFALL ORDERS sheet, chatter discipline).
 
 ## The build queue
 
-1. **Bake the agreed canon** (OVERVIEW §7): history + mission/guardrails
-   into LORE + retrieval chunks; `regard.js` with collaboration-shaped
-   signals and the `[P]/[N]/[D]` relay tag; Pairing Review milestone;
-   her overrule-well conduct. Extend the no-plot-leak and no-real-brands
-   gates over all of it.
+1. ~~Bake the agreed canon~~ DONE 2026-07-19 (see OVERVIEW §7's note):
+   canon + LORE_FACTS corpus + regard.js + tag + Pairing Review, all
+   gated (verify-regard, extended verify-vesperbrain). The relay file
+   changed too — EVO deploys now ship server/vesper-relay.mjs alongside
+   the three brain files when the tag contract moves.
 2. **Stage 3 — the hopper** (STRUCTURE.md): plotted semi-cinematic hops,
    payload/fuel decisions, pads and depots. NEVER continuous low-level
    flight over streamed terrain. The ascent is the showreel — budget its

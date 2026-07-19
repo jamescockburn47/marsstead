@@ -51,6 +51,10 @@ import {
   serialize as serializeBurrow, deserialize as deserializeBurrow,
 } from './burrow.js';
 import { BurrowConsole } from './burrowconsole.js';
+import {
+  createRegard, applySignal, noteTalk, decay as regardDecay, tone as regardTone,
+  verdict as regardVerdict, serializeRegard, deserializeRegard,
+} from './regard.js';
 import { WorksConsole } from './worksconsole.js';
 import { CrownLayer } from './crownlayer.js';
 import { TrackLayer } from './tracklayer.js';
@@ -267,7 +271,12 @@ class Game {
         || (Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z) < 9
           && count(this.roverStore, 'airlock-ring') > 0),
       onPlan: (piece, c, d) => {
-        if (planBurrow(this.burrow, piece, c, d)) this.sayOnce('dig-start');
+        if (planBurrow(this.burrow, piece, c, d)) {
+          this.sayOnce('dig-start');
+          // a plan committed on the heels of a conversation is a plan
+          // SHARED — the collaboration-shaped signal, zero tokens
+          if (this.t - this.lastTalk < 45) applySignal(this.regard, 'consulted');
+        }
       },
       onCancel: (c, d) => cancelBurrowPlan(this.burrow, c, d),
       onInstallRing: () => {
@@ -319,6 +328,12 @@ class Game {
     // thing (invariant 4) and it does not ride the save.
     this.vesperHistory = [];
     this.lastTalk = -Infinity; // game-time of the last live exchange
+    // the hidden partnership score (OVERVIEW §6): rides the save, never
+    // the screen — warmth in her voice and a seasonal Review, nothing else
+    this.regard = createRegard();
+    this.pendingVesperQuestion = false;
+    this.lastSeason = null;
+    this.lastRegardSol = 0;
     this.voice = new VesperVoice({ onTranscript: (t) => this.talkToVesper(t) });
 
     // ---- the text channel: ENTER opens a line to VESPER, typed words ride
@@ -479,6 +494,7 @@ class Game {
     // save, so rapport survives the browser closing
     if (Array.isArray(s.vesperLog) && s.vesperLog.length) this.vesperHistory = s.vesperLog;
     this.talks = s.talks || 0;
+    this.regard = deserializeRegard(s.regard); // the pairing, as it stood
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -514,6 +530,7 @@ class Game {
       settlerName: this.settlerName,
       vesperLog: this.vesperHistory.slice(-6),
       talks: this.talks || 0,
+      regard: serializeRegard(this.regard),
     })).catch(() => {});
   }
 
@@ -924,6 +941,8 @@ class Game {
     for (const [id, n] of this.costsOf(type)) remove(this.suit, id, n);
     this.machines.push(createMachine(type, x, z, this.camYaw));
     this.machineLayer.sync(this.machines, meshGroundHeight);
+    // a bench raised on the heels of a conversation: a plan shared
+    if (this.t - this.lastTalk < 45) applySignal(this.regard, 'consulted');
   }
 
   removeMachine() {
@@ -1184,6 +1203,7 @@ class Game {
       gridShed: this.grid && this.grid.shed.length ? this.grid.shed.join(', ') : '',
       benches: [...new Set(this.machines.map((m) => m.type))].join(', '),
       lastLine: this.hud.vesperLine.textContent,
+      pairing: regardTone(this.regard),
     };
   }
 
@@ -1197,6 +1217,16 @@ class Game {
     this.talks = (this.talks || 0) + 1;
     this.vesperHistory.push({ who: 'you', text });
     while (this.vesperHistory.length > 8) this.vesperHistory.shift();
+    // the zero-token signals (regard.js): her question answered; company
+    // kept in the dark hours. The semantic ones ride the reply's tag.
+    noteTalk(this.regard, Math.floor(this.simMillis / 88775244));
+    if (this.pendingVesperQuestion) {
+      applySignal(this.regard, 'answered');
+      this.pendingVesperQuestion = false;
+    }
+    if ((this.sunEl ?? 0) < 0 && !this.inLander && !this.insidePressurised) {
+      applySignal(this.regard, 'company');
+    }
     const body = JSON.stringify({
       state: sanitizeState(this.brainState()),
       history: this.vesperHistory.slice(-6),
@@ -1209,12 +1239,19 @@ class Game {
       signal: AbortSignal.timeout(20000),
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
-      .then(({ line, mood }) => {
+      .then(({ line, mood, tag }) => {
         if (!line) throw new Error('empty reply');
         this.lastTalk = this.t;
         this.vesperHistory.push({ who: 'vesper', text: line });
         this.hud.say(line, this.t, Math.max(7, line.length / 12));
         this.voice.speak(line, mood || 'calm', { live: true });
+        // the ~5-token pairing tag: the model's judgement of the
+        // EXCHANGE's shape feeds the hidden score; her question, if she
+        // asked one, arms the answered signal for the next reply
+        if (tag === 'P' || tag === 'N' || tag === 'D') {
+          applySignal(this.regard, `tag-${tag}`);
+        }
+        this.pendingVesperQuestion = /\?\s*$/.test(line);
       })
       .catch(() => this.say('radio-static'));
   }
@@ -1850,6 +1887,21 @@ class Game {
     const tau = tauAt(mtc(this.simMillis), sol);
     const L = lightState(sunEl, tau);
     this.L = L; // renderFrame's drives read the same state this frame set
+
+    // the pairing's slow arithmetic: quiet sols decay the hidden score;
+    // each season turn files the coarse official PAIRING REVIEW from
+    // White Harbour (never a number, never her voice — paper first, then
+    // the mind may note it)
+    if (sol !== this.lastRegardSol) {
+      this.lastRegardSol = sol;
+      regardDecay(this.regard, sol);
+    }
+    const seas = season(this.simMillis);
+    if (this.lastSeason && seas !== this.lastSeason && this.booted) {
+      this.hud.say(`PAIRING REVIEW — WHITE HARBOUR: ${regardVerdict(this.regard)}. Filed with the charter record.`, this.t, 9);
+      this.say('pairing-review');
+    }
+    this.lastSeason = seas;
 
     // ---- the grid: sources, bank, loads — and the shed ladder when the
     // arithmetic fails. Computed FIRST: everything below reads this truth.

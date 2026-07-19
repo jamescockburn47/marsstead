@@ -12,7 +12,7 @@
 // on both ends:
 import {
   buildMessages, buildBarkMessages, BARK_MOMENTS, sanitizeState, clampLine,
-  moodFor, moodForEvent, ttsPlan,
+  moodFor, moodForEvent, ttsPlan, splitPairingTag,
   CHAT_PARAMS, LIMITS, MOODS, VOICE_ID, cleanStr,
 } from '../src/vesperbrain.js';
 
@@ -132,9 +132,18 @@ async function handleChat(req, res, ip) {
     if (!r.ok) throw new Error(`minimax ${r.status}`);
     const data = await r.json();
     const raw = data?.choices?.[0]?.message?.content;
-    const line = clampLine(raw);
+    // the pairing tag rides the RAW text (clampLine strips brackets):
+    // pull it first, ship it beside the line — chat only, barks grade
+    // nothing and get no tag instruction
+    const { tag, text: untagged } = bark
+      ? { tag: null, text: raw }
+      : splitPairingTag(raw);
+    const line = clampLine(untagged);
     if (!line) throw new Error('empty completion');
-    send(res, 200, { ok: true, line, mood: bark ? moodForEvent(bark, state) : moodFor(state) });
+    send(res, 200, {
+      ok: true, line, tag,
+      mood: bark ? moodForEvent(bark, state) : moodFor(state),
+    });
   } catch (err) {
     console.error('chat:', err.message);
     send(res, 502, { ok: false });

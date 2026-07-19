@@ -207,14 +207,16 @@ tested — and the answer depends on how well *they* held up their half.
 
 ## 7. Still to bake (agreed in chat, not yet in code)
 
-1. The Scaling Years / houses / apolitical-charter canon → VESPER_LORE
-   (compressed) + history chunks in the retrieval corpus.
-2. The real-mission and guardrails canon → same treatment; tier-3 gains
-   "the real mission" and "whether the guardrails hold."
-3. `regard.js` — the hidden partnership score: pure, saved, fed by
-   zero-token behavioural signals (plans shared, questions answered,
-   corrections, dark-hours company, silence decay) plus a ~5-token
-   `[P]/[N]/[D]` partnership tag per exchange in the relay contract; her
-   overrule-well conduct into the system prompt; the Pairing Review as a
-   seasonal instrument-channel milestone.
-4. The temptation scene mechanics themselves wait for Act 5's build.
+*(Items 1–3 BAKED 2026-07-19: the Scaling Years / houses / apolitical
+charter and the real-mission-and-guardrails canon live in VESPER_LORE
+with tier-3 scoping, plus LORE_FACTS — a keyword-retrieved history
+corpus riding prompts as CANON NOTES; `regard.js` holds the hidden
+partnership score, saved, fed by the zero-token signals (consulted
+before plans, questions answered, dark-hours company, silence decay)
+and the `[P]/[N]/[D]` tag the relay strips from each exchange; the
+overrule-well and warmth-never-duty conduct is in the system prompt;
+the Pairing Review files each season turn — EXEMPLARY / SUFFICIENT /
+UNDER REVIEW, never a number. The no-plot-leak gate covers all of it,
+and a no-real-brands gate now stands beside it.)*
+
+1. The temptation scene mechanics themselves wait for Act 5's build.

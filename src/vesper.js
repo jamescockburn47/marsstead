@@ -27,6 +27,7 @@ export const EVENTS = [
   'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
   'power-low', 'no-charge', 'drone-deployed',
   'brief-wake', 'brief-power', 'brief-dig', 'brief-works',
+  'pairing-review',
 ];
 
 // the first-sol briefing's deterministic floor: if the relay is down, the

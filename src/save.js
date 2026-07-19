@@ -85,6 +85,9 @@ export function snapshotSave(state) {
     // her memory of you (additive): the last exchanges + how often you talk
     vesperLog: Array.isArray(state.vesperLog) ? state.vesperLog.slice(-6) : [],
     talks: Number.isFinite(state.talks) ? Math.max(0, Math.round(state.talks)) : 0,
+    // the hidden partnership score (additive): a small opaque record —
+    // regard.js launders it again on the way back in
+    regard: state.regard && typeof state.regard === 'object' ? state.regard : null,
     savedAt: Date.now(),
   };
 }
@@ -228,6 +231,7 @@ export function acceptSave(meta) {
         .map((h) => ({ who: h.who, text: h.text.replace(/[<>{}`$\\]/g, '').slice(0, 240) }))
       : [],
     talks: Number.isFinite(meta.talks) ? Math.max(0, Math.min(100000, Math.round(meta.talks))) : 0,
+    regard: meta.regard && typeof meta.regard === 'object' ? meta.regard : null,
     savedAt: meta.savedAt || 0,
   };
 }
