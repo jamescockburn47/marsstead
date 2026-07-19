@@ -419,6 +419,43 @@ const mkGround = (at, s) => {
   check('cross-slope cruise does not flip', rolled === false);
 }
 
+// 21h. THE nose-stand bug (James, 2026-07-19 screenshot): a buggy left
+// standing on its nose — skid plate holding it up, no wheel touching —
+// must right itself and resettle; it must never freeze in a crashed frame
+{
+  const flat = () => 0;
+  const s = createBuggy(); s.y = 0.9; s.pitch = 1.35; s.airborne = true;
+  for (let t = 0; t < 5; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, mkGround(flat, s), DT);
+  }
+  check('nose-stand rights itself', Math.abs(s.pitch) < 0.05 && Math.abs(s.roll) < 0.05,
+    `pitch=${s.pitch.toFixed(2)}`);
+  check('and resettles on its wheels', !s.airborne && Math.abs(s.y) < 0.12 && Math.abs(s.vy) < 0.05,
+    `y=${s.y.toFixed(2)} vy=${s.vy.toFixed(2)}`);
+}
+
+// 21i. ...even with the throttle held: flip authority needs actual flight,
+// so a perched body cannot be reaction-wheeled deeper into the ground
+{
+  const flat = () => 0;
+  const s = createBuggy(); s.y = 0.9; s.pitch = 1.35; s.airborne = true;
+  for (let t = 0; t < 5; t += DT) {
+    stepBuggy(s, { throttle: 1, steer: 0, brake: 0, handbrake: false }, mkGround(flat, s), DT);
+  }
+  check('nose-stand rights itself under held throttle', Math.abs(s.pitch) < 0.35,
+    `pitch=${s.pitch.toFixed(2)}`);
+}
+
+// 21j. a roof arrival (fully inverted) rights itself the same way
+{
+  const flat = () => 0;
+  const s = createBuggy(); s.y = 1.2; s.pitch = Math.PI * 0.95; s.airborne = true;
+  for (let t = 0; t < 6; t += DT) {
+    stepBuggy(s, { throttle: 0, steer: 0, brake: 0, handbrake: false }, mkGround(flat, s), DT);
+  }
+  check('roof arrival rights itself', Math.abs(s.pitch) < 0.05, `pitch=${s.pitch.toFixed(2)}`);
+}
+
 // ---- boulders: deflect, thump, NEVER trap (the reverse-out guarantee)
 
 // 22. drive straight into a boulder: it stops you, then reverse pulls

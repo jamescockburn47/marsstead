@@ -149,7 +149,8 @@ export function createBuggy(x = 0, z = 0, heading = 0) {
     u: 0, v: 0, r: 0,       // body frame: forward, lateral, yaw rate
     vy: 0, airborne: false,
     airT: 0,                // seconds since anything last touched ground
-    skidTouch: false,       // the chassis skid plate is in contact
+    skidTouch: false,       // the skid plate struck THIS step
+    skidT: 0,               // sticky skid-contact window (contact flickers)
     steer: 0,               // smoothed road-wheel angle
     drive: 0,               // smoothed throttle — keys step, engines ramp
     pitch: 0, roll: 0,      // sprung body attitude (nose-down +, right-up +)
@@ -345,14 +346,6 @@ export function stepBuggy(s, input, ground, dt) {
       if (Math.abs(s.r) < 0.02) s.r = 0;
     }
 
-    // recovery from a crashed attitude: springs speak small angles only —
-    // beyond them (upside-down-ish arrivals) the buggy rights itself over
-    // a second or so (arcade mercy: stuck-on-the-roof is not fun)
-    if (Math.abs(s.pitch) > 0.6 || Math.abs(s.roll) > 0.6) {
-      const right = Math.min(1, 3 * dt);
-      s.pitch *= 1 - right; s.roll *= 1 - right;
-      s.pitchV *= 1 - right; s.rollV *= 1 - right;
-    }
   } else {
     // ballistic: no tyre forces, yaw settles — but the FLIP AXES are
     // yours: throttle/steer become pitch/roll authority (reaction wheels
@@ -360,13 +353,16 @@ export function stepBuggy(s, input, ground, dt) {
     // time means flip time.
     s.airT += dt;
     s.r *= 1 - Math.min(1, 0.8 * dt);
-    const dPitch = input.throttle * PITCH_RATE * dt;
-    const dRoll = -input.steer * ROLL_RATE * dt + s.rollKick * dt;
+    // flip authority needs actual FLIGHT: a body perched on its skid
+    // plate (nose-stand, roof) gets no reaction-wheel tricks
+    const flying = s.skidT <= 0;
+    const dPitch = flying ? input.throttle * PITCH_RATE * dt : 0;
+    const dRoll = (flying ? -input.steer * ROLL_RATE : 0) * dt + s.rollKick * dt;
     s.pitch += dPitch;
     s.roll += dRoll;
     s.pitchV = 0; s.rollV = 0; // the flip axes own attitude in the air
     s.airSpin += Math.abs(dPitch) + Math.abs(dRoll);
-    flags.airborne = true;
+    flags.airborne = flying;
   }
   s.airborne = !grounded;
 
@@ -449,8 +445,15 @@ export function stepBuggy(s, input, ground, dt) {
     }
     if (lift > 0) {
       s.skidTouch = true; // a body in ground contact is not flying
+      s.skidT = 0.3;      // ...and stays "in contact" through the flicker
       s.y += Math.min(lift, 0.15); // the strike lifts the body out (rate-capped)
-      if (s.vy < 0) { touchVy = Math.max(touchVy, -s.vy); s.vy *= -0.2; }
+      if (s.vy < 0) {
+        touchVy = Math.max(touchVy, -s.vy);
+        // a crashed pose RESTS on the plate (recovery needs steady
+        // contact); a passing scrape keeps its little bounce
+        const crashed = Math.abs(s.pitch) > 0.3 || Math.abs(s.roll) > 0.3;
+        s.vy = crashed ? 0 : -s.vy * 0.2;
+      }
       // ...rotates it off the strike (grounded springs get a rate kick,
       // airborne attitude turns directly — the flip axes zero pitchV)...
       s.pitchV += (tailP - noseP) * 60 * dt;
@@ -480,6 +483,28 @@ export function stepBuggy(s, input, ground, dt) {
         }
       }
     }
+  }
+
+  // ---- recovery from a crashed attitude, on WHEELS or on the SKID
+  // PLATE: springs speak small angles only — beyond them (nose-stands,
+  // roof arrivals) the buggy rights itself over a second or so (arcade
+  // mercy: parked on your nose is not fun). This MUST include skid
+  // contact: a nose-stand has no wheel on the ground, and a body resting
+  // on its plate would otherwise wait forever for a recovery that only
+  // ran in the wheels-grounded branch.
+  s.skidT = Math.max(0, s.skidT - dt);
+  // two righting regimes, both needed: any contact rights a CRASHED
+  // attitude (beyond the springs entirely), and plate-rest without a
+  // wheel down keeps easing level regardless — a body carried by its
+  // skid plate is never a stable end state, it rights until the wheels
+  // can catch and the springs take over.
+  const crashedAtt = Math.abs(s.pitch) > 0.6 || Math.abs(s.roll) > 0.6;
+  const plateRest = s.skidT > 0 && !grounded
+    && (Math.abs(s.pitch) > 0.15 || Math.abs(s.roll) > 0.15);
+  if (((grounded || s.skidT > 0) && crashedAtt) || plateRest) {
+    const right = Math.min(1, 3 * dt);
+    s.pitch *= 1 - right; s.roll *= 1 - right;
+    s.pitchV *= 1 - right; s.rollV *= 1 - right;
   }
 
   // ---- touchdown after a real flight: the LANDING is judged — arriving
