@@ -84,6 +84,7 @@ import {
 } from './refine.js';
 import { RigLayer } from './riglayer.js';
 import { TitleScreen } from './title.js';
+import { TouchControls } from './touch.js';
 import {
   MACHINE_TYPES, createMachine, canPlaceMachine, machineFeed, machineTick,
   machineTake, machineOutCount,
@@ -298,6 +299,12 @@ class Game {
         this.applyQuality(decideTier({ ...gfxSig, webgpu: !!a }).tier);
       }).catch(() => { /* the optimistic opening stands */ });
     }
+
+    // touch-screen controls: an input adapter over the same key bus and
+    // orbit camera the keyboard/mouse feed (phones and tablets; ?touch
+    // forces it for the dev loop)
+    this.touch = new TouchControls(this);
+    this.touch.sync();
 
     this.say('wake');
     this.t = 0;
@@ -1062,6 +1069,7 @@ class Game {
 
     // ---- the light of Mars
     this.frameWorld(dt);
+    this.touch.tick();
     this.watchFrame(dt);
     this.renderFrame(dt);
     requestAnimationFrame((n) => this.frame(n));
