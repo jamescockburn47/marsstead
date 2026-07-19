@@ -14,6 +14,7 @@
 // Numbers are tuned for FUN inside that shape, not for Aerospace.
 
 import { G_MARS } from './physics.js';
+import { hash2 } from './noise.js';
 
 // ---- the craft ------------------------------------------------------------
 export const HOPPER_DRY_KG = 380;    // a skeletal frame: engine, cradle, avionics
@@ -61,6 +62,31 @@ export function fuelForKm(distKm, payloadKg = 0) {
 export const MIN_HOP_KM = 4;         // under this the buggy is the answer
 export const APEX_FRACTION = 0.25;   // 45° ballistic: apex = range / 4
 
+// the descent ellipse (STRUCTURE.md): a PAD is a free, exact landing; open
+// ground costs honesty — you arrive somewhere inside an ellipse that grows
+// with the hop (real EDL truth: longer flights spread further, mostly
+// downtrack). Deterministic in the chosen target, so every client and
+// every replan agree on where "there" actually is.
+export const ELLIPSE_MIN_M = 220;
+export function descentEllipseM(distKm) {
+  return { along: Math.min(2600, ELLIPSE_MIN_M + distKm * 8),
+    cross: Math.min(1300, ELLIPSE_MIN_M * 0.6 + distKm * 4) };
+}
+// where the hop truly ends: exact onto a pad, scattered onto open ground
+export function landingPoint(from, to, distKm, onPad) {
+  if (onPad) return [to[0], to[1]];
+  const e = descentEllipseM(distKm);
+  const dx = to[0] - from[0], dz = to[1] - from[1];
+  const len = Math.hypot(dx, dz) || 1;
+  const ax = dx / len, az = dz / len;             // downtrack unit
+  const u = (hash2(Math.round(to[0]) * 7 + 1, Math.round(to[1]) * 7 + 2) - 0.5) * 2;
+  const v = (hash2(Math.round(to[0]) * 13 + 5, Math.round(to[1]) * 13 + 6) - 0.5) * 2;
+  return [
+    to[0] + ax * u * e.along + -az * v * e.cross,
+    to[1] + az * u * e.along + ax * v * e.cross,
+  ];
+}
+
 export function createHopper() {
   return {
     fuelKg: 0,
@@ -97,14 +123,16 @@ export function hopDurations(distKm) {
   return { ascent: 8, arc, descent: 9, total: 8 + arc + 9 };
 }
 
-export function beginHop(h, from, to, payloadKg = 0) {
+export function beginHop(h, from, to, payloadKg = 0, onPad = false) {
   const plan = planHop(h, from, to, payloadKg);
   if (!plan.ok) return false;
   h.fuelKg = Math.max(0, h.fuelKg - plan.fuelNeed); // spent at ignition, all of it
+  const land = landingPoint(from, to, plan.distKm, onPad);
   const dur = hopDurations(plan.distKm);
   h.state = 'ascent';
   h.hop = {
-    from: [...from], to: [...to],
+    from: [...from], to: land,       // the flight flies to the TRUE landing
+    aim: [...to],                    // …the console's mark, kept for the map
     distKm: plan.distKm, payloadKg,
     t: 0, dur,
     apexM: plan.distKm * 1000 * APEX_FRACTION,

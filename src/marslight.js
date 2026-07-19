@@ -91,6 +91,41 @@ export function lightState(sunEl, tau = TAU_CLEAR) {
   };
 }
 
+// ---- the altitude ladder (DESIGN.md's "rusty edge of space") ---------------
+// The hopper climbs OUT of the light: dust and air thin beneath you with
+// a ~9 km scale height, and every channel follows — the sky dries from
+// butterscotch to violet to black-at-noon, stars come out in daytime,
+// the sun hardens from dusty-soft to vacuum key light, the fog (aerial
+// perspective) dies, and the horizon collapses into the LIMB: a thin
+// butterscotch band fringed blue over the black. Pure: surface state in,
+// altitude-modified state out, plus the limb strength the dome shader
+// reads. verify-marslight holds the ladder's facts.
+export function altitudeLight(L, altM = 0) {
+  const a = Math.max(0, altM);
+  const thin = 1 - Math.exp(-a / 9000);         // how much sky is BELOW you
+  const SPACE = [0.004, 0.004, 0.008];
+  const zen = mix3(L.skyZenith, SPACE, clamp01(thin * 1.35));
+  const hor = mix3(L.skyHorizon, SPACE, thin * thin); // the horizon lingers, then goes
+  const stars = Math.max(L.starVisibility, clamp01(thin * 1.1) * 0.92);
+  return {
+    ...L,
+    skyZenith: zen,
+    skyHorizon: hor,
+    sunIntensity: clamp01(L.sunIntensity * (1 + 0.3 * thin)),
+    haloStrength: L.haloStrength * (1 - 0.9 * thin),
+    ambientColour: mix3(L.ambientColour, STARLIT_NIGHT, thin * 0.7),
+    ambientIntensity: L.ambientIntensity * (1 - 0.72 * thin),
+    fogColour: hor,
+    fogDensity: L.fogDensity * Math.exp(-a / 6000),
+    shadowSoftness: L.shadowSoftness * (1 - thin),
+    starVisibility: stars,
+    thin,
+    // the limb only reads once you stand above most of the haze, and it
+    // needs sunlight somewhere on the arc of the world to shine at all
+    limb: clamp01((a - 3500) / 11000) * clamp01(0.25 + L.sunIntensity + L.haloStrength),
+  };
+}
+
 // the surface temperature the HUD reads, deg C — a shaped diurnal curve,
 // not a climate model yet (Phase 1 brings Ls and latitude in properly)
 export function surfaceTempC(sunEl, tau = TAU_CLEAR) {

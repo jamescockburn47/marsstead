@@ -76,5 +76,36 @@ const chans = ['skyZenith', 'skyHorizon', 'sunColour', 'haloBlue', 'ambientColou
   check('temp rises with sun', surfaceTempC(30) > surfaceTempC(5));
 }
 
+// ---- the altitude ladder: butterscotch -> violet -> black-at-noon ----------
+{
+  const { altitudeLight, lightState } = await import('../src/marslight.js');
+  const noon = lightState(60, 0.4);
+  const ground = altitudeLight(noon, 0);
+  const mid = altitudeLight(noon, 8000);
+  const high = altitudeLight(noon, 40000);
+  const ch = (L) => Object.values(L).every((v) => (Array.isArray(v)
+    ? v.every((n) => Number.isFinite(n) && n >= 0 && n <= 1.01)
+    : typeof v !== 'number' || Number.isFinite(v)));
+  check('the ladder returns finite bounded channels', ch(ground) && ch(mid) && ch(high));
+  check('sea level is the surface state (ladder starts at zero)',
+    ground.skyZenith[0] === noon.skyZenith[0] && ground.fogDensity === noon.fogDensity
+    && ground.limb === 0 && ground.thin === 0);
+  check('the zenith blackens on the way up',
+    high.skyZenith[0] < mid.skyZenith[0] && mid.skyZenith[0] < ground.skyZenith[0]);
+  check('black at noon: stars come out in daytime',
+    noon.starVisibility === 0 && high.starVisibility > 0.85);
+  check('aerial perspective dies with the air', high.fogDensity < noon.fogDensity * 0.01);
+  check('the sun hardens (vacuum key light)',
+    high.sunIntensity >= noon.sunIntensity && high.shadowSoftness < noon.shadowSoftness + 1e-9);
+  check('the dust fill dies with the dust',
+    high.ambientIntensity < noon.ambientIntensity * 0.4);
+  check('the limb reads only from altitude',
+    ground.limb === 0 && altitudeLight(noon, 2000).limb === 0 && high.limb > 0.9);
+  check('the halo is a surface phenomenon', high.haloStrength < noon.haloStrength + 1e-9);
+  // the ladder holds at night too: no NaN, limb dims but exists over dusk
+  const dusk = altitudeLight(lightState(-2, 0.4), 30000);
+  check('the ladder survives the dusk', ch(dusk) && dusk.limb > 0);
+}
+
 if (failed) { console.error(`verify-marslight: ${failed} FAILED`); process.exit(1); }
 console.log('verify-marslight: all green');
