@@ -66,12 +66,14 @@ export class MissionOrders {
       cannot fund <b>waits on charge</b>. Keep ahead: more panels, more banks.
 
       <h2>THE LOOP</h2>
-      Dig spoil pays <b>iron ore</b> at the crown → the lander
-      <b>fabricator</b> turns ore to <b>steel panels</b> (stand at the
-      lander, press <b>T</b> — it works from sol one, no prerequisites) →
-      panels become <b>solar arrays</b> (<b>B</b> to place) → sunlight
-      becomes charge → charge becomes structure. Close that loop and the
-      base feeds itself. Then: mill, assembler, more hands, deeper rooms.
+      Dig spoil pays <b>regolith and iron ore</b> — it walks into your
+      bags at the crown (a buggy parked there loads its deck too) → the
+      lander <b>fabricator</b> rakes regolith to ore and smelts ore to
+      <b>steel panels</b> (stand at the lander, press <b>T</b> — it works
+      from sol one, no prerequisites) → two panels become a <b>solar
+      array</b> (<b>B</b> to place) → sunlight becomes charge → charge
+      becomes structure. Close that loop and the base feeds itself.
+      Then: smelter, mill, assembler, more hands, deeper rooms.
 
       <h2>KEYS</h2>
       WASD move · SHIFT lope · E interact/consoles · T work a bench ·

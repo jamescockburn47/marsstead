@@ -19,6 +19,25 @@ function check(name, ok, detail = '') {
   }
   check('recipes are real', ok);
   check('ore becomes steel', RECIPES['iron-ore'].out === 'steel-panel');
+  // the rake: dig spoil IS ore stock — "the house pays for itself" is
+  // literal, and the fab's one sanctioned pipeline walks a sack of
+  // regolith to a steel panel unattended (rake → smelt at one bench)
+  check('regolith rakes to iron ore', RECIPES.regolith
+    && RECIPES.regolith.out === 'iron-ore');
+  check('the rake pipelines into steel at the same bench',
+    RECIPES[RECIPES.regolith.out].out === 'steel-panel');
+}
+
+// 1b. the pipeline in motion: feed regolith alone, harvest steel — the
+//     T-refeed loop (collect tray, feed back) closed by the recipe map
+{
+  const fab = createFab();
+  fabFeed(fab, 'regolith', 1);
+  for (let t = 0; t < 60; t += 0.5) {
+    const d = fabTick(fab, 0.5);
+    if (d && RECIPES[d]) { fabTake(fab, d, 1); fabFeed(fab, d, 1); } // the T loop
+  }
+  check('a sack of spoil ends as a steel panel', fab.out['steel-panel'] === 1);
 }
 
 // 2. the cook: FIFO, per-recipe rates, out-tray fills

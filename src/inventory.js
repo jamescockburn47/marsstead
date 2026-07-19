@@ -14,7 +14,7 @@ export const ITEMS = {
   electronics: { name: 'Electronics', kg: 6, tier: 'salvage' },
   'airlock-ring': { name: 'Airlock ring', kg: 65, tier: 'salvage' },
   // bulk — free, heavy
-  regolith: { name: 'Regolith', kg: 20, tier: 'bulk' }, // per sack
+  regolith: { name: 'Regolith', kg: 14, tier: 'bulk' }, // per sack — two ride a suit
   // mined — the expedition pays in these
   'iron-ore': { name: 'Iron ore', kg: 30, tier: 'mined' },
   ice: { name: 'Ice block', kg: 25, tier: 'mined' },

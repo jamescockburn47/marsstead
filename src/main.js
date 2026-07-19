@@ -47,7 +47,7 @@ import {
 import {
   createBurrow, plan as planBurrow, cancelPlan as cancelBurrowPlan,
   tick as burrowTick, installRing, isPressurised as burrowPressurised,
-  isBedworthy as burrowBedworthy, takeSpoil, warrenReport,
+  isBedworthy as burrowBedworthy, takeSpoil, warrenReport, handsBusy,
   serialize as serializeBurrow, deserialize as deserializeBurrow,
 } from './burrow.js';
 import { BurrowConsole } from './burrowconsole.js';
@@ -1864,7 +1864,9 @@ class Game {
       ? [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length : 0;
     this.grid = tickPower(this.power, (dt * TIME_SCALE) / 3600,
       arrays, batteries, sunEl, tau, {
-        drones: this.burrow.queue.length ? this.droneCount : 0,
+        // hands bill only while a FUNDED face is being cut: a queue
+        // waiting on charge idles them, or the wait starves itself
+        drones: handsBusy(this.burrow) ? this.droneCount : 0,
         cooking,
         warrenRooms: dugRooms,
       });
@@ -2017,13 +2019,33 @@ class Game {
       this.air = Math.min(1, this.air + dt * 0.03 * rep.air);
     }
     if (!wasHome && burrowPressurised(this.burrow)) this.sayOnce('burrow-home');
-    if (this.distToCrown() < 7 && this.burrow.spoil.ore > 0) {
-      // the house pays: banked ore walks into the bags when you pass
+    if (this.distToCrown() < 7
+      && (this.burrow.spoil.ore > 0 || this.burrow.spoil.regolith > 0)) {
+      // the house pays: banked spoil walks into the bags when you pass —
+      // ore first (the richer sack), regolith to fill the rest for the
+      // fab's rake; the buggy parked at the crown loads its deck too
       let moved = 0;
       while (this.burrow.spoil.ore > 0 && canAdd(this.suit, 'iron-ore', 1)) {
         this.burrow.spoil.ore -= 1;
         add(this.suit, 'iron-ore', 1);
         moved += 1;
+      }
+      while (this.burrow.spoil.regolith > 0 && canAdd(this.suit, 'regolith', 1)) {
+        this.burrow.spoil.regolith -= 1;
+        add(this.suit, 'regolith', 1);
+        moved += 1;
+      }
+      if (this.distToRover() < 9) {
+        while (this.burrow.spoil.ore > 0 && canAdd(this.roverStore, 'iron-ore', 1)) {
+          this.burrow.spoil.ore -= 1;
+          add(this.roverStore, 'iron-ore', 1);
+          moved += 1;
+        }
+        while (this.burrow.spoil.regolith > 0 && canAdd(this.roverStore, 'regolith', 1)) {
+          this.burrow.spoil.regolith -= 1;
+          add(this.roverStore, 'regolith', 1);
+          moved += 1;
+        }
       }
       if (moved) this.sayOnce('drill-first-ore');
     }

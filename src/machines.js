@@ -5,11 +5,25 @@
 // where the ore comes home instead of where the lander happened to fall.
 // O2 and methalox ride the electrolyser later; today it makes water.
 
+// THE CHAIN LAW (the economy's contract, held by verify-machines):
+// nothing a settler needs MANY of may cost a finite salvage good — the
+// lander's stock is the head start, never the ceiling. Arrays, banks and
+// drones are renewable from dig spoil + expedition ore; the lander's
+// cable and alloy stay precious BECAUSE they are finite (the winch rig
+// is literally wound from the lander's own spools). And within one
+// bench, no recipe may eat another recipe's output — T refeeds the tray,
+// so an accidental pipeline swallows goods forever (the old mill milled
+// its own machine-parts into frames; the assembler was unbuildable).
+// The ONE sanctioned pipeline is the ore walk: regolith → iron-ore →
+// steel-panel at the fab and smelter, spoil to panel unattended.
 export const MACHINE_TYPES = {
   smelter: {
     name: 'Smelter',
-    costs: [['steel-panel', 1], ['electronics', 1], ['cable', 1]],
+    // a dumb furnace: plate and heat, no electronics — buildable from the
+    // fab's own output, so the upgrade path never gates on salvage
+    costs: [['steel-panel', 2]],
     recipes: {
+      regolith: { out: 'iron-ore', seconds: 8 },
       'iron-ore': { out: 'steel-panel', seconds: 12 },
       silica: { out: 'glass', seconds: 10 },
     },
@@ -28,26 +42,31 @@ export const MACHINE_TYPES = {
   // day, banks carry the night; power.js owns the arithmetic
   'solar-array': {
     name: 'Solar array',
-    costs: [['glass', 1], ['cable', 1], ['electronics', 1]],
+    // thin-film on steel substrate (real tech): the ORDERS loop is code —
+    // dig spoil → rake → smelt → array, closed at the fab on sol one
+    costs: [['steel-panel', 2]],
     recipes: {},
   },
   battery: {
     name: 'Battery bank',
-    costs: [['steel-panel', 1], ['electronics', 1], ['cable', 1]],
+    costs: [['steel-panel', 1], ['electronics', 1]],
     recipes: {},
   },
   mill: {
     name: 'Mill',
-    costs: [['steel-panel', 2], ['electronics', 1], ['cable', 1]],
+    costs: [['steel-panel', 2], ['electronics', 1]],
     recipes: {
       'steel-panel': { out: 'machine-parts', seconds: 14 },
-      'machine-parts': { out: 'drone-frame', seconds: 22 },
+      // boards printed on glass substrate: the silica expedition is the
+      // gate to the component tier — after it, nothing is finite-capped
+      glass: { out: 'electronics', seconds: 16 },
     },
   },
   assembler: {
     name: 'Assembler',
     costs: [['steel-panel', 1], ['machine-parts', 2], ['electronics', 1]],
     recipes: {
+      'steel-panel': { out: 'drone-frame', seconds: 18 },
       'machine-parts': { out: 'methane-tank', seconds: 26 },
       cable: { out: 'winch-rig', seconds: 20 },
     },

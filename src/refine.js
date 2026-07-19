@@ -5,7 +5,13 @@
 // (ore -> steel -> the hab that beats the lander); the built smelter and
 // electrolyser of step 5 will out-rate it, not replace its logic.
 
+// The rake first: Mars regolith is a few percent magnetite fines, and a
+// magnetic rake pulls them — dig spoil IS ore stock, which is what makes
+// "the house pays for itself" literally true. Deliberate pipeline: the
+// fab both makes iron-ore (from regolith) and eats it (into steel), so
+// one bench walks a sack of spoil all the way to a panel unattended.
 export const RECIPES = {
+  regolith: { out: 'iron-ore', seconds: 15 },
   'iron-ore': { out: 'steel-panel', seconds: 25 },
   silica: { out: 'glass', seconds: 20 },
   ice: { out: 'water', seconds: 12 },

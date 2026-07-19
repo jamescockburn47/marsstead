@@ -6,7 +6,9 @@ import {
   BURROW_PIECES, COLS, DEPTHS, LIGHT_REACH, createBurrow, canPlan, plan,
   cancelPlan, tick, installRing, isPressurised, isBedworthy, takeSpoil,
   spoilFor, digCost, serialize, deserialize, warrenReport, gardenLit,
+  handsBusy,
 } from '../src/burrow.js';
+import { createPower, tickPower, spend } from '../src/power.js';
 
 let failed = 0;
 function check(name, ok, detail = '') {
@@ -191,6 +193,50 @@ const digAll = (b, drones = 4) => { let guard = 0; while (b.queue.length && guar
   const { LANDER_BANK_KWH } = await import('../src/power.js');
   const spree = DIG_KWH.shaft + DIG_KWH.corridor + DIG_KWH.bunk;
   check('three digs outrun the lander bank', spree > LANDER_BANK_KWH);
+}
+
+// 7. THE LANDFALL LEDGER (the deadlock that shipped, named and shut):
+//    idle hands draw nothing, so a queue waiting on charge always fills.
+//    Whole first morning simulated on RTG alone — no arrays, no player
+//    skill: shaft, ring, corridor, bunk must reach bedworthy inside
+//    ~13 sim hours (doctrine 6's twenty real minutes at TIME_SCALE 40).
+{
+  check('an empty queue idles the hands', !handsBusy(createBurrow()));
+  const b = createBurrow();
+  plan(b, 'shaft', 0, 1);
+  check('a planned, unfunded head does not bill', !handsBusy(b));
+  tick(b, 0.5, 3, () => true);
+  check('a funded cut bills', handsBusy(b));
+
+  // the morning, tick by tick: 1 sim-minute steps, sun down (worst case)
+  const sim = { b: createBurrow(), p: createPower(), drones: 3 };
+  plan(sim.b, 'shaft', 0, 1);
+  let ringAt = null, bedAt = null, minutes = 0;
+  const planned = new Set(['0,1']);
+  for (; minutes < 20 * 60 && !bedAt; minutes++) {
+    const dtH = 1 / 60;                       // one sim-hour per 60 steps
+    const grid = tickPower(sim.p, dtH, 0, 0, -10, 0.3, {  // night RTG floor
+      drones: handsBusy(sim.b) ? sim.drones : 0,
+      cooking: {}, warrenRooms: 0,
+    });
+    const powered = !grid.shed.includes('drone'); // main.js's gating, mirrored
+    tick(sim.b, dtH * 3600 / 40, powered ? sim.drones : 0,
+      (kwh) => spend(sim.p, kwh));
+    // the player's only moves, made the moment they unlock:
+    if (!ringAt && sim.b.cells.get('0,1')?.dug >= 1) { installRing(sim.b); ringAt = minutes; }
+    if (ringAt && !planned.has('1,1') && canPlan(sim.b, 'corridor', 1, 1)) {
+      plan(sim.b, 'corridor', 1, 1); planned.add('1,1');
+    }
+    if (!planned.has('2,1') && canPlan(sim.b, 'bunk', 2, 1)) {
+      plan(sim.b, 'bunk', 2, 1); planned.add('2,1');
+    }
+    if (isBedworthy(sim.b)) bedAt = minutes;
+  }
+  check('the RTG alone raises a bedworthy home (no deadlock)', !!bedAt,
+    `queue ${sim.b.queue.length}, charge ${sim.p.charge}`);
+  check('…inside thirteen sim hours (twenty real minutes)',
+    bedAt !== null && bedAt <= 13 * 60, `took ${bedAt} sim minutes`);
+  check('the bank never went negative', sim.p.charge >= 0);
 }
 
 if (failed) { console.error(`verify-burrow: ${failed} FAILED`); process.exit(1); }

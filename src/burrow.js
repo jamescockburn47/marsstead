@@ -148,6 +148,18 @@ export function tick(b, dt, droneCount = 0, tryFund = () => true) {
   return events;
 }
 
+// the hands only draw grid power while a FUNDED face is being cut. A
+// queue waiting on charge idles the drones — idle hands must never eat
+// the very income the wait is waiting for (the landfall deadlock: three
+// waiting drones outdraw the RTG forever and the bank can never fill).
+// main.js reads this for the power ledger's drone line.
+export function handsBusy(b) {
+  const k = b.queue[0];
+  if (!k) return false;
+  const cell = b.cells.get(k);
+  return !!cell && cell.funded === true && cell.dug < 1;
+}
+
 export function installRing(b) {
   // the ring wants a hole to cap: the first shaft cell must be dug
   const first = b.cells.get(key(0, 1));
