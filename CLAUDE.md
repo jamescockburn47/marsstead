@@ -14,8 +14,9 @@ browser-first, deterministic, verify-gated**. Public client:
   the panspermia mystery, the phase plan and named risks.
 - `src/` modules are small and single-purpose. Pure logic modules (mars, marsdata
   decode, marsterrain height, physics, noise, dust, marslight, steadparts,
-  steadsim, marslegends, marssky maths, vesper prompt+fallback) have **no
-  THREE/DOM imports** and each is guarded by a `scripts/verify-*.mjs` check.
+  steadsim, marslegends, marssky maths, vesper prompt+fallback, colonistrig
+  gait/IK) have **no THREE/DOM imports** and each is guarded by a
+  `scripts/verify-*.mjs` check.
 - `src/marsdata.js` is **generated** by `scripts/build-marsdata.mjs` from public
   NASA/USGS data (MOLA global topography + the USGS Gazetteer of Planetary
   Nomenclature) — never edit by hand. No binary asset files at runtime, ever.

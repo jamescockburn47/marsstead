@@ -29,7 +29,7 @@ import { tauAt, windAt, cirrusAt } from './dust.js';
 import { mtc } from './marstime.js';
 import {
   G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0, LOPE_HOP_V0,
-  STRIDE_HZ_WALK, STRIDE_HZ_LOPE, fallStep, fallSeverity,
+  fallStep, fallSeverity,
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
 import { RockLayer } from './rocklayer.js';
@@ -144,7 +144,7 @@ class Game {
     this.trail = createTrail();
     this.trackLayer = new TrackLayer(this.scene);
     this.wake = new WakeLayer(this.scene);
-    this.colonist = new Colonist(this.scene);
+    this.colonist = new Colonist(this.scene, this.renderer);
     this.hud = new Hud(IS_PLACEHOLDER);
 
     // the buggy: parked a short walk east of the drop site
@@ -1106,6 +1106,8 @@ class Game {
   // Every drive is a deterministic function of light state already in hand —
   // no luminance readback, the family rule.
   renderFrame(dt) {
+    // the visor mirrors the painted sky by day and goes quiet by night
+    this.colonist.setDaylight(dayFactor(this.sunEl ?? 45));
     if (this.post && this.gfxQuality === 'fine') {
       const day = dayFactor(this.sunEl ?? 45);
       const night = 1 - day;
@@ -1206,8 +1208,13 @@ class Game {
 
     const speed = this.vel.length();
     this.colonist.group.position.copy(this.pos);
-    this.colonist.pose(dt, speed, this.airborne, this.heading,
-      loping ? STRIDE_HZ_LOPE : STRIDE_HZ_WALK);
+    this.colonist.pose(dt, {
+      x: this.pos.x, z: this.pos.z, heading: this.heading,
+      vx: this.vel.x, vz: this.vel.z, speed,
+      airborne: this.airborne, vy: this.vy,
+      groundAt: (gx, gz) => this.groundAt(gx, gz),
+      simT: this.simMillis / 1000,
+    });
 
     // ---- the trail: bootprints land as ground is covered (the pure store
     // enforces the stride spacing and alternates the feet) — and they
