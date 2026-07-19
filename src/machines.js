@@ -21,6 +21,24 @@ export const MACHINE_TYPES = {
       ice: { out: 'water', seconds: 6 },
     },
   },
+  // ---- STAGE 2, the Works' upper tiers (STRUCTURE.md): panels become
+  // parts, parts become the expedition — the chain that ends at the hopper
+  // (methane tanks, Stage 3) and the descent (winch rig, Stage 5)
+  mill: {
+    name: 'Mill',
+    costs: [['steel-panel', 2], ['electronics', 1], ['cable', 1]],
+    recipes: {
+      'steel-panel': { out: 'machine-parts', seconds: 14 },
+    },
+  },
+  assembler: {
+    name: 'Assembler',
+    costs: [['steel-panel', 1], ['machine-parts', 2], ['electronics', 1]],
+    recipes: {
+      'machine-parts': { out: 'methane-tank', seconds: 26 },
+      cable: { out: 'winch-rig', seconds: 20 },
+    },
+  },
 };
 
 export const MACHINE_QUEUE_CAP = 24;

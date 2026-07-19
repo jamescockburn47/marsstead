@@ -23,6 +23,11 @@ export const ITEMS = {
   'steel-panel': { name: 'Steel panel', kg: 26, tier: 'refined' },
   glass: { name: 'Glass sheet', kg: 18, tier: 'refined' },
   water: { name: 'Water', kg: 10, tier: 'refined' },
+  // worked — the Works' upper tiers (Stage 2): the expedition is built
+  // from these, and Stage 3's hopper drinks from the tanks
+  'machine-parts': { name: 'Machine parts', kg: 12, tier: 'worked' },
+  'methane-tank': { name: 'Methane tank', kg: 16, tier: 'worked' },
+  'winch-rig': { name: 'Winch rig', kg: 14, tier: 'worked' },
 };
 
 // carry capacities, kg of MASS handled (suited human ~1 panel; the deck

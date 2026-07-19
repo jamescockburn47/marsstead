@@ -13,7 +13,7 @@ function check(name, ok, detail = '') {
 
 // 1. the catalogue is whole: names, positive masses, known tiers
 {
-  const tiers = new Set(['salvage', 'bulk', 'mined', 'refined']);
+  const tiers = new Set(['salvage', 'bulk', 'mined', 'refined', 'worked']);
   let ok = true;
   for (const item of Object.values(ITEMS)) {
     if (!item.name || !(item.kg > 0) || !tiers.has(item.tier)) ok = false;

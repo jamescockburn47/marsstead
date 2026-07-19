@@ -47,6 +47,7 @@ import {
   serialize as serializeBurrow, deserialize as deserializeBurrow,
 } from './burrow.js';
 import { BurrowConsole } from './burrowconsole.js';
+import { WorksConsole } from './worksconsole.js';
 import { CrownLayer } from './crownlayer.js';
 import { TrackLayer } from './tracklayer.js';
 import { WakeLayer } from './wakelayer.js';
@@ -82,6 +83,7 @@ import {
   serialize as fogSerialize, deserialize as fogDeserialize,
 } from './explore.js';
 import { MarsMap } from './marsmap.js';
+import { MiniMap } from './minimap.js';
 import {
   PROSPECT_RADIUS, HOPPER_CAP, depositById, depositsNear, createRig,
   canDeploy, deploy, packUp, drillTick, hopperCount, hopperTake,
@@ -233,6 +235,7 @@ class Game {
     visit(this.exploration, 0, 0); // the drop site is known ground
     this.lastVisit = { x: 0, z: 0 };
     this.map = new MarsMap(meshGroundHeight);
+    this.minimap = new MiniMap();
 
     // the expedition: the rig sleeps by the lander until it's towed out
     this.rig = createRig(-16, -1, 0.6);
@@ -270,6 +273,11 @@ class Game {
           this.say('ring-installed');
         }
       },
+      line: () => this.hud.vesperLine.textContent || '…',
+    });
+    this.worksUI = new WorksConsole({
+      getFab: () => this.fab,
+      getMachines: () => this.machines,
       line: () => this.hud.vesperLine.textContent || '…',
     });
     this.anchoring = null;       // { t, need } while planting the rig
@@ -715,6 +723,14 @@ class Game {
   // E is THE doing key: the cabin door, the rover, the rig, the bolts
   interact() {
     if (this.burrowUI.visible) { this.burrowUI.close(); return; }
+    if (this.worksUI.visible) { this.worksUI.close(); return; }
+    if (!this.inLander && !this.driving
+      && (this.nearestMachine() || this.distToLander() < 6) && this.distToLadder() >= 3.6
+      && this.distToRover() >= 3.2 && this.distToCrown() >= 4
+      && !(this.distToLander() < 6 && this.salvageTarget())) {
+      this.worksUI.open();
+      return;
+    }
     if (!this.inLander && !this.driving && this.distToCrown() < 4) {
       this.burrowUI.open();
       this.sayOnce('crown-first');
@@ -1226,7 +1242,7 @@ class Game {
     const fwd = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const wish = new THREE.Vector3();
-    if (!this.cycling && !this.burrowUI.visible) {
+    if (!this.cycling && !this.burrowUI.visible && !this.worksUI.visible) {
       if (this.keys.KeyW) wish.add(fwd);
       if (this.keys.KeyS) wish.sub(fwd);
       if (this.keys.KeyA) wish.add(right);
@@ -1439,7 +1455,7 @@ class Game {
       if (o) bits.push(`${o} ready`);
       if (m.queue.length) bits.push(`${m.queue.length} cooking`);
       this.hud.setPrompt(`|*T| ${MACHINE_TYPES[m.type].name.toLowerCase()}`
-        + (bits.length ? ` (${bits.join(', ')})` : ''));
+        + (bits.length ? ` (${bits.join(', ')})` : '') + ' · |*E| the works');
     } else if (this.distToRig() < 4 && !this.rig.hitched && this.rigPrompt()) {
       this.hud.setPrompt(this.rigPrompt());
     } else if (this.distToLander() < 6 && this.salvageTarget()) {
@@ -1818,6 +1834,8 @@ class Game {
         stead: this.steadOrigin,
         rig: { x: this.rig.x, z: this.rig.z },
         deposits: [...this.prospected].map(depositById).filter(Boolean),
+        trail: this.trail.pts,
+        crown: this.crownPos,
       });
     }
 
@@ -1865,6 +1883,24 @@ class Game {
       [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length,
       this.burrow.ringInstalled, (this.sunEl ?? 10) < 0);
     this.burrowUI.update(dt);
+    this.worksUI.update(dt);
+
+    // the heads-up map: always on while you're in the world — the glance
+    // that makes every walk retraceable (the M map stays the instrument)
+    this.minimap.setVisible(!this.burrowUI.visible && !this.worksUI.visible
+      && !this.map.visible && !this.inLander);
+    this.minimap.update(dt, {
+      player: {
+        x: this.pos.x, z: this.pos.z,
+        heading: this.driving ? this.buggy.heading : this.heading,
+      },
+      trail: this.trail.pts,
+      lander: this.landerPos,
+      crown: this.crownPos,
+      buggy: { x: this.buggy.x, z: this.buggy.z },
+      rig: { x: this.rig.x, z: this.rig.z },
+      deposits: [...this.prospected].map(depositById).filter(Boolean),
+    });
     this.wake.update(dt, this.buggy, this.buggyFlags, L.sunIntensity);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
     // dust is sunlit matter: it fades with the light (never glows at night).

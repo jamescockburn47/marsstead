@@ -165,8 +165,34 @@ export class MarsMap {
     ctx.clearRect(0, 0, 512, 512);
     ctx.drawImage(this.terrain, 0, 0);
 
+    // the trail: your own marks, drawn before the markers so waypoints sit
+    // on top — boots a dotted thread, wheels a solid one. This is how you
+    // retrace your steps: the planet remembers, so the map does too.
+    if (pois.trail && pois.trail.length > 1) {
+      for (const [kind, style] of [[0, [2, 5]], [1, []]]) {
+        ctx.save();
+        ctx.strokeStyle = kind ? 'rgba(232,196,106,.55)' : 'rgba(246,237,226,.5)';
+        ctx.lineWidth = kind ? 2.2 : 1.4;
+        ctx.setLineDash(style);
+        ctx.beginPath();
+        let pen = false;
+        let last = null;
+        for (const pt of pois.trail) {
+          if (pt.k !== kind) continue;
+          const [u, w] = this.toPx(pt.x, pt.z);
+          // lift the pen across gaps (hops, drives between walks)
+          if (pen && last && Math.hypot(pt.x - last.x, pt.z - last.z) > 24) pen = false;
+          if (!pen) { ctx.moveTo(u, w); pen = true; } else ctx.lineTo(u, w);
+          last = pt;
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     if (pois.lander) this.marker(ctx, pois.lander.x, pois.lander.z, '#cfc5b6', 'LANDER');
     if (pois.buggy) this.marker(ctx, pois.buggy.x, pois.buggy.z, '#8fb6d8', 'ROVER');
+    if (pois.crown) this.marker(ctx, pois.crown.x, pois.crown.z, '#e8c46a', 'BURROW');
     if (pois.stead) this.marker(ctx, pois.stead.x, pois.stead.z, '#e8c46a', 'HAB');
     if (pois.rig) this.marker(ctx, pois.rig.x, pois.rig.z, '#c9974a', 'RIG');
     const ORE = { 'iron-ore': ['#d1685a', 'IRON'], ice: ['#cfe0e8', 'ICE'], silica: ['#d8c9a8', 'SILICA'] };
