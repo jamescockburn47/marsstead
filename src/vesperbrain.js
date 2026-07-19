@@ -259,6 +259,14 @@ export const BARK_MOMENTS = {
   'burrow-home': 'the warren just held pressure for the first time — a home dug into Mars, behind the salvaged ring',
   'ring-installed': 'the settler just installed the salvaged airlock ring — the one irreplaceable part — as the front door of the warren',
   'drone-deployed': 'a new drone just came online at the crown — another hand for the warren, printed from the mill and paid for in charge',
+  // ---- the first-sol briefing: the settler knows YOU well (the trials,
+  // the voyage) but the descent scrambled their short-term — they remember
+  // NOTHING of the mechanics. Teach warmly, in your own words, two or
+  // three sentences per moment, using the telemetry's real numbers.
+  'brief-wake': 'first minutes of sol one: re-place the settler gently — where you both are, whose flag this is, and that the home gets dug UNDERGROUND behind the salvaged ring, starting at the crown southwest of the lander',
+  'brief-power': 'teach the power economics as to a friend with amnesia: the bank and its charge (the telemetry has the numbers), the RTG\'s steady kilowatt, that every dig and bench SPENDS the bank, and that solar arrays are how one keeps ahead',
+  'brief-dig': 'teach the digging loop: the drones are their hands, planning at the crown console is free, breaking ground debits the bank, spoil pays back in iron ore at the crown',
+  'brief-works': 'teach the fabrication loop: iron ore becomes steel panels at the lander bench (stand at it, press T), panels become solar arrays, arrays make the sun into money — close the loop and the base feeds itself',
 };
 
 // bark prompt: same contract, same phase knowledge, but the settler said

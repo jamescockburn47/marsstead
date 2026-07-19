@@ -68,7 +68,7 @@ import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
-import { suitSay, cleanName } from './vesper.js';
+import { suitSay, cleanName, briefFallback } from './vesper.js';
 import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
@@ -131,6 +131,7 @@ class Game {
     // the settler's name: fresh entry at the title door wins; otherwise
     // the save's (applySave); VESPER falls back to "settler" gracefully
     this.settlerName = cleanName(settlerName);
+    this.freshLanding = !save; // the first-sol briefing fires only here
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1131,7 +1132,12 @@ class Game {
         this.hud.say(line, this.t, Math.max(7, line.length / 12));
         this.voice.speak(line, mood || 'calm', { live: true });
       })
-      .catch(() => { /* a missed notice harms nothing */ });
+      .catch(() => {
+        // a missed scenery notice harms nothing — but the BRIEFING must
+        // land even relay-down: the deterministic floor teaches
+        const fb = briefFallback(event, this.settlerName);
+        if (fb) this.hud.say(fb, this.t, Math.max(7, fb.length / 12));
+      });
   }
   sayOnce(event) {
     if (this.saidFirsts.has(event)) return;
@@ -1915,6 +1921,16 @@ class Game {
     }
     this.colonist.setLamp(this.lampLit && !this.driving);
     this.buggyLayer.setLamps(this.lampLit);
+
+    // the first-sol briefing: she re-places a settler who knows HER well
+    // but remembers nothing of the mechanics — staged over the first two
+    // minutes, live in her own voice, once ever (sayOnce rides the save)
+    if (this.freshLanding) {
+      if (this.t > 8) this.sayOnce('brief-wake');
+      if (this.t > 32) this.sayOnce('brief-power');
+      if (this.t > 58) this.sayOnce('brief-dig');
+      if (this.t > 88) this.sayOnce('brief-works');
+    }
 
     // dusk / night / dawn beats
     if (sunEl < 6 && sunEl > -2 && this.lastSunEl > sunEl) this.sayOnce('sunset');

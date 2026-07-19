@@ -26,7 +26,22 @@ export const EVENTS = [
   'radio-static',
   'crown-first', 'dig-start', 'burrow-room', 'burrow-home', 'ring-installed',
   'power-low', 'no-charge', 'drone-deployed',
+  'brief-wake', 'brief-power', 'brief-dig', 'brief-works',
 ];
+
+// the first-sol briefing's deterministic floor: if the relay is down, the
+// settler still learns the mission and the economics. Live VESPER teaches
+// these in her own words (BARK_MOMENTS); these lines only speak offline.
+export const BRIEF_FALLBACK = {
+  'brief-wake': "Morning, {name}. Rough descent — let me re-place things: Meridian's demonstration, one homestead, the two of us. Everything we build starts underground, behind the ring.",
+  'brief-power': 'The economics, plainly: the bank holds our charge, the lander makes one steady kilowatt, and the sun pays when panels stand. Every dig and every bench SPENDS the bank. Structure is charge.',
+  'brief-dig': 'The drones are your hands. Plan rooms at the crown console — plans are free; breaking ground debits the bank, and the spoil pays back in ore.',
+  'brief-works': 'Ore becomes panels at the lander bench — stand there and press T. Panels become arrays; arrays make the sunlight yours. That loop is the whole first week.',
+};
+export function briefFallback(event, name = '') {
+  const line = BRIEF_FALLBACK[event];
+  return line ? line.replace(/\{name\}/g, cleanName(name) || 'settler') : null;
+}
 
 // the instrument channel: safety and mechanics, spoken plainly and at
 // once. These are the suit's numbers in VESPER's mouth — urgency without
