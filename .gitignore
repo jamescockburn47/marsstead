@@ -7,3 +7,6 @@ tools/*.csv
 tools/*.nc
 .vercel/
 .claude/
+
+# build-time source data (public NASA/USGS downloads) — never in git
+tools/
