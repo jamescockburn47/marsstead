@@ -22,6 +22,7 @@ export class HeritageLayer {
     const mat = (c, extra = {}) => new THREE.MeshLambertMaterial({ color: c, ...extra });
     this.mats = {
       worn: mat(WORN), foil: mat(FOIL), panel: mat(PANEL), rust: mat(RUST),
+      dark: mat(0x4a4642),
     };
     for (const site of HERITAGE) {
       const { x, z } = heritageXZ(site);
@@ -46,20 +47,46 @@ export class HeritageLayer {
       g.add(c); return c;
     };
     if (site.kind === 'lander') {
-      // a squat body on splayed legs, a dish that stopped turning
-      box(1.5, 0.55, 1.5, M.foil, 0, 0.75, 0);
-      box(1.2, 0.16, 1.2, M.panel, 0, 1.1, 0);
+      // VIKING-CLASS (2026-07-20, James's eye: "barely noticeable" — the
+      // money machines deserve their size). The real grammar, readable
+      // at fifty metres: hexagonal bus on three splayed legs, the
+      // high-gain dish held skyward on its boom, RTG covers on the
+      // deck, the meteorology mast, the sampler arm reaching down.
+      const bus = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.62, 0.65, 6), M.foil);
+      bus.position.y = 1.05;
+      g.add(bus);
+      const deck = new THREE.Mesh(new THREE.CylinderGeometry(1.34, 1.44, 0.12, 6), M.worn);
+      deck.position.y = 1.44;
+      g.add(deck);
+      // RTG wind covers — the two humps that kept Viking warm for years
+      box(0.62, 0.34, 0.85, M.worn, 0.62, 1.62, -0.42, 0.52);
+      box(0.62, 0.34, 0.85, M.worn, -0.68, 1.62, 0.34, -0.35);
+      // three legs, splayed wide, round feet
       for (let i = 0; i < 3; i++) {
-        const a = (i / 3) * Math.PI * 2 + 0.5;
-        cyl(0.05, 0.07, 0.9, M.worn, Math.cos(a) * 0.95, 0.42, Math.sin(a) * 0.95,
+        const a = (i / 3) * Math.PI * 2 + 0.4;
+        cyl(0.08, 0.11, 1.7, M.metal, Math.cos(a) * 1.95, 0.68, Math.sin(a) * 1.95,
           Math.cos(a) * 0.55);
-        cyl(0.18, 0.2, 0.06, M.rust, Math.cos(a) * 1.25, 0.05, Math.sin(a) * 1.25);
+        cyl(0.09, 0.06, 1.1, M.dark, Math.cos(a) * 1.35, 0.85, Math.sin(a) * 1.35,
+          Math.cos(a) * 0.2);
+        cyl(0.36, 0.42, 0.12, M.rust, Math.cos(a) * 2.5, 0.07, Math.sin(a) * 2.5);
       }
-      const dish = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 8,
-        0, Math.PI * 2, 0, Math.PI * 0.4), M.worn);
-      dish.position.set(0.35, 1.45, 0.2);
-      dish.rotation.x = Math.PI * 0.9;
+      // the high-gain dish, held to a sky it stopped hearing decades ago
+      cyl(0.055, 0.055, 1.15, M.metal, -0.55, 2.15, 0.35, 0.4);
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(0.82, 18, 12,
+        0, Math.PI * 2, 0, Math.PI * 0.42), M.worn);
+      dish.position.set(-0.92, 2.85, 0.62);
+      dish.rotation.set(Math.PI * 0.82, 0, 0.35);
       g.add(dish);
+      // the meteorology mast and the sampler arm, reaching down
+      cyl(0.035, 0.045, 1.5, M.metal, 1.15, 2.1, 0.75, -0.5);
+      box(0.3, 0.14, 0.1, M.panel, 1.45, 2.75, 1.0, 0.3);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.1), M.metal);
+      arm.position.set(0.7, 0.85, 1.55);
+      arm.rotation.x = 0.55; arm.rotation.y = -0.4;
+      g.add(arm);
+      const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.3), M.rust);
+      scoop.position.set(1.05, 0.28, 2.35);
+      g.add(scoop);
     } else if (site.kind === 'rover') {
       // a deck on six weary wheels, a mast still watching the horizon
       box(1.7, 0.5, 1.15, M.worn, 0, 0.72, 0);
