@@ -223,15 +223,46 @@ export class MarsMap {
       this.marker(ctx, d.x, d.z, colour, label);
     }
 
-    // the walker: a gold arrow nosing their heading
+    // THE WAY HOME (2026-07-20): a dashed gold thread from the walker to
+    // the nearest roof — crown, hab, or the ship — with the distance on
+    // it. The map's first job is getting you back.
     const p = pois.player;
+    const roofs = [pois.crown, pois.stead, pois.hopper].filter(Boolean);
+    if (roofs.length) {
+      let home = roofs[0], hd = Infinity;
+      for (const r of roofs) {
+        const d = Math.hypot(r.x - p.x, r.z - p.z);
+        if (d < hd) { hd = d; home = r; }
+      }
+      if (hd > 60) {
+        const [hu, hw] = this.toPx(home.x, home.z);
+        const [pu, pw] = this.toPx(p.x, p.z);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(232,196,106,.75)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath(); ctx.moveTo(pu, pw); ctx.lineTo(hu, hw); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '11px Georgia';
+        ctx.fillStyle = '#e8c46a';
+        const label = hd >= 950 ? `${(hd / 1000).toFixed(1)} KM HOME` : `${Math.round(hd)} M HOME`;
+        ctx.fillText(label, (pu + hu) / 2 + 6, (pw + hw) / 2 - 4);
+        ctx.restore();
+      }
+    }
+
+    // the walker: a gold arrow nosing their heading, RINGED — the one
+    // mark that must never be hunted for
     const [u, w] = this.toPx(p.x, p.z);
     ctx.save();
+    ctx.strokeStyle = 'rgba(242,214,138,.9)';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(u, w, 11, 0, Math.PI * 2); ctx.stroke();
     ctx.translate(u, w);
     ctx.rotate(Math.atan2(Math.sin(p.heading), -Math.cos(p.heading)));
     ctx.fillStyle = '#e8c46a';
     ctx.beginPath();
-    ctx.moveTo(0, -7); ctx.lineTo(4.6, 5); ctx.lineTo(-4.6, 5);
+    ctx.moveTo(0, -8.5); ctx.lineTo(5.6, 6); ctx.lineTo(-5.6, 6);
     ctx.closePath();
     ctx.fill();
     ctx.restore();

@@ -13,7 +13,9 @@
 // from the buggy · T work the nearest bench · X pack up the rig.
 
 import * as THREE from 'three';
-import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
+import {
+  latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER, nearestFeature,
+} from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
 import { sunElevation, sunAzimuth, solClock, solarLongitude, season, ltst } from './marstime.js';
 import { frostLineLat, morningFrost } from './frost.js';
@@ -1442,6 +1444,19 @@ class Game {
 
   distToSled() {
     return Math.hypot(this.pos.x - this.sled.x, this.pos.z - this.sled.z);
+  }
+
+  // where the settler actually STANDS (2026-07-20): inside a named
+  // feature you are IN it; outside, you are near the closest one — the
+  // clock line follows the boots, not the landing site
+  placeName() {
+    const f = nearestFeature(this.pos.x, this.pos.z);
+    if (!f) return 'the open country';
+    const d = Math.hypot(f.x - this.pos.x, f.z - this.pos.z);
+    // world metres per real km ≈ 4.99 (M_PER_DEG / deg-km); the feature's
+    // own footprint decides "in" vs "near"
+    const radW = Math.max(60, (f.diamKm * 4.99) / 2);
+    return d <= radW ? f.name : `near ${f.name}`;
   }
 
   loadRover() {
@@ -3047,7 +3062,7 @@ class Game {
     }
     this.hud.setClock(
       solClock(this.simMillis),
-      `Ls ${solarLongitude(this.simMillis).toFixed(1)}° · ${season(this.simMillis)} · Jezero`,
+      `Ls ${solarLongitude(this.simMillis).toFixed(1)}° · ${season(this.simMillis)} · ${this.placeName()}`,
     );
     this.hud.update(this.t);
   }

@@ -33,7 +33,9 @@ export const BONES = {
   THIGH: 0.44,       // hip pivot -> knee pivot
   SHIN: 0.38,        // knee pivot -> ankle pivot
   ANKLE_H: 0.10,     // ankle pivot over the sole
-  FOOT_LAT: 0.16,    // half-spacing between boot centrelines
+  // step width (2026-07-20 gait audit): real feet land 8-12 cm apart —
+  // the old 32 cm straddle read as a cowboy waddle, THE goofy tell #2
+  FOOT_LAT: 0.10,    // half-spacing between boot centrelines
   SHOULDER_Y: 0.62,  // shoulder pivots over the pelvis root
   SHOULDER_X: 0.30,  // half-spacing between shoulder pivots
   UPPER_ARM: 0.30,
@@ -52,9 +54,21 @@ export const GAIT = {
   PEND_SOFT: 0.42,                 // knee absorbs this much of the vault
 };
 
-// blend 0 (walk) -> 1 (lope), smooth — low-g transitions are gradual
+// ---- the Froude law (2026-07-20 gait audit — the core fix) --------------
+// Walking is an inverted pendulum, and the pendulum has a speed limit:
+// past Froude ~0.5 (v² / g·leg) the stance foot cannot stay down — every
+// real body switches to a run. On Mars g the wall sits at ~1.2 m/s, so
+// the game's 2.6 m/s "walk" was a physical impossibility: rendering it
+// as a 62%-duty walk forced 0.93 m steps on a 0.82 m leg, and the IK
+// clamped at full stretch on EVERY stride — THE goofy tell #1. The blend
+// now follows the physics: below the wall a true short-stepped walk,
+// above it the floaty Mars lope Apollo footage actually shows.
+export const G_EFF = 3.71;
+export function froude(speed) { return (speed * speed) / (G_EFF * LEG); }
+
+// blend 0 (walk) -> 1 (lope), smooth — driven by Froude, not by taste
 export function gaitBlend(speed) {
-  const t = (speed - GAIT.WALK_V) / (GAIT.LOPE_V - GAIT.WALK_V);
+  const t = (froude(speed) - 0.45) / 1.15;
   const c = Math.max(0, Math.min(1, t));
   return c * c * (3 - 2 * c);
 }
@@ -73,9 +87,18 @@ export function strideLength(speed) { return Math.max(0.5, speed / cadence(speed
 // s = {x, v}; omega = angular frequency (stiffness); zeta = damping ratio
 // (1 = critical: fastest settle, no overshoot; <1 wobbles — that's jiggle).
 export function springStep(s, target, omega, zeta, dt) {
-  const a = -omega * omega * (s.x - target) - 2 * zeta * omega * s.v;
-  s.v += a * dt;
-  s.x += s.v * dt;
+  // SUB-STEPPED (2026-07-20): semi-implicit Euler sits near its
+  // stability wall at omega·dt ≈ 2, and a run of clamped 0.1 s frames
+  // at omega 18 walked the hip spring to 1e+250 — FINITE, so every NaN
+  // guard waved it through while the body stood a googol metres up.
+  // Substeps hold omega·h ≤ 0.5: unconditionally stable, same feel.
+  const n = Math.max(1, Math.ceil((omega * dt) / 0.5));
+  const h = dt / n;
+  for (let i = 0; i < n; i++) {
+    const a = -omega * omega * (s.x - target) - 2 * zeta * omega * s.v;
+    s.v += a * h;
+    s.x += s.v * h;
+  }
   return s;
 }
 
@@ -165,6 +188,7 @@ export class ColonistRig {
     this.rollS = mkSpring(0);        // centripetal roll
     this.swayS = mkSpring(0);        // pelvis lateral weight shift
     this.torsoYawS = mkSpring(0);    // look/counter-yaw lag
+    this.listS = mkSpring(0);        // pelvic list: swing-side drop (gait det. #3)
     this.armS = [mkSpring(0), mkSpring(0)];      // shoulder pitches L/R
     this.packS = mkSpring(0);        // pack jiggle (under-damped, rides hipY)
     this.idleStep = null;            // in-flight tidy-up step when idling
@@ -191,6 +215,19 @@ export class ColonistRig {
   step(dt, inp) {
     dt = clamp(dt, 1e-4, 0.1);
     this.t += dt;
+    // the poison rule (this codebase keeps re-learning it): a value that
+    // reaches a spring poisoned — NaN OR a finite explosion (a hip a
+    // metre out of band is already impossible) — must never survive a
+    // second frame. Re-seed and walk on.
+    if (!Number.isFinite(this.hipYS.x) || Math.abs(this.hipYS.x - REST_HIP) > 1
+      || !Number.isFinite(this.phase)
+      || this.feet.some((f) => !Number.isFinite(f.px) || !Number.isFinite(f.py))) {
+      this.phase = 0.25;
+      this.hipYS = mkSpring(REST_HIP);
+      this.packS = mkSpring(REST_HIP);
+      this.sm = {};
+      this.replant(inp);
+    }
     const { x, z, heading, speed, airborne } = inp;
     const ground = inp.groundAt;
     // hysteresis: start striding above 0.35 m/s, stop below 0.15 — so a
@@ -213,8 +250,13 @@ export class ColonistRig {
 
     // ---- the phase clock --------------------------------------------------
     const cad = cadence(speed);
-    const D = dutyFactor(speed);
     const T = 1 / cad;
+    // the anatomy guard: stance travel (speed × stance time) can never
+    // exceed what a leg can actually pass over — duty yields before the
+    // IK is asked to lie (the old over-stride clamped a straight leg at
+    // every heel-strike; this is what removes it at ANY speed)
+    const D = Math.min(dutyFactor(speed),
+      speed > 0.2 ? (0.92 * LEG) / (speed * T) : 1);
     if (moving) this.phase = (this.phase + cad * dt) % 1;
 
     // landing: both boots down NOW, and the squash spring takes the hit
@@ -292,10 +334,14 @@ export class ColonistRig {
       hipTarget = REST_HIP - 0.12;                    // tucked, in flight
     } else if (stanceWSum > 1e-4) {
       hipTarget = (stanceHip / stanceWSum) - gHere;   // vault over the plant
+    } else if (moving) {
+      // the lope's flight sliver: neither boot down — the body FLOATS a
+      // touch high and the spring draws the bound's arc between stances
+      hipTarget = REST_HIP + 0.045;
     } else {
       // stopped: stand tall on near-straight legs (hip just under full
       // reach — enough for a natural micro-bend, not a crouch)
-      hipTarget = REST_HIP - (moving ? lerp(0.03, 0.06, b) : 0.0015);
+      hipTarget = REST_HIP - 0.0015;
     }
     hipTarget = clamp(hipTarget, REST_HIP - 0.30, REST_HIP + 0.06);
     springStep(this.hipYS, hipTarget, 18, 1, dt);
@@ -347,18 +393,26 @@ export class ColonistRig {
     this.lastHeading = heading;
     springStep(this.rollS, clamp(-turnRate * speed * 0.02, -0.3, 0.3), 7, 1, dt);
     springStep(this.swayS, moving ? swayTarget * 0.028 : 0, 4, 1, dt);
+    // pelvic list (Perry's determinant): the free side of the pelvis
+    // DROPS a few degrees while its leg swings — weight is visibly ON
+    // the stance hip. swayTarget signs toward the stance foot; the drop
+    // goes the other way.
+    springStep(this.listS, moving && !airborne ? -swayTarget * 0.055 : 0, 6, 1, dt);
 
     // pelvis follows the legs; shoulders answer against them; a suited
     // torso carries a permanent forward lean that grows with the bound
     const legDelta = (pose.legR.hipPitch || 0) - (pose.legL.hipPitch || 0);
     const pelvisYaw = clamp(legDelta * 0.16, -0.2, 0.2);
-    springStep(this.torsoYawS, -pelvisYaw * 1.5, 9, 1, dt);
+    // counter-rotation is EQUAL and opposite (2026-07-20 audit): real
+    // shoulders cancel the pelvis and stay near world-still — the old
+    // 1.5x over-counter twisted them past neutral every step
+    springStep(this.torsoYawS, -pelvisYaw, 9, 1, dt);
 
-    // arms swing from the shoulder like loose pendulums, opposite the legs.
-    // A bigger arc than the legs' drive alone, and an UNDER-damped spring
-    // (zeta < 1) so the swing overshoots and settles — that follow-through
-    // is what reads as a loose shoulder instead of a locked one.
-    const armAmp = 0.9 + 0.5 * b;
+    // arms swing from the shoulder like loose pendulums, opposite the
+    // legs — at REAL amplitude (2026-07-20 audit): brisk-walk arm swing
+    // is ±10-15°, not the ±40° cartoon march the old 0.9-1.4x drive
+    // produced. The under-damped spring keeps the loose follow-through.
+    const armAmp = 0.34 + 0.18 * b;
     const tL = airborne ? -0.5 : (pose.legR.hipPitch || 0) * armAmp;
     const tR = airborne ? -0.5 : (pose.legL.hipPitch || 0) * armAmp;
     springStep(this.armS[0], tL, 7, 0.62, dt);
@@ -375,7 +429,7 @@ export class ColonistRig {
     // upright when stopped; the forward lean is a moving posture only
     pose.pelvisPitch = (moving ? 0.05 : 0.0) + speed * 0.012 + lerp(0, 0.1, b)
       + this.leanS.x + (airborne ? -0.08 : 0);
-    pose.pelvisRoll = this.rollS.x;
+    pose.pelvisRoll = this.rollS.x + this.listS.x;
     pose.torsoYaw = this.torsoYawS.x;
     pose.torsoPitch = 0;
     pose.breath = breathe;
@@ -383,17 +437,17 @@ export class ColonistRig {
     // the suit holds the arms OUT (never flat to the sides) and keeps a
     // pre-bent elbow that pumps a little as the hand swings forward; the
     // shoulder opens a touch further as the arm travels back.
-    const bend = 0.3 + 0.25 * b;
+    const bend = 0.3 + 0.2 * b;
     const swL = this.armS[0].x, swR = this.armS[1].x;
     pose.armL = {
       shoulderPitch: swL,
-      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swL) * 0.55,
-      abduct: 0.28 + 0.06 * b + Math.max(0, -swL) * 0.12,
+      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swL) * 0.25,
+      abduct: 0.2 + 0.05 * b + Math.max(0, -swL) * 0.08,
     };
     pose.armR = {
       shoulderPitch: swR,
-      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swR) * 0.55,
-      abduct: 0.28 + 0.06 * b + Math.max(0, -swR) * 0.12,
+      elbowFlex: airborne ? 0.9 : bend + Math.max(0, swR) * 0.25,
+      abduct: 0.2 + 0.05 * b + Math.max(0, -swR) * 0.08,
     };
 
     // ---- the naturalistic cap: SmoothDamp every joint, then hold it to a
