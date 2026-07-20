@@ -10,7 +10,7 @@ import {
   hopRangeKm, fuelForKm, planHop, TANK_FUEL_KG, MAX_TANKS,
   MIN_HOP_KM, CRADLE_BUGGY_KG,
 } from './hopper.js';
-import { featuresInBox, worldToLatLon, latLonToWorld } from './mars.js';
+import { featuresInBox, latLonToWorld } from './mars.js';
 import { PlanetChart, nearestWrappedX } from './planetchart.js';
 
 const CSS = `
@@ -36,10 +36,21 @@ const CSS = `
   #hchartwrap { flex: 1; border: 1px solid rgba(63,208,201,.25); border-radius: 4px;
     background: radial-gradient(ellipse at center, rgba(40,22,12,.6), rgba(14,8,5,.9)); }
   #hchart { width: 100%; height: 100%; display: block; cursor: crosshair; }
-  #hplanet { width: 100%; height: 100%; display: none; cursor: grab;
-    image-rendering: auto; touch-action: none; }
+  #hplanetwrap { position: relative; width: 100%; height: 100%; display: none; }
+  #hplanet { width: 100%; height: 100%; display: block; cursor: grab;
+    touch-action: none; }
+  #hplanet:active { cursor: grabbing; }
+  #hlabels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #hlabels span { position: absolute; transform: translate(-50%, -50%);
+    white-space: nowrap; }
+  #hlabels .pl-name { font-size: 9.5px; letter-spacing: 2px;
+    color: rgba(246,237,226,.75); text-shadow: 0 1px 3px rgba(10,4,2,.9); }
+  #hlabels .pl-mark { font-size: 14px; }
+  #hlabels .pl-home { color: #e8c46a; }
+  #hlabels .pl-craft { color: #3fd0c9; font-size: 10px; }
+  #hlabels .pl-aim { color: #e8c46a; font-size: 16px; }
   #hchartwrap.planet #hchart { display: none; }
-  #hchartwrap.planet #hplanet { display: block; }
+  #hchartwrap.planet #hplanetwrap { display: block; }
   #hopc footer { display: flex; align-items: center; gap: 16px;
     padding: 8px 22px 14px; font-size: 11.5px; letter-spacing: 1px; }
   #hopc footer .motto { color: #e8c46a; opacity: .85; }
@@ -84,7 +95,8 @@ export class HopConsole {
           <aside class="hpanel" id="hplot"></aside>
           <aside class="hpanel"><h2>VESPER</h2><div id="hvesper"></div></aside>
         </div>
-        <div id="hchartwrap"><svg id="hchart" preserveAspectRatio="xMidYMid meet"></svg><canvas id="hplanet"></canvas></div>
+        <div id="hchartwrap"><svg id="hchart" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="hplanetwrap"><canvas id="hplanet"></canvas><div id="hlabels"></div></div></div>
       </div>
       <footer><span class="motto">the horizon is a fuel problem — you land where you aim</span>
         <span class="hint" id="hhint"></span>
@@ -112,21 +124,24 @@ export class HopConsole {
       this.render();
     });
 
-    // ---- THE PLANET: the orbital page — drag the real MOLA globe,
-    // click anywhere; the aim resolves wrap-shortest from the craft
+    // ---- THE PLANET: the orbital page — the actual globe, live in its
+    // own view; drag turns it, a click anywhere is an aim resolved
+    // wrap-shortest from the craft
     this.planetMode = false;
-    this._planetSig = '';
-    this.planet = new PlanetChart(this.root.querySelector('#hplanet'), ({ lat, lonE }) => {
-      const H = this.h.getHopper();
-      const w = latLonToWorld(lat, lonE);
-      this.aim = [nearestWrappedX(w.x, H.x), w.z];
-      this._planetSig = ''; // aim moved: repaint the face
-      this.render();
-    }, this.h.season ? this.h.season() : 0);
+    this.planet = new PlanetChart(
+      this.root.querySelector('#hplanet'),
+      this.root.querySelector('#hlabels'),
+      ({ lat, lonE }) => {
+        const H = this.h.getHopper();
+        const w = latLonToWorld(lat, lonE);
+        this.aim = [nearestWrappedX(w.x, H.x), w.z];
+        this.render();
+      },
+      this.h.season ? this.h.season() : 0,
+    );
     this.root.querySelector('#hview').onclick = () => {
       this.planetMode = !this.planetMode;
       this.root.querySelector('#hchartwrap').classList.toggle('planet', this.planetMode);
-      this._planetSig = '';
       this.render();
     };
   }
@@ -139,6 +154,17 @@ export class HopConsole {
     if (!this.visible) return;
     this._t += dt;
     if (this._t > 0.6) { this._t = 0; this.render(); }
+    // the planet is a LIVE view: it turns every frame while open
+    if (this.planetMode) {
+      const H = this.h.getHopper();
+      const payload = this.cradle ? CRADLE_BUGGY_KG : 0;
+      this.planet.tick(dt, {
+        home: this.h.getHome(),
+        craft: { x: H.x, z: H.z },
+        aim: this.aim ? { x: this.aim[0], z: this.aim[1] } : null,
+        rangeKm: hopRangeKm(H.fuelKg, payload),
+      });
+    }
   }
 
   render() {
@@ -190,26 +216,8 @@ export class HopConsole {
     this.root.querySelector('#hview').textContent = this.planetMode
       ? '⊞ THE COUNTRY' : '⊕ THE PLANET';
 
-    // ---- the chart (or the planet: repainted only when its face changes —
-    // the orthographic render walks the whole table and earns its cache)
-    if (this.planetMode) {
-      const sig = `${Math.round(H.x)}:${Math.round(H.z)}:${rangeKm.toFixed(1)}:`
-        + `${this.aim ? this.aim.map((v) => Math.round(v)).join(',') : ''}`
-        + `:${this.planet.view.lat.toFixed(1)}:${this.planet.view.lon.toFixed(1)}`;
-      if (sig !== this._planetSig) {
-        this._planetSig = sig;
-        const craftLL = worldToLatLon(H.x, H.z);
-        const homeLL = home ? worldToLatLon(home.x, home.z) : null;
-        this.planet.render({
-          home: homeLL ? { lat: homeLL.lat, lonE: homeLL.lon } : null,
-          craft: { lat: craftLL.lat, lonE: craftLL.lon },
-          aim: this.aim ? (() => { const a = worldToLatLon(this.aim[0], this.aim[1]); return { lat: a.lat, lonE: a.lon }; })() : null,
-          rangeKm,
-        });
-      }
-      return;
-    }
-    this.renderChart(H, rangeKm, home);
+    // ---- the chart page (the planet page renders itself in update())
+    if (!this.planetMode) this.renderChart(H, rangeKm, home);
   }
 
   renderChart(H, rangeKm, home) {

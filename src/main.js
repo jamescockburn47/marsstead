@@ -22,6 +22,7 @@ import {
   serializeMystery, deserializeMystery, ARRIVE_M, SWEEP_M,
 } from './marslegends.js';
 import { Journal } from './journal.js';
+import { PlanetHud } from './planethud.js';
 import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
 import {
   createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
@@ -368,6 +369,8 @@ class Game {
     // ---- the signal chain (marslegends): the reason to fly
     this.mystery = deserializeMystery(null);
     this.journalUI = new Journal();
+    // the wrist planet: the whole surveyed world, always in the corner
+    this.planetHud = new PlanetHud(solarLongitude(this.simMillis));
     this.reading = null;      // { t, need } while reading the ground
     this.sceneQueue = null;   // { lines, i, nextAt } — a beat's canon plays out
     this._sweepDist = Infinity;
@@ -2769,6 +2772,17 @@ class Game {
     // that makes every walk retraceable (the M map stays the instrument)
     this.minimap.setVisible(!this.attract && !this.burrowUI.visible
       && !this.worksUI.visible && !this.map.visible && !this.inLander);
+    this.planetHud.setVisible(!this.attract && !this.burrowUI.visible
+      && !this.worksUI.visible && !this.map.visible && !this.inLander
+      && !this.hopUI.visible && !this.journalUI.visible);
+    this.planetHud.update(dt, {
+      player: { x: this.pos.x, z: this.pos.z },
+      hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
+      home: this.crownPos,
+      sites: this.mystery.found
+        .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
+        .map((s) => siteXZ(s)),
+    });
     this.minimap.update(dt, {
       player: {
         x: this.pos.x, z: this.pos.z,

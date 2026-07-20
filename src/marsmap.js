@@ -1,8 +1,9 @@
-// The surveyor's map — DOM/canvas layer, M to open. The map is EARNED:
-// terrain draws only where the settler has walked (explore.js's cells);
-// everywhere else sits under rust-red fog that thins at its edges. The
-// view is square, north up (-z), and grows as the explored bounds grow.
-// Terrain is re-rendered only when the bounds or the cleared area change;
+// The surveyor's map — DOM/canvas layer, M to open. The survey came
+// first (2026-07-20): Mars is the best-charted dead world there is, so
+// the relief draws EVERYWHERE in view — no fog, no unveiling. What the
+// map still earns is YOUR story: the trail, the named finds, the
+// homestead's marks. The view is square, north up (-z), and grows as
+// the travelled bounds grow. Terrain re-renders only when bounds move;
 // markers redraw every frame for free.
 
 import { EXPLORE_CELL, bounds } from './explore.js';
@@ -25,7 +26,7 @@ const CSS = `
 
 const MIN_SPAN = 420;        // m — the map never zooms tighter than this
 const TERRAIN_PX = 176;      // sampling resolution of the relief image
-const FOG = '#59180d';       // the red the planet keeps for the unseen
+// (FOG retired 2026-07-20 — the survey came first; the mist is gone)
 
 export class MarsMap {
   constructor(groundAt) {
@@ -45,7 +46,7 @@ export class MarsMap {
     this.canvas.width = 512; this.canvas.height = 512;
     const foot = document.createElement('div');
     foot.className = 'foot';
-    foot.textContent = 'M CLOSE · THE FOG CLEARS WHERE YOU WALK';
+    foot.textContent = 'M CLOSE · THE SURVEY KNOWS THE COUNTRY — THE TRAIL KNOWS YOU';
     frame.append(this.title, this.canvas, foot);
     this.root.appendChild(frame);
     document.body.appendChild(this.root);
@@ -109,32 +110,9 @@ export class MarsMap {
     tc.clearRect(0, 0, 512, 512);
     tc.drawImage(img, 0, 0, 512, 512);
 
-    // the fog: rust sheet with soft holes where the walker has been
-    const cells0 = Math.floor(v.minX / EXPLORE_CELL);
-    const cells1 = Math.floor(v.minZ / EXPLORE_CELL);
-    const n = Math.ceil(v.span / EXPLORE_CELL) + 1;
-    const mask = document.createElement('canvas');
-    mask.width = n; mask.height = n;
-    const mc = mask.getContext('2d');
-    mc.fillStyle = '#fff';
-    for (const key of exp.cells) {
-      const [cx, cz] = key.split(',').map(Number);
-      const i = cx - cells0, j = cz - cells1;
-      if (i >= -1 && i <= n && j >= -1 && j <= n) mc.fillRect(i, j, 1, 1);
-    }
-    const fog = document.createElement('canvas');
-    fog.width = 512; fog.height = 512;
-    const fc = fog.getContext('2d');
-    fc.fillStyle = FOG;
-    fc.fillRect(0, 0, 512, 512);
-    fc.globalCompositeOperation = 'destination-out';
-    fc.imageSmoothingEnabled = true;
-    const px = 512 / (v.span / EXPLORE_CELL); // screen px per fog cell
-    fc.drawImage(mask,
-      (cells0 * EXPLORE_CELL - v.minX) / v.span * 512,
-      (cells1 * EXPLORE_CELL - v.minZ) / v.span * 512,
-      n * px, n * px);
-    tc.drawImage(fog, 0, 0);
+    // (the unveiling mist died 2026-07-20, James's call: Mars is the
+    // best-surveyed dead world there is — the chart knows the country
+    // before your boots do. The trail still tells where YOU have been.)
   }
 
   toPx(x, z) {
