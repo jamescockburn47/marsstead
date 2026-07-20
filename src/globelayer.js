@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { M_PER_DEG, elevationReal, latLonToWorld } from './mars.js';
 import { colourFor } from './marschunk.js';
 import { FBM_GLSL } from './glsl.js';
+import { frostCover } from './frost.js';
 
 // the world's own geometry: circumference = 360 * M_PER_DEG
 export const GLOBE_R = (360 * M_PER_DEG) / (2 * Math.PI);   // ~16,960 m
@@ -20,14 +21,18 @@ export const GLOBE_R = (360 * M_PER_DEG) / (2 * Math.PI);   // ~16,960 m
 export const RELIEF = 0.08;
 
 export class GlobeLayer {
-  constructor(scene) {
+  // seasonLs: the sim's own season — the caps the opening shot wears
+  // are the caps the settler will fly under
+  constructor(scene, seasonLs = 0) {
     this.scene = scene;
     this.group = new THREE.Group();
     this.group.visible = false;
     scene.add(this.group);
 
     // ---- the planet: lat/lon grid displaced by MOLA ----------------------
-    const NLON = 192, NLAT = 96;
+    // 384×192 walks the whole 4ppd table close to its own stride — Valles
+    // cuts, Olympus stands, Hellas is a wound (the global bake earns it)
+    const NLON = 384, NLAT = 192;
     const pos = [], col = [], idx = [];
     for (let j = 0; j <= NLAT; j++) {
       const lat = 90 - (j / NLAT) * 180;
@@ -43,7 +48,16 @@ export class GlobeLayer {
           r * Math.sin(phi) * Math.sin(theta),
         );
         const { x, z } = latLonToWorld(lat, lon);
-        const c = colourFor(hReal * 0.025, x, z, 0);
+        let c = colourFor(hReal * 0.025, x, z, 0);
+        // the seasonal caps, from space: the frost law at local noon
+        const cap = frostCover(lat, seasonLs, 0.5);
+        if (cap > 0.01) {
+          c = [
+            c[0] + (0.94 - c[0]) * cap * 0.85,
+            c[1] + (0.93 - c[1]) * cap * 0.85,
+            c[2] + (0.90 - c[2]) * cap * 0.85,
+          ];
+        }
         col.push(c[0], c[1], c[2]);
       }
     }

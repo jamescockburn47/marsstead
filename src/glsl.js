@@ -41,15 +41,25 @@ export const FROST_GLINT_GLSL = /* glsl */`
     float vl = max(length(view), 1e-3);
     float align = max(0.0, dot(view / vl, sunAzim));
     float corr = pow(align, mix(6.0, 26.0, sunLow)) * (1.0 + sunLow);
-    vec2 cell = floor(wpos.xz * cellScale);
+    // CRYSTALS, not cells (James's eye, 2026-07-20: the lit-cell idiom
+    // reads as Moorstead voxels — wrong for smooth-shaded Mars). Each
+    // cell hosts one JITTERED POINT; only a small round neighbourhood
+    // of that point lights, its size its own — a pinprick of frost
+    // catching the sun, never a square of ground.
+    vec2 cellF = wpos.xz * cellScale;
+    vec2 cell = floor(cellF);
     float h = glintHash(cell * 0.37);
     float h2 = glintHash(cell * 0.37 + 19.19);
+    vec2 pt = cell + vec2(glintHash(cell * 0.53 + 3.17), glintHash(cell * 0.53 + 7.71));
+    float pr = length(cellF - pt);
+    float size = 0.10 + 0.18 * h2;                 // crystals come in sizes
+    float spot = 1.0 - smoothstep(size * 0.35, size, pr);
     float tw = 0.55 + 0.45 * sin(t * (1.5 + h2 * 3.0) + h2 * 6.2831);
     // sqrt lifts thin morning cover into a real field of lights while a
     // full cap still outshines it — the centrepiece must READ at dawn
     float fr = sqrt(frost);
-    float g = step(1.0 - 0.45 * corr * fr, h) * tw * (0.5 + 0.5 * h);
+    float g = step(1.0 - 0.6 * corr * fr, h) * spot * tw * (0.6 + 0.4 * h);
     float dist = smoothstep(nearIn, nearFull, vl) * (1.0 - smoothstep(farHold, farOut, vl));
-    return light + vec3(1.0, 0.97, 0.9) * (g * corr * dist * glintK * fr);
+    return light + vec3(1.0, 0.97, 0.9) * (g * corr * dist * glintK * fr * 1.6);
   }
 `;

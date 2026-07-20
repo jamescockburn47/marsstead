@@ -400,6 +400,7 @@ class Game {
     this.hopUI = new HopConsole({
       getHopper: () => this.hopper,
       getHome: () => this.crownPos,
+      season: () => solarLongitude(this.simMillis),
       buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
       tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
       onLoadTank: () => {
@@ -1120,7 +1121,7 @@ class Game {
     }
     // the whole planet, for the opening shot: the globe turning in the
     // black, parked far beneath the flat world's stage
-    this.globe = new GlobeLayer(this.scene);
+    this.globe = new GlobeLayer(this.scene, solarLongitude(this.simMillis));
     this.globe.setPlaced(A.x, -120000, A.z);
     // the cut veil: every shot change happens behind it
     this.attractVeil = document.createElement('div');

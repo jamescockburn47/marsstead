@@ -10,7 +10,8 @@ import {
   hopRangeKm, fuelForKm, planHop, TANK_FUEL_KG, MAX_TANKS,
   MIN_HOP_KM, CRADLE_BUGGY_KG,
 } from './hopper.js';
-import { featuresInBox } from './mars.js';
+import { featuresInBox, worldToLatLon, latLonToWorld } from './mars.js';
+import { PlanetChart, nearestWrappedX } from './planetchart.js';
 
 const CSS = `
   #hopc { position: fixed; inset: 0; z-index: 55; display: none;
@@ -35,6 +36,10 @@ const CSS = `
   #hchartwrap { flex: 1; border: 1px solid rgba(63,208,201,.25); border-radius: 4px;
     background: radial-gradient(ellipse at center, rgba(40,22,12,.6), rgba(14,8,5,.9)); }
   #hchart { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #hplanet { width: 100%; height: 100%; display: none; cursor: grab;
+    image-rendering: auto; touch-action: none; }
+  #hchartwrap.planet #hchart { display: none; }
+  #hchartwrap.planet #hplanet { display: block; }
   #hopc footer { display: flex; align-items: center; gap: 16px;
     padding: 8px 22px 14px; font-size: 11.5px; letter-spacing: 1px; }
   #hopc footer .motto { color: #e8c46a; opacity: .85; }
@@ -79,10 +84,11 @@ export class HopConsole {
           <aside class="hpanel" id="hplot"></aside>
           <aside class="hpanel"><h2>VESPER</h2><div id="hvesper"></div></aside>
         </div>
-        <div id="hchartwrap"><svg id="hchart" preserveAspectRatio="xMidYMid meet"></svg></div>
+        <div id="hchartwrap"><svg id="hchart" preserveAspectRatio="xMidYMid meet"></svg><canvas id="hplanet"></canvas></div>
       </div>
       <footer><span class="motto">the horizon is a fuel problem — you land where you aim</span>
         <span class="hint" id="hhint"></span>
+        <button id="hview"></button>
         <button id="hload"></button>
         <button id="hcradle"></button>
         <button id="hgo" class="gold"></button></footer>`;
@@ -105,6 +111,24 @@ export class HopConsole {
       this.aim = [cx + (u - 0.5) * span, cz + (v - 0.5) * span];
       this.render();
     });
+
+    // ---- THE PLANET: the orbital page — drag the real MOLA globe,
+    // click anywhere; the aim resolves wrap-shortest from the craft
+    this.planetMode = false;
+    this._planetSig = '';
+    this.planet = new PlanetChart(this.root.querySelector('#hplanet'), ({ lat, lonE }) => {
+      const H = this.h.getHopper();
+      const w = latLonToWorld(lat, lonE);
+      this.aim = [nearestWrappedX(w.x, H.x), w.z];
+      this._planetSig = ''; // aim moved: repaint the face
+      this.render();
+    }, this.h.season ? this.h.season() : 0);
+    this.root.querySelector('#hview').onclick = () => {
+      this.planetMode = !this.planetMode;
+      this.root.querySelector('#hchartwrap').classList.toggle('planet', this.planetMode);
+      this._planetSig = '';
+      this.render();
+    };
   }
 
   open() { this.visible = true; this.root.classList.add('open'); this.render(); }
@@ -163,8 +187,28 @@ export class HopConsole {
       : buggyNear ? '⊔ CRADLE THE BUGGY' : '⊔ PARK THE BUGGY BESIDE THE CRAFT TO CRADLE';
     this.root.querySelector('#hhint').textContent = `tanks are spent whole at ignition · minimum hop ${MIN_HOP_KM} km`;
     this.root.querySelector('#hvesper').textContent = `“${this.h.line()}”`;
+    this.root.querySelector('#hview').textContent = this.planetMode
+      ? '⊞ THE COUNTRY' : '⊕ THE PLANET';
 
-    // ---- the chart
+    // ---- the chart (or the planet: repainted only when its face changes —
+    // the orthographic render walks the whole table and earns its cache)
+    if (this.planetMode) {
+      const sig = `${Math.round(H.x)}:${Math.round(H.z)}:${rangeKm.toFixed(1)}:`
+        + `${this.aim ? this.aim.map((v) => Math.round(v)).join(',') : ''}`
+        + `:${this.planet.view.lat.toFixed(1)}:${this.planet.view.lon.toFixed(1)}`;
+      if (sig !== this._planetSig) {
+        this._planetSig = sig;
+        const craftLL = worldToLatLon(H.x, H.z);
+        const homeLL = home ? worldToLatLon(home.x, home.z) : null;
+        this.planet.render({
+          home: homeLL ? { lat: homeLL.lat, lonE: homeLL.lon } : null,
+          craft: { lat: craftLL.lat, lonE: craftLL.lon },
+          aim: this.aim ? (() => { const a = worldToLatLon(this.aim[0], this.aim[1]); return { lat: a.lat, lonE: a.lon }; })() : null,
+          rangeKm,
+        });
+      }
+      return;
+    }
     this.renderChart(H, rangeKm, home);
   }
 
