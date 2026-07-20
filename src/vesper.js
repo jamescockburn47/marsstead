@@ -30,6 +30,7 @@ export const EVENTS = [
   'pairing-review',
   'hopper-built', 'hop-ignition', 'hop-crest', 'hop-landed',
   'signal-close', 'signal-found',
+  'heritage-visit', 'heritage-salvage',
 ];
 
 // the first-sol briefing's deterministic floor: if the relay is down, the

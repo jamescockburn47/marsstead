@@ -304,6 +304,8 @@ export function buildMessages(rawState, history, playerText, phase = DEFAULT_PHA
 export const BARK_MOMENTS = {
   'signal-close': 'the instruments have led the settler to the edge of an anomaly site — the signal band is nearly full, and something in the ground here is not ordinary',
   'signal-found': 'the settler just read the ground at an anomaly site and recovered a record for the journal; a new, fainter signal has woken somewhere farther out',
+  'heritage-visit': 'the settler has walked up to one of the old robotic missions resting where it truly stopped, decades ago — a real machine from the age before anyone lived here',
+  'heritage-salvage': 'the settler just salvaged usable materials from one of the old missions under the cleanup charter — the hardware is honoured by being put back to work, and the site is logged as tended',
   wake: 'the settler has just woken for the new sol',
   'first-steps': 'the settler just took their first steps on Mars — the first bootprints ever made here',
   'first-jump': 'the settler just made their first jump in the low gravity',

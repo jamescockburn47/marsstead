@@ -92,6 +92,9 @@ export class PlanetHud {
       ctx.fillStyle = colour;
       ctx.beginPath(); ctx.arc(u, v, r, 0, Math.PI * 2); ctx.fill();
     };
+    for (const h of dots.heritage || []) {
+      dot(h, h.stripped ? 'rgba(178,168,148,.45)' : 'rgba(205,196,178,.9)', 1.8);
+    }
     for (const hm of dots.homes || []) dot(hm, hm.colour || '#e8c46a', 2.5);
     for (const s of dots.sites || []) dot(s, '#3fd0c9', 2.5);
     dot(dots.hopper, '#3fd0c9', 3);

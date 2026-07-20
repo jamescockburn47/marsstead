@@ -164,6 +164,7 @@ export class HopConsole {
       const H = this.h.getHopper();
       const payload = this.cradle ? CRADLE_BUGGY_KG : 0;
       this.planet.tick(dt, {
+        heritage: this.h.heritage ? this.h.heritage() : [],
         homes: this.h.homes ? this.h.homes() : [],
         craft: { x: H.x, z: H.z },
         aim: this.aim ? { x: this.aim[0], z: this.aim[1] } : null,
@@ -297,6 +298,14 @@ export class HopConsole {
     for (const f of featuresInBox(H.x - half, H.z - half, H.x + half, H.z + half)) {
       s += `<text x="${px(f.x)}" y="${pz(f.z)}" fill="rgba(246,237,226,.55)"
         font-size="10.5" letter-spacing="2" text-anchor="middle">${f.name.toUpperCase()}</text>`;
+    }
+    // the old machines: pale marks, part of why the country is worth
+    // crossing (the cleanup charter)
+    for (const h of (this.h.heritage ? this.h.heritage() : [])) {
+      s += `<text x="${px(h.x)}" y="${pz(h.z) + 3}" fill="rgba(200,190,170,${h.stripped ? 0.35 : 0.85})"
+        font-size="10" text-anchor="middle">▽</text>
+        <text x="${px(h.x)}" y="${pz(h.z) + 13}" fill="rgba(200,190,170,${h.stripped ? 0.3 : 0.6})"
+        font-size="7.5" letter-spacing="1" text-anchor="middle">${h.name.toUpperCase()}</text>`;
     }
     // every roof you own — the way home is always on the chart
     for (const hm of (this.h.homes ? this.h.homes() : (home ? [{ ...home, glyph: '⌂', label: '', colour: '#e8c46a' }] : []))) {

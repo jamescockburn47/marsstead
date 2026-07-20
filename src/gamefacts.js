@@ -73,6 +73,11 @@ export const GAME_FACTS = [
     text: 'The hop chart and the wrist map name the real country — Olympus Mons, the great basins, the named craters of the survey. They are places, not quests: wanting to see one is reason enough, and the fuel circle is the only permission needed.' },
   { topic: 'world', keywords: ['frost', 'glint', 'sparkle', 'morning', 'dawn', 'shimmer', 'caps', 'pole', 'ice'],
     text: 'Ground frost condenses overnight and burns off by mid-morning: step out at dawn and the plain toward the sun is a field of cold sparks. The polar caps carry seasonal frost that shimmers from the hopper\'s arc. It is only beautiful — and it is gone within the hour.' },
+  // --- heritage: the cleanup charter ---
+  { topic: 'heritage', keywords: ['heritage', 'salvage', 'viking', 'rover', 'perseverance', 'curiosity', 'pathfinder', 'mission', 'old', 'wreck', 'cleanup', 'charter'],
+    text: 'The old robotic missions rest where they truly stopped — Perseverance a walk from home, Beagle 2 a buggy day into Isidis, Curiosity above Gale, the Vikings in the far country. The charter includes their cleanup: E beside one salvages its real kit (whatever the suit and rover can carry; the rest waits). Pale marks on every chart.' },
+  { topic: 'heritage', keywords: ['stripped', 'honours', 'tended', 'logged', 'materials', 'kit'],
+    text: 'Each old machine yields what it truly carried — power units and dishes read as electronics and cable, airbags as seal kits, the little helicopter as a drone frame. A fully salvaged site reads STRIPPED WITH HONOURS on the prompt and dims on the charts: tended, never forgotten.' },
   { topic: 'meta', keywords: ['orders', 'help', 'controls', 'keys', 'manual', 'instructions'],
     text: 'O reopens the LANDFALL ORDERS (the written briefing); ENTER types to VESPER, V is push-to-talk. The orders sheet lists every key.' },
 ];

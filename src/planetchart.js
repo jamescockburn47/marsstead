@@ -124,7 +124,8 @@ export class PlanetChart {
     this.mCraft = mk('pl-mark pl-craft', '●');
     this.mAim = mk('pl-mark pl-aim', '✛');
     this._mk = mk;
-    this.homeEls = new Map();   // label -> span, created as roofs appear
+    this.homeEls = new Map();     // label -> span, created as roofs appear
+    this.heritageEls = new Map(); // the old machines, likewise
   }
 
   // one frame while the page is open: inertia, camera, labels, render
@@ -188,6 +189,18 @@ export class PlanetChart {
     };
     for (const { f: feat, el } of this.labels) place(el, feat.lat, feat.lonE);
     const wll = (m) => { const ll = worldToLatLon(m.x, m.z); return { lat: ll.lat, lonE: ll.lon }; };
+    // the old machines, pale on the face
+    for (const h of marks.heritage || []) {
+      let el = this.heritageEls.get(h.name);
+      if (!el) {
+        el = this._mk('pl-name', `▽ ${h.name.toUpperCase()}`);
+        el.style.fontSize = '8.5px';
+        this.heritageEls.set(h.name, el);
+      }
+      el.style.color = h.stripped ? 'rgba(200,190,170,.35)' : 'rgba(200,190,170,.8)';
+      const p = wll(h);
+      place(el, p.lat, p.lonE, 1.015);
+    }
     // every roof you own, floated on the face
     for (const hm of marks.homes || []) {
       let el = this.homeEls.get(hm.label);

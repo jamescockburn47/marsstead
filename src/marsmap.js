@@ -190,6 +190,19 @@ export class MarsMap {
       this.marker(ctx, s.x, s.z, '#3fd0c9', s.name.toUpperCase());
     }
 
+    // the old machines: humanity's record on the land, pale and patient;
+    // a stripped site keeps its name but loses its glow
+    for (const h of pois.heritage || []) {
+      const [hu, hw] = this.toPx(h.x, h.z);
+      ctx.fillStyle = h.stripped ? 'rgba(178,168,148,.4)' : 'rgba(200,190,170,.9)';
+      ctx.beginPath();
+      ctx.moveTo(hu, hw - 4.5); ctx.lineTo(hu + 4, hw + 3.5); ctx.lineTo(hu - 4, hw + 3.5);
+      ctx.closePath(); ctx.fill();
+      ctx.font = '9px Georgia';
+      ctx.fillStyle = h.stripped ? 'rgba(246,237,226,.35)' : 'rgba(246,237,226,.7)';
+      ctx.fillText(h.name.toUpperCase(), hu + 7, hw + 3);
+    }
+
     // the live signal's honest ring: a vague circle on a coarse grid —
     // the band's warmth is the real instrument; this only orients
     if (pois.signalRing) {

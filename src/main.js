@@ -23,6 +23,11 @@ import {
 } from './marslegends.js';
 import { Journal } from './journal.js';
 import { PlanetHud } from './planethud.js';
+import {
+  HERITAGE, heritageXZ, remainingAt, isStripped, recordTake,
+  serializeHeritage, deserializeHeritage, SALVAGE_M,
+} from './heritage.js';
+import { HeritageLayer } from './heritagelayer.js';
 import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
 import {
   createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
@@ -371,6 +376,13 @@ class Game {
     this.journalUI = new Journal();
     // the wrist planet: the whole surveyed world, always in the corner
     this.planetHud = new PlanetHud(solarLongitude(this.simMillis));
+
+    // ---- heritage: the old machines, and the cleanup charter
+    this.heritage = deserializeHeritage(null);   // { siteId: { itemId: taken } }
+    this.heritageLayer = new HeritageLayer(this.scene);
+    this.salvaging = null;                        // { site, t, need }
+    this._heritageNear = null;
+    this._heritageReseat = 0;
     this.reading = null;      // { t, need } while reading the ground
     this.sceneQueue = null;   // { lines, i, nextAt } — a beat's canon plays out
     this._sweepDist = Infinity;
@@ -403,6 +415,11 @@ class Game {
     };
     // every roof you own, for every chart: the way home must always be
     // on the map (James, 2026-07-20)
+    // the old machines, for every chart: name, place, and whether the
+    // charter's work there is done
+    this.heritageFor = () => HERITAGE.map((s) => ({
+      ...heritageXZ(s), name: s.name, stripped: isStripped(s, this.heritage),
+    }));
     this.homesFor = () => [
       { x: this.crownPos.x, z: this.crownPos.z, label: 'BURROW', glyph: '⌂', colour: '#e8c46a' },
       ...(this.steadOrigin
@@ -414,6 +431,7 @@ class Game {
       getHopper: () => this.hopper,
       getHome: () => this.crownPos,
       homes: () => this.homesFor(),
+      heritage: () => this.heritageFor(),
       season: () => solarLongitude(this.simMillis),
       buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
       tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
@@ -708,6 +726,7 @@ class Game {
     this.hopper = deserializeHopper(s.hopper); // the craft, where it stood
     this.hopperBuilt = !!s.hopperBuilt;
     this.mystery = deserializeMystery(s.mystery); // the chain, as far as it got
+    this.heritage = deserializeHeritage(s.heritage); // the hauls already carried home
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -756,6 +775,7 @@ class Game {
       hopper: serializeHopper(this.hopper),
       hopperBuilt: !!this.hopperBuilt,
       mystery: serializeMystery(this.mystery),
+      heritage: serializeHeritage(this.heritage),
     })).catch(() => {});
   }
 
@@ -1297,6 +1317,13 @@ class Game {
     if (!this.inLander && !this.driving && this.activeSignal
       && this._sweepDist < SWEEP_M && !this.reading) {
       this.reading = { t: 0, need: 4 };
+      return;
+    }
+    // the old machines: the cleanup charter's own act
+    if (!this.inLander && !this.driving && this._heritageNear
+      && this._heritageNear.d < SALVAGE_M && !this.salvaging
+      && !isStripped(this._heritageNear.site, this.heritage)) {
+      this.salvaging = { site: this._heritageNear.site, t: 0, need: 4.5 };
       return;
     }
     // the craft is its own console — an open-ground landing must NEVER
@@ -2090,6 +2117,14 @@ class Game {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.salvaging) {
+      const pct = Math.round((this.salvaging.t / this.salvaging.need) * 100);
+      this.hud.setPrompt(`salvaging ${this.salvaging.site.name.toLowerCase()}… ${pct}%`);
+    } else if (this._heritageNear && this._heritageNear.d < SALVAGE_M && !this.driving) {
+      const site = this._heritageNear.site;
+      this.hud.setPrompt(isStripped(site, this.heritage)
+        ? `${site.name.toLowerCase()} · stripped with honours`
+        : `|*E| salvage ${site.name.toLowerCase()}`);
     } else if (this.reading) {
       const pct = Math.round((this.reading.t / this.reading.need) * 100);
       this.hud.setPrompt(`reading the ground… ${pct}%`);
@@ -2458,6 +2493,60 @@ class Game {
       }
     }
 
+    // ---- heritage: the old machines underfoot — the story on arrival,
+    // the salvage act, the reseat as terrain streams in beneath them
+    if (!this.attract) {
+      this._heritageReseat += dt;
+      if (this._heritageReseat > 2.5) {
+        this._heritageReseat = 0;
+        this.heritageLayer.reseat();
+      }
+      let near = null, nearD = 40;
+      for (const site of HERITAGE) {
+        const p = heritageXZ(site);
+        const d = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
+        if (d < nearD) { near = site; nearD = d; }
+      }
+      this._heritageNear = near ? { site: near, d: nearD } : null;
+      // the story speaks once, on first approach — history is canon
+      if (near && nearD < 26 && !this.saidFirsts.has(`heritage:${near.id}`)) {
+        this.saidFirsts.add(`heritage:${near.id}`);
+        this.hud.say(`${near.name}, ${near.year}. ${near.story}`, this.t);
+        this.say('heritage-visit');
+      }
+      if (this.salvaging) {
+        const p = heritageXZ(this.salvaging.site);
+        if (Math.hypot(p.x - this.pos.x, p.z - this.pos.z) > SALVAGE_M * 1.6 || this.driving) {
+          this.salvaging = null;
+        } else {
+          this.salvaging.t += dt;
+          if (this.salvaging.t >= this.salvaging.need) {
+            const site = this.salvaging.site;
+            this.salvaging = null;
+            // carry what fits: suit first, the rover deck alongside —
+            // whatever stays keeps waiting; nothing is ever wasted
+            let took = false, full = false;
+            for (const [id, n] of remainingAt(site, this.heritage)) {
+              for (let k = 0; k < n; k++) {
+                let dest = null;
+                if (massOf(this.suit) + ITEMS[id].kg <= SUIT_CAPACITY) dest = this.suit;
+                else if (this.distToRover() < 9
+                  && massOf(this.roverStore) + ITEMS[id].kg <= ROVER_CAPACITY) dest = this.roverStore;
+                if (!dest) { full = true; break; }
+                add(dest, id, 1);
+                this.heritage = recordTake(site, this.heritage, id, 1);
+                took = true;
+              }
+              if (full) break;
+            }
+            if (took) this.say('heritage-salvage');
+            if (full) this.say('suit-full');
+            this.persist();
+          }
+        }
+      }
+    }
+
     // ---- the frost rig: frost.js dictates, the shaders obey (terrain and
     // vista share these uniform objects — one sword, two surfaces)
     {
@@ -2670,6 +2759,7 @@ class Game {
         foundSites: this.mystery.found
           .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
           .map((s) => ({ ...siteXZ(s), name: s.name })),
+        heritage: this.heritageFor(),
         signalRing,
       });
     }
@@ -2797,6 +2887,7 @@ class Game {
       sites: this.mystery.found
         .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
         .map((s) => siteXZ(s)),
+      heritage: this.heritageFor(),
     });
     this.minimap.update(dt, {
       player: {

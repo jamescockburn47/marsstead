@@ -71,6 +71,13 @@ reading act + THE RECORD journal + VESPER moments; mystery rides the
 save). The five beats' relics carry the tone ladder and never a plot
 word — her ignorance stays real.
 
+Also shipped: HERITAGE (heritage.js, verify-gated) — 13 real missions
+at their true coordinates with mission-true salvage manifests
+(Perseverance a walk, Beagle 2 a buggy day, Vikings a far flight);
+partial hauls honest to carry capacity, remainder waits; pale marks
+on every chart, "stripped with honours" when tended; the cleanup
+charter is canon (gamefacts + two bark tags).
+
 ## The build queue
 
 1. ~~Bake the agreed canon~~ DONE 2026-07-19 (see OVERVIEW §7's note):
