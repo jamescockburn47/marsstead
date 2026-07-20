@@ -40,13 +40,25 @@ ship as one arc (in verify-gated slices).
   CO₂/H₂O frost whitening toward the caps), wind-streak fbm, crater-rim
   darkening from slope. Same function feeds walked chunks, the vista and
   the maps — one palette, no drift.
-- **Polar frost glint** (the recent discussion, as I understand it — James
-  to confirm): frost-covered ground gets a specular sparkle in low sun —
-  per-pixel glint in the terrain/vista shader (fbm-gated specular, warm
-  sun colour), strongest at grazing light near the caps; from hopper
-  altitude the caps read as a shimmer on the horizon. Zero assets, shader
-  only. *If the discussed feature was something else, say so and this
-  section changes.*
+- **The frost glint — a centrepiece visual** (confirmed by James
+  2026-07-20): the family's *sword-of-the-sun* rig (Moorstead
+  `mesher.js` addWater → Saltstead `ocean.js` glitter), ported to
+  GROUND FROST and improved. The corridor law: sparkle lives only
+  along the camera→sun-azimuth corridor, its power blending from a
+  broad noon pool to a narrow blazing blade at low sun; per-cell
+  hashed glints with individual twinkle speed AND phase (the
+  anti-pulse rule); distance fade-in. Gated by a new pure
+  `frostCover(lat, season, hourFrac)`: the seasonal caps (the
+  `frostLine` law) plus **morning surface frost everywhere in
+  season** — condensed overnight, blazing at dawn, burned off by
+  mid-morning (real Mars: Viking 2's frost; the possible methane/CO₂
+  ground frosts). The intended shot: step out at sunrise and the
+  whole plain toward the sun is a field of cold pinpricks —
+  otherworldly, beautiful, gone within the hour. From hopper
+  altitude the caps shimmer on the horizon. Terrain chunks and the
+  vista share the same shader term; `verify-marslight` (or a new
+  `verify-frost`) locks the pure cover model (seasonality, the
+  morning burn-off curve, cap latitudes).
 - The vista (`vistalayer.js`) inherits all of it via `colourFor` — the
   arc's view becomes the planet's portrait.
 
