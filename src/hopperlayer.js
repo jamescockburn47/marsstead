@@ -223,6 +223,10 @@ export class HopperLayer {
     // blast stays below while the craft rises). No particles, ever.
     this.scourMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
+      // the drawn far ground is COARSER than the pure height (LOD rings
+      // stream in behind a landing) — bias the blast toward the camera
+      // so the drawn hill can never swallow it
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
       uniforms: { uT: { value: 0 }, uK: { value: 0 } },
       vertexShader: `varying vec2 vUv;
         void main() { vUv = uv;
@@ -264,7 +268,15 @@ export class HopperLayer {
       this._scourAt = [x, z];
       const pos = this.scour.geometry.attributes.position;
       for (let i = 0; i < pos.count; i++) {
-        pos.setY(i, meshGroundHeight(x + pos.getX(i), z + pos.getZ(i)) - groundY + 0.15);
+        const wx = x + pos.getX(i), wz = z + pos.getZ(i);
+        // ride the HIGHEST nearby ground: a coarse streamed chunk draws
+        // above the pure height on slopes, and the dust must clear it
+        const h = Math.max(
+          meshGroundHeight(wx, wz),
+          meshGroundHeight(wx + 1.4, wz), meshGroundHeight(wx - 1.4, wz),
+          meshGroundHeight(wx, wz + 1.4), meshGroundHeight(wx, wz - 1.4),
+        );
+        pos.setY(i, h - groundY + 0.8);
       }
       pos.needsUpdate = true;
     }

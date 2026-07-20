@@ -1300,11 +1300,16 @@ class Game {
       return;
     }
     // the craft is its own console — an open-ground landing must NEVER
-    // strand the ship: E beside the hopper opens its brain anywhere
-    if (!this.inLander && !this.driving && this.hopperBuilt && !this.hopFlight
-      && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
-      this.hopUI.open();
-      return;
+    // strand the ship: E beside the hopper opens its brain anywhere.
+    // The BUGGY outranks it when it is the nearer machine (a released
+    // cradle parks inside the hopper's ring — driving off must be one E)
+    {
+      const dHop = Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z);
+      if (!this.inLander && !this.driving && this.hopperBuilt && !this.hopFlight
+        && dHop < 7 && !(this.distToRover() < 3.2 && this.distToRover() < dHop)) {
+        this.hopUI.open();
+        return;
+      }
     }
     if (!this.inLander && !this.driving
       && (this.nearestMachine() || this.distToLander() < 6) && this.distToLadder() >= 3.6

@@ -11,6 +11,7 @@ import {
   MIN_HOP_KM, CRADLE_BUGGY_KG,
 } from './hopper.js';
 import { featuresInBox, latLonToWorld } from './mars.js';
+import { meshGroundHeight } from './marschunk.js';
 import { PlanetChart, nearestWrappedX } from './planetchart.js';
 
 const CSS = `
@@ -126,8 +127,12 @@ export class HopConsole {
 
     // ---- THE PLANET: the orbital page — the actual globe, live in its
     // own view; drag turns it, a click anywhere is an aim resolved
-    // wrap-shortest from the craft
-    this.planetMode = false;
+    // wrap-shortest from the craft. It is the console's FIRST page
+    // (2026-07-20): the planet is the point.
+    this.planetMode = true;
+    this.root.querySelector('#hchartwrap').classList.add('planet');
+    this._reliefSig = '';
+    this._reliefURL = '';
     this.planet = new PlanetChart(
       this.root.querySelector('#hplanet'),
       this.root.querySelector('#hlabels'),
@@ -220,6 +225,47 @@ export class HopConsole {
     if (!this.planetMode) this.renderChart(H, rangeKm, home);
   }
 
+  // the local relief, painted from the same pure ground as the world —
+  // cached until the craft or the reach moves the window
+  reliefURL(cx, cz, span) {
+    const sig = `${Math.round(cx)}:${Math.round(cz)}:${Math.round(span)}`;
+    if (sig === this._reliefSig) return this._reliefURL;
+    this._reliefSig = sig;
+    const P = 160;
+    const cvs = document.createElement('canvas');
+    cvs.width = P; cvs.height = P;
+    const ctx = cvs.getContext('2d');
+    const img = ctx.createImageData(P, P);
+    const step = span / P;
+    const hs = new Float32Array(P * P);
+    let lo = Infinity, hi = -Infinity;
+    for (let j = 0; j < P; j++) {
+      for (let i = 0; i < P; i++) {
+        const h = meshGroundHeight(cx + (i - P / 2) * step, cz + (j - P / 2) * step);
+        hs[j * P + i] = h;
+        if (h < lo) lo = h; if (h > hi) hi = h;
+      }
+    }
+    const range = Math.max(1, hi - lo);
+    for (let j = 0; j < P; j++) {
+      for (let i = 0; i < P; i++) {
+        const h = hs[j * P + i];
+        const e = (h - lo) / range;
+        const hx = hs[j * P + Math.min(P - 1, i + 1)] - h;
+        const hz = hs[Math.min(P - 1, j + 1) * P + i] - h;
+        const shade = Math.max(0.55, Math.min(1.25, 1 - (hx + hz) * 0.35 / step * 6));
+        const k = (j * P + i) * 4;
+        img.data[k] = (86 + e * 104) * shade;
+        img.data[k + 1] = (46 + e * 56) * shade;
+        img.data[k + 2] = (30 + e * 34) * shade;
+        img.data[k + 3] = 235;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    this._reliefURL = cvs.toDataURL();
+    return this._reliefURL;
+  }
+
   renderChart(H, rangeKm, home) {
     const S = 640;
     const span = Math.max(6000, rangeKm * 2 * 1150); // the circle fills most of it
@@ -228,6 +274,9 @@ export class HopConsole {
     const pz = (wz) => ((wz - H.z) / span + 0.5) * S;
     const km = (m) => (m / span) * S;
     let s = `<svg viewBox="0 0 ${S} ${S}">`;
+    // the country itself, under everything: the MOLA truth in relief
+    s += `<image href="${this.reliefURL(H.x, H.z, span)}" x="0" y="0"
+      width="${S}" height="${S}" preserveAspectRatio="none"/>`;
     // range rings with honest labels
     for (const rKm of [2, 5, 10, 20]) {
       const r = km(rKm * 1000);
