@@ -115,20 +115,41 @@ console.log(`  placeholder: ${IS_PLACEHOLDER}`);
   check('the chart finds the mountain', box.some((f) => f.name === 'Olympus Mons'));
 }
 
-// ---- the two skins (2026-07-20): home keeps its approved ground EXACTLY;
-// the far country loses the world-wide corduroy and gains its own bones
+// ---- ONE SKIN (2026-07-20, James: "the same skin everywhere"): the
+// ground law is a single function of position — dune FIELDS with
+// wandering crests at Jezero exactly as at Hellas; only the mid-scale
+// BONES vary, and by DATA COARSENESS, never by address
 {
   const { fbm2, ridge2 } = await import('../src/noise.js');
-  // (a) inside the fine window the skin is the OLD formula, bit for bit
-  let homeExact = true;
+  const smoothT = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+  // the skin formula, recomputed independently — home must match it
+  // EXACTLY (bones are zero where the fine data carries the mid-scale)
+  const skin = (x, z) => {
+    let d = (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5
+      + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;
+    const mask = fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4);
+    const amp = 2.4 * smoothT((mask - 0.48) * 3.2);
+    if (amp > 0.02) {
+      const ang = fbm2(x * 0.00045 + 3.3, z * 0.00045 - 8.8) * 3.0;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      d += (ridge2((x * ca + z * sa) * 0.045, (z * ca - x * sa) * 0.045) - 0.5) * amp;
+    }
+    return d;
+  };
+  let oneSkin = true;
   for (let i = 0; i < 60; i++) {
     const x = (i * 37.7) % 700 - 350, z = (i * 53.3) % 700 - 350;
-    const old = (ridge2(x * 0.045, z * 0.045) - 0.5) * 2.4
-      + (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5
-      + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;
-    if (Math.abs(detailGame(x, z) - old) > 1e-12) homeExact = false;
+    if (Math.abs(detailGame(x, z) - skin(x, z)) > 1e-12) oneSkin = false;
   }
-  check('home keeps its approved skin, bit for bit', homeExact);
+  check('home wears the ONE skin, bones zeroed on fine data', oneSkin);
+  // the same clean-country statistics hold AT HOME as anywhere
+  let cleanHome = 0;
+  for (let i = 0; i < 200; i++) {
+    const x = (i % 14) * 900 - 6000, z = Math.floor(i / 14) * 900 - 6000;
+    if (fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4) < 0.48) cleanHome++;
+  }
+  check('home country is patchy too, same law', cleanHome / 200 > 0.3 && cleanHome / 200 < 0.98,
+    `${Math.round((cleanHome / 200) * 100)}% clean`);
   // (b) the far country is NOT a billiard table: mid-scale bones exist
   const farP = latLonToWorld(-40, 66);   // Hellas country
   let lo = Infinity, hi = -Infinity;
