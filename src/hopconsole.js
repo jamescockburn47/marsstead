@@ -162,7 +162,8 @@ export class HopConsole {
     // the planet is a LIVE view: it turns every frame while open
     if (this.planetMode) {
       const H = this.h.getHopper();
-      const payload = this.cradle ? CRADLE_BUGGY_KG : 0;
+      const payload = (this.cradle ? CRADLE_BUGGY_KG : 0)
+        + (this.h.holdMass ? this.h.holdMass() : 0);
       this.planet.tick(dt, {
         heritage: this.h.heritage ? this.h.heritage() : [],
         homes: this.h.homes ? this.h.homes() : [],
@@ -175,7 +176,8 @@ export class HopConsole {
 
   render() {
     const H = this.h.getHopper();
-    const payload = this.cradle ? CRADLE_BUGGY_KG : 0;
+    const holdKg = this.h.holdMass ? Math.round(this.h.holdMass()) : 0;
+    const payload = (this.cradle ? CRADLE_BUGGY_KG : 0) + holdKg;
     const rangeKm = hopRangeKm(H.fuelKg, payload);
     const home = this.h.getHome();
 
@@ -183,9 +185,9 @@ export class HopConsole {
     const tanks = Math.round(H.fuelKg / TANK_FUEL_KG);
     const slots = Array.from({ length: MAX_TANKS }, (_, i) =>
       `<span class="tk${i < tanks ? ' full' : ''}"></span>`).join('');
-    this.root.querySelector('#hcraft').innerHTML = `<h2>THE CRAFT</h2>
+    this.root.querySelector('#hcraft').innerHTML = `<h2>THE SHIP</h2>
         tanks ${slots}<br>
-        fuel <b>${Math.round(H.fuelKg)}</b> kg · payload <b>${payload}</b> kg<br>
+        fuel <b>${Math.round(H.fuelKg)}</b> kg · hold <b>${holdKg}</b> kg · payload <b>${payload}</b> kg<br>
         reach <b class="teal">${rangeKm.toFixed(0)} km</b> ${this.cradle ? '(buggy cradled)' : ''}`;
 
     // ---- the plot panel

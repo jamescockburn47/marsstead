@@ -62,6 +62,8 @@ export const GAME_FACTS = [
     text: 'The ship is lander, workshop and wings in ONE hull — you landed flight-ready with three tanks aboard. E beside it opens the flight console; mark any target inside the fuel circle and light the engine. Every landing is exact, and the WHOLE ship moves with you: the bench, the stores, the bed, the spare skin.' },
   { topic: 'ship', keywords: ['stuck', 'stranded', 'lost', 'landed', 'find', 'return', 'recover', 'console', 'enter'],
     text: 'The ship is its own console: E beside it opens the chart wherever it stands — a far landing is never a stranding, because home came with you. It rings teal as SHIP on every map. Out of fuel far afield, the buggy still drives and the works can be raised anywhere there is sun and ore.' },
+  { topic: 'ship', keywords: ['hold', 'cargo', 'sled', 'tow', 'haul', 'carry', 'load', 'store', 'transport'],
+    text: 'Two ways to haul salvage home: the WORKSHOP HOLD in the ship (F loads it, G takes back, twelve hundred kilos — but hold mass rides every hop as payload, so flying cargo costs fuel and reach) and the CARGO SLED (six hundred kilos, hitched behind the buggy with H like the rig, one trailer at a time). Air is fast and priced; the ground is slow and free.' },
   { topic: 'ship', keywords: ['fuel', 'methane', 'tank', 'tanks', 'cradle', 'payload', 'reach', 'mining'],
     text: 'Ship fuel is methane tanks (assembler-made from machine parts — the mining loop pays for the sky), loaded whole and spent whole at ignition: a full rack of six reaches about twenty-five kilometres. The three landfall tanks go fast; the works exist to make more. Cradling the buggy nearly halves range but brings wheels to the far country.' },
   // --- the signal chain and the planet ---

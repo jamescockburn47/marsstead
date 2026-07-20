@@ -97,6 +97,9 @@ export function snapshotSave(state) {
     mystery: serializeMystery(state.mystery),
     // the cleanup charter (additive): what the old machines have yielded
     heritage: serializeHeritage(state.heritage),
+    // the ship's workshop hold and the cargo sled (additive)
+    shipHold: state.shipHold && typeof state.shipHold === 'object' ? state.shipHold : {},
+    sled: state.sled && typeof state.sled === 'object' ? state.sled : null,
     savedAt: Date.now(),
   };
 }
@@ -254,6 +257,12 @@ export function acceptSave(meta) {
     hopperBuilt: !!meta.hopperBuilt,
     mystery: deserializeMystery(meta.mystery),
     heritage: deserializeHeritage(meta.heritage),
+    shipHold: vetSlots(meta.shipHold),
+    sled: meta.sled && [meta.sled.x, meta.sled.z].every(Number.isFinite)
+      ? {
+        x: meta.sled.x, z: meta.sled.z, heading: fin(meta.sled.heading, 0),
+        slots: vetSlots(meta.sled.slots),
+      } : null,
     savedAt: meta.savedAt || 0,
   };
 }

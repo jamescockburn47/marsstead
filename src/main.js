@@ -33,7 +33,8 @@ import {
   createHopper, loadTank as hopperLoadTank, beginHop, tickHop, TANK_FUEL_KG,
   serializeHopper, deserializeHopper, CRADLE_BUGGY_KG,
 } from './hopper.js';
-import { HopperLayer } from './hopperlayer.js';
+import { ShipLayer } from './shiplayer.js';
+import { SledLayer } from './sledlayer.js';
 import {
   wardenVerify, loadAuth as loadWardenAuth, saveAuth as saveWardenAuth, isWarden,
   wardenNameCheck,
@@ -94,7 +95,6 @@ import {
 import { BuggyLayer, TRACK } from './buggylayer.js';
 import { Hud } from './hud.js';
 import { createLander, available, unboltSeconds, takeOne, remaining, remainingTotal } from './salvage.js';
-import { LanderLayer } from './landerlayer.js';
 import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
   remove, transfer, loadLabel, massOf,
@@ -227,8 +227,7 @@ class Game {
     // start). Salvage state is pure; the layer strips visibly.
     this.lander = createLander();
     this.landerPos = { x: -11, z: -6 };
-    this.landerLayer = new LanderLayer(this.scene, this.landerPos.x, this.landerPos.z,
-      meshGroundHeight(this.landerPos.x, this.landerPos.z));
+    // (the LanderLayer died with the merge — ShipLayer is the whole home)
     this.suit = createStore(SUIT_CAPACITY);
     this.roverStore = createStore(ROVER_CAPACITY);
     this.salvageSel = 0;      // Q cycles the target type
@@ -370,10 +369,20 @@ class Game {
     // and the works must pay for more. hopperBuilt survives in the save
     // for compatibility but is always true — the ship simply exists.
     this.hopperBuilt = true;
-    this.hopper.x = this.landerPos.x + 4.5;
-    this.hopper.z = this.landerPos.z + 0.5;
+    this.hopper.x = this.landerPos.x;
+    this.hopper.z = this.landerPos.z;
     this.hopper.fuelKg = 3 * TANK_FUEL_KG;
-    this.hopperLayer = new HopperLayer(this.scene, this.renderer);
+    // the WORKSHOP HOLD: the bay behind the roll-door — flying salvage
+    // home is possible and PRICED: hold mass rides every hop as payload
+    this.shipHold = { capacity: 1200, slots: {} };
+    // the CARGO SLED: the ground path — towed with H like the rig, free
+    // of fuel, slow and honest. You brought one; it starts by the ship.
+    this.sled = {
+      x: this.landerPos.x - 6.5, z: this.landerPos.z + 3, heading: 0.4,
+      hitched: false, store: { capacity: 600, slots: {} },
+    };
+    this.sledLayer = new SledLayer(this.scene);
+    this.hopperLayer = new ShipLayer(this.scene, this.renderer);
     this.vista = new VistaLayer(this.scene, this.terrain.frost);
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
     this._legSquash = 0;      // touchdown suspension impulse, decays parked
@@ -440,6 +449,7 @@ class Game {
       getHome: () => this.crownPos,
       homes: () => this.homesFor(),
       heritage: () => this.heritageFor(),
+      holdMass: () => massOf(this.shipHold),
       season: () => solarLongitude(this.simMillis),
       buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
       tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
@@ -694,7 +704,6 @@ class Game {
     this.suit.slots = s.suit;
     this.roverStore.slots = s.rover;
     this.lander.stock = s.lander;
-    this.landerLayer.sync(this.lander);
     if (s.steadBaseY !== null && s.stead.length) {
       this.stead = steadDeserialize(s.stead);
       this.steadBaseY = s.steadBaseY;
@@ -735,16 +744,23 @@ class Game {
     // beside the hull and grace fuel for the new life it never had
     this.hopperBuilt = true;
     if (!s.hopperBuilt) {
-      this.hopper.x = this.landerPos.x + 4.5;
-      this.hopper.z = this.landerPos.z + 0.5;
+      this.hopper.x = this.landerPos.x;
+      this.hopper.z = this.landerPos.z;
       this.hopper.fuelKg = Math.max(this.hopper.fuelKg, 2 * TANK_FUEL_KG);
     }
-    // ONE VEHICLE, wherever the save left it: the hull seats beside the
-    // ship (a pre-merge hopper parked afield takes its home with it now)
-    this.landerPos.x = this.hopper.x - 4.5;
-    this.landerPos.z = this.hopper.z - 0.5;
-    this.landerLayer.group.position.set(this.landerPos.x,
-      meshGroundHeight(this.landerPos.x, this.landerPos.z), this.landerPos.z);
+    // ONE VEHICLE, one anchor, wherever the save left it
+    this.landerPos.x = this.hopper.x;
+    this.landerPos.z = this.hopper.z;
+    this.shipHold.slots = s.shipHold || {};
+    if (s.sled) {
+      this.sled.x = s.sled.x; this.sled.z = s.sled.z;
+      this.sled.heading = s.sled.heading;
+      this.sled.store.slots = s.sled.slots || {};
+    } else {
+      // an older save never owned a sled: it waits by the ship
+      this.sled.x = this.landerPos.x - 6.5;
+      this.sled.z = this.landerPos.z + 3;
+    }
     this.mystery = deserializeMystery(s.mystery); // the chain, as far as it got
     this.heritage = deserializeHeritage(s.heritage); // the hauls already carried home
     // logs already recovered never re-announce
@@ -799,6 +815,11 @@ class Game {
       hopperBuilt: !!this.hopperBuilt,
       mystery: serializeMystery(this.mystery),
       heritage: serializeHeritage(this.heritage),
+      shipHold: this.shipHold.slots,
+      sled: {
+        x: this.sled.x, z: this.sled.z, heading: this.sled.heading,
+        slots: this.sled.store.slots,
+      },
     })).catch(() => {});
   }
 
@@ -953,16 +974,18 @@ class Game {
 
   // H: pin in, pin out
   toggleHitch() {
-    if (this.rig.hitched) {
-      this.rig.hitched = false;
-      return;
-    }
-    if (!this.driving || this.rig.deployed) return;
+    // one pin, one trailer: whichever is on it comes off first
+    if (this.rig.hitched) { this.rig.hitched = false; return; }
+    if (this.sled.hitched) { this.sled.hitched = false; return; }
+    if (!this.driving) return;
     const pin = this.hitchPin();
-    if (Math.hypot(pin.x - this.rig.x, pin.z - this.rig.z) < 4.5) {
-      this.rig.hitched = true;
-      this.sayOnce('hitch');
-    }
+    const dRig = this.rig.deployed ? Infinity
+      : Math.hypot(pin.x - this.rig.x, pin.z - this.rig.z);
+    const dSled = Math.hypot(pin.x - this.sled.x, pin.z - this.sled.z);
+    if (Math.min(dRig, dSled) >= 4.5) return;
+    if (dSled <= dRig) this.sled.hitched = true;
+    else this.rig.hitched = true;
+    this.sayOnce('hitch');
   }
 
   // slope under the rig — the anchor law reads it
@@ -1033,9 +1056,11 @@ class Game {
 
   // ---- STAGE 3: ignition and the staged flight ----------------------------
   igniteHop(tx, tz, cradle) {
-    const payload = cradle ? CRADLE_BUGGY_KG : 0;
+    // payload is honest: the cradled buggy AND everything in the hold
+    const payload = (cradle ? CRADLE_BUGGY_KG : 0) + massOf(this.shipHold);
     const from = [this.hopper.x, this.hopper.z];
     if (!beginHop(this.hopper, from, [tx, tz], payload)) return;
+    this.sled.hitched = false; // the sled is ground kit — it stays
     this.vista.build(from, this.hopper.hop.to);
     this.hopFlight = { cradle, hidTerrain: false, landedSettling: false };
     this.colonist.group.visible = false;
@@ -1070,10 +1095,6 @@ class Game {
     const heading = H ? Math.atan2(H.to[0] - H.from[0], H.to[1] - H.from[1]) : 0;
     const lean = snap.phase === 'ascent' ? 0.1 : snap.phase === 'descent' ? -0.08 : 0;
     this.hopperLayer.setPose(snap.x + jx, groundY + snap.alt + jy, snap.z + jz, heading, lean);
-    // ONE VEHICLE: the hull — bench, stores, bed — flies with the craft
-    this.landerLayer.group.position.set(
-      snap.x - 4.5 + jx, groundY + snap.alt + jy, snap.z - 0.5 + jz,
-    );
     this.hopperLayer.setFuel(this.hopper.fuelKg);
     // the drama channels are the pure module's word: throttle and scour
     this.hopperLayer.setFlame(snap.burn, this.t);
@@ -1123,13 +1144,11 @@ class Game {
       this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z,
         meshGroundHeight(this.hopper.x, this.hopper.z) + 0.1, heading);
       this.hopperLayer.setFlame(0, this.t);
-      // the whole homestead-on-legs has MOVED: the hull settles beside
-      // the craft, and everything anchored to it (the bench, the cabin,
-      // the shelter rule, the spare skin, the maps) follows
-      this.landerPos.x = this.hopper.x - 4.5;
-      this.landerPos.z = this.hopper.z - 0.5;
-      this.landerLayer.group.position.set(this.landerPos.x,
-        meshGroundHeight(this.landerPos.x, this.landerPos.z), this.landerPos.z);
+      // the whole homestead-on-legs has MOVED: everything anchored to
+      // the ship (the bench, the cabin, the shelter rule, the spare
+      // skin, the maps) follows the one anchor
+      this.landerPos.x = this.hopper.x;
+      this.landerPos.z = this.hopper.z;
       if (F.cradle) {
         this.buggy.x = this.hopper.x - 4.2; this.buggy.z = this.hopper.z + 3.5;
         this.buggy.u = 0; this.buggy.v = 0;
@@ -1410,19 +1429,38 @@ class Game {
   }
 
   // F: everything the suit holds goes onto the rover's deck
+  // F/G route to the NEAREST open store: the buggy's deck, the sled's
+  // bed, or the ship's workshop hold — one pair of keys, three mouths
+  nearestStore() {
+    const options = [
+      { store: this.roverStore, d: this.distToRover(), max: 4 },
+      { store: this.sled.store, d: this.distToSled(), max: 4 },
+      { store: this.shipHold, d: this.distToLander(), max: 8 },
+    ].filter((o) => o.d <= o.max).sort((a, b) => a.d - b.d);
+    return options[0] ? options[0].store : null;
+  }
+
+  distToSled() {
+    return Math.hypot(this.pos.x - this.sled.x, this.pos.z - this.sled.z);
+  }
+
   loadRover() {
-    if (this.driving || this.distToRover() > 4) return;
+    if (this.driving) return;
+    const store = this.nearestStore();
+    if (!store) return;
     for (const id of Object.keys(this.suit.slots)) {
-      transfer(this.suit, this.roverStore, id, 99);
+      transfer(this.suit, store, id, 99);
     }
   }
-  // G: take the heaviest thing back off the deck the suit can hold
+  // G: take the heaviest thing back off the store the suit can hold
   unloadRover() {
-    if (this.driving || this.distToRover() > 4) return;
-    const ids = Object.keys(this.roverStore.slots)
+    if (this.driving) return;
+    const store = this.nearestStore();
+    if (!store) return;
+    const ids = Object.keys(store.slots)
       .sort((a, b) => ITEMS[b].kg - ITEMS[a].kg);
     for (const id of ids) {
-      if (transfer(this.roverStore, this.suit, id, 1) > 0) return;
+      if (transfer(store, this.suit, id, 1) > 0) return;
     }
   }
 
@@ -2056,7 +2094,6 @@ class Game {
           const dest = toSuit ? this.suit
             : (this.distToRover() < 9 ? this.roverStore : null);
           if (dest && takeOne(this.lander, id) && add(dest, id, 1)) {
-            this.landerLayer.sync(this.lander);
             this.sayOnce('salvage-first');
             if (id === 'airlock-ring') this.say('ring-taken');
           }
@@ -2174,7 +2211,10 @@ class Game {
       this.hud.setPrompt('|*E| read the ground');
     } else if (this.hopperBuilt && !this.hopFlight
       && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
-      this.hud.setPrompt('|*E| the ship');
+      this.hud.setPrompt('|*E| the ship · |*F| load the hold · |*G| take back');
+    } else if (this.distToSled() < 4 && !this.driving) {
+      const kg = Math.round(massOf(this.sled.store));
+      this.hud.setPrompt(`the sled (${kg}/${this.sled.store.capacity} kg) · |*F| load · |*G| take · |*H| hitch from the buggy`);
     } else if (this.nearestMachine()) {
       const m = this.nearestMachine();
       const bits = [];
@@ -2315,9 +2355,10 @@ class Game {
   // resolves the walker against it; deflectBuggy answers for the chassis):
   // the lander's hull, every machine, the rig when it isn't being towed.
   worldSolids() {
-    const solids = [{ x: this.landerPos.x, z: this.landerPos.z, r: 2.1 }];
+    const solids = [{ x: this.landerPos.x, z: this.landerPos.z, r: 3.3 }];
     for (const m of this.machines) solids.push({ x: m.x, z: m.z, r: 0.7 });
     if (this.rig && !this.rig.hitched) solids.push({ x: this.rig.x, z: this.rig.z, r: 0.95 });
+    if (this.sled && !this.sled.hitched) solids.push({ x: this.sled.x, z: this.sled.z, r: 1.0 });
     return solids;
   }
 
@@ -2415,6 +2456,18 @@ class Game {
         if (this.swayTimer > 0.6) { this.swayTimer = -8; this.say('trailer-sway'); }
       } else if (this.swayTimer > 0) {
         this.swayTimer = 0;
+      }
+    }
+    // the cargo sled tows on the same honest pin
+    if (this.sled.hitched && this.driving) {
+      const pin = this.hitchPin();
+      const tf = stepTrailer(this.sled, pin.x, pin.z, this.buggy.heading, this.buggy.u, dt);
+      if (tf.jackknife) {
+        this.sled.hitched = false;
+        this.say('jackknife');
+      } else if (tf.sway) {
+        this.swayTimer += dt;
+        if (this.swayTimer > 0.6) { this.swayTimer = -8; this.say('trailer-sway'); }
       }
     }
 
@@ -2574,6 +2627,10 @@ class Game {
                 if (massOf(this.suit) + ITEMS[id].kg <= SUIT_CAPACITY) dest = this.suit;
                 else if (this.distToRover() < 9
                   && massOf(this.roverStore) + ITEMS[id].kg <= ROVER_CAPACITY) dest = this.roverStore;
+                else if (this.distToSled() < 9
+                  && massOf(this.sled.store) + ITEMS[id].kg <= this.sled.store.capacity) dest = this.sled.store;
+                else if (this.distToLander() < 14
+                  && massOf(this.shipHold) + ITEMS[id].kg <= this.shipHold.capacity) dest = this.shipHold;
                 if (!dest) { full = true; break; }
                 add(dest, id, 1);
                 this.heritage = recordTake(site, this.heritage, id, 1);
@@ -2860,6 +2917,9 @@ class Game {
       this.hopperLayer.hide();
     }
     this.hopperLayer.update(this.t, (this.sunEl ?? 10) < 0);
+    this.sledLayer.update(this.sled,
+      meshGroundHeight(this.sled.x, this.sled.z),
+      massOf(this.sled.store) / this.sled.store.capacity);
     this.hopUI.update(dt);
     if (this.globe) { this.globe.update(dt); this.globe.setSun(sunDir); }
     // the vista hands back to the streamed world once it has caught up
