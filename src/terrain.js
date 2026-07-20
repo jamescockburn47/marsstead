@@ -69,19 +69,31 @@ ${FBM_GLSL}
 ${FROST_GLINT_GLSL}
 const float MARS_LAT0 = ${HOME.lat.toFixed(4)};
 const float MARS_LAT_PER_Z = ${(-1 / M_PER_DEG).toFixed(8)};
-const vec2 MARSWIND2 = vec2(0.879, 0.477);
-// wind-frame coordinates, stretched along the prevailing wind: isotropic
-// blobs read as leopard at grazing sun; elongated ones read as dunes and
-// wind streaks (DESIGN.md's own colour spec: wind-streak albedo)
-vec2 marsAniso(vec2 p) {
-  return vec2(dot(p, MARSWIND2), dot(p, vec2(-MARSWIND2.y, MARSWIND2.x)) * 2.2);
+// THE WANDERING WIND (2026-07-20, corduroy strike FOUR): the per-pixel
+// streak band with one fixed world direction tiled into full stripes on
+// smooth far country — the skyline was smooth while the ground striped,
+// the tell that this corduroy was SHADING. Same law as the dunes now:
+// the wind direction turns over km scales and the streaks come in
+// FIELDS with plain ground between, everywhere alike. No fixed grain
+// may ever cover the planet — in the heightfield OR the shading.
+vec2 marsWindDir(vec2 p) {
+  float a = (fbm(p * 0.0009 + 17.0) - 0.5) * 3.2;
+  float c = cos(a), s = sin(a);
+  return vec2(c * 0.879 - s * 0.477, s * 0.879 + c * 0.477);
+}
+float marsStreakMask(vec2 p) {
+  return smoothstep(0.38, 0.58, fbm(p * 0.0014 + 41.0));
+}
+vec2 marsAniso(vec2 p, vec2 w) {
+  return vec2(dot(p, w), dot(p, vec2(-w.y, w.x)) * 1.7);
 }
 // the detail height-field the normal tilt reads: metre-scale rubble over
 // a longer wind-stretched undulation — same fbm family as sky and dust.
-// rubbleW lets the caller fade the fine band with distance (sub-pixel
-// noise at range is shimmer, not detail).
-float marsDetailH(vec2 p, float rubbleW) {
-  return fbm(p * 1.7) * rubbleW + fbm(marsAniso(p) * 0.23 + 5.0) * 0.35;
+// rubbleW lets the caller fade the fine band with distance; wdir/streak
+// are computed ONCE per fragment so the gradient taps agree.
+float marsDetailH(vec2 p, float rubbleW, vec2 wdir, float streak) {
+  return fbm(p * 1.7) * rubbleW
+    + fbm(marsAniso(p, wdir) * 0.23 + 5.0) * 0.35 * streak;
 }
 // NOTE (James's eye, 2026-07-19, twice): periodic ripple fields are OUT.
 // Uniform corduroy read artificial; patchy variable-frequency ripples
@@ -97,7 +109,10 @@ if (uAlbedoAmp > 0.001) {
   float mRocky = smoothstep(0.10, 0.32, mSlope);
   // 65 m country drift, rotated off the lattice: tone, never leopard
   float aP = fbm(vMarsPos.xz * mat2(0.8, -0.6, 0.6, 0.8) * 0.015 + 9.7) - 0.5;
-  float aN = fbm(marsAniso(vMarsPos.xz) * 0.45) - 0.5; // 2 m wind-streaked mottle
+  // 2 m wind-streaked mottle: the WANDERING wind, gated into fields
+  vec2 aW = marsWindDir(vMarsPos.xz);
+  float aS = marsStreakMask(vMarsPos.xz);
+  float aN = (fbm(marsAniso(vMarsPos.xz, aW) * 0.45) - 0.5) * aS;
   float aF = fbm(vMarsPos.xz * 3.1 + 17.3) - 0.5;      // 30 cm speckle
   float mBand = aP * 0.28 + aN * 0.32 + aF * 0.25;
   // sand grain inside arm's reach, gone before it can shimmer
@@ -133,9 +148,12 @@ if (uNormalAmp > 0.001) {
   float e = 0.35;
   // the metre rubble is sub-pixel past ~90 m: fade it before it shimmers
   float mRubbleW = 0.65 * smoothstep(90.0, 20.0, vMarsDist);
-  float hC = marsDetailH(vMarsPos.xz, mRubbleW);
-  float hX = marsDetailH(vMarsPos.xz + vec2(e, 0.0), mRubbleW);
-  float hZ = marsDetailH(vMarsPos.xz + vec2(0.0, e), mRubbleW);
+  // one wind, one field weight, all three taps — the gradient must agree
+  vec2 nW = marsWindDir(vMarsPos.xz);
+  float nS = marsStreakMask(vMarsPos.xz);
+  float hC = marsDetailH(vMarsPos.xz, mRubbleW, nW, nS);
+  float hX = marsDetailH(vMarsPos.xz + vec2(e, 0.0), mRubbleW, nW, nS);
+  float hZ = marsDetailH(vMarsPos.xz + vec2(0.0, e), mRubbleW, nW, nS);
   vec2 mG = vec2(hX - hC, hZ - hC) / e;
   // grain relief only inside ~40 m: crisp boots-level sparkle, no shimmer
   float mGFade = smoothstep(40.0, 7.0, vMarsDist);
