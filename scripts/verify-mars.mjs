@@ -89,5 +89,31 @@ console.log(`  source: ${SOURCE}`);
 check('grid dimensions coherent', GRID_W > 100 && GRID_H > 100);
 console.log(`  placeholder: ${IS_PLACEHOLDER}`);
 
+// ---- PHASE 1: the whole planet answers ------------------------------------
+{
+  const { nearestFeature, featuresInBox, FEATURES } = await import('../src/mars.js');
+  // published landmarks answer with real elevations (areoid-referenced)
+  const olympus = elevationReal(18.65, 226.2);
+  check('Olympus stands', olympus > 14000, `${Math.round(olympus)} m`);
+  const hellas = elevationReal(-40, 66);
+  check('Hellas sinks', hellas < -5500, `${Math.round(hellas)} m`);
+  // the fine window and the globe agree at the seam (a 4ppd cell is ~15 km;
+  // disagreement at the boundary stays under the coarse cell's own relief)
+  const seam = Math.abs(elevationReal(21.99, 77) - elevationReal(22.03, 77));
+  check('the window seam holds', seam < 150, `${Math.round(seam)} m`);
+  // longitude wraps: 359.9E and 0.1E are neighbours
+  const wrapGap = Math.abs(elevationReal(0, 359.95) - elevationReal(0, 0.05));
+  check('the planet wraps', wrapGap < 400, `${Math.round(wrapGap)} m`);
+  // the gazetteer names the land
+  check('features baked and decoded', FEATURES.length >= 60 && FEATURES[0].name.length > 2);
+  const home = latLonToWorld(18.41, 77.69);
+  check('home knows its name', /jezero/i.test(nearestFeature(home.x, home.z).name),
+    nearestFeature(home.x, home.z).name);
+  const oly = FEATURES.find((f) => f.name === 'Olympus Mons');
+  check('Olympus has world coords', Number.isFinite(oly.x) && Number.isFinite(oly.z));
+  const box = featuresInBox(oly.x - 2000, oly.z - 2000, oly.x + 2000, oly.z + 2000);
+  check('the chart finds the mountain', box.some((f) => f.name === 'Olympus Mons'));
+}
+
 if (failed) { console.error(`verify-mars: ${failed} FAILED`); process.exit(1); }
 console.log('verify-mars: all green');

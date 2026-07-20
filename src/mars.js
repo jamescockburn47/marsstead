@@ -17,6 +17,7 @@
 import {
   IS_PLACEHOLDER, SOURCE, LAT_MIN, LAT_MAX, LON_MIN, LON_MAX,
   STEP_DEG, GRID_W, GRID_H, ELEV_B64,
+  G_W, G_H, G_PPD, GLOBAL_B64, FEATURES as RAW_FEATURES,
 } from './marsdata.js';
 import { fbm2, ridge2 } from './noise.js';
 
@@ -48,8 +49,26 @@ const copy = new Uint8Array(bytes.length);
 copy.set(bytes);
 const ELEV = new Int16Array(copy.buffer); // little-endian by construction
 
-// real metres vs areoid, bilinear over the baked grid; beyond the region a
-// deterministic rolling continuation at the edge's mean level
+// PHASE 1: the whole planet — the global 4ppd table (product row order:
+// row 0 = lat +90, col 0 = lon 0 E)
+const gBytes = b64ToBytes(GLOBAL_B64);
+const gCopy = new Uint8Array(gBytes.length);
+gCopy.set(gBytes);
+const GLOBAL = new Int16Array(gCopy.buffer);
+
+// global bilinear: lon wraps the planet, lat clamps at the poles
+function globalElevation(lat, lonE) {
+  const col = (((lonE % 360) + 360) % 360) * G_PPD;
+  const row = Math.min(G_H - 1.001, Math.max(0, (90 - lat) * G_PPD));
+  const c0 = Math.floor(col), r0 = Math.floor(row);
+  const fx = col - c0, fy = row - r0;
+  const at = (r, c) => GLOBAL[Math.min(G_H - 1, r) * G_W + ((c % G_W) + G_W) % G_W];
+  const a = at(r0, c0), b = at(r0, c0 + 1), c = at(r0 + 1, c0), d = at(r0 + 1, c0 + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+
+// real metres vs areoid: the fine Jezero window where it covers, the whole
+// planet everywhere else — the walk (and the flight) never hits a wall
 export function elevationReal(lat, lonE) {
   const gx = (lonE - LON_MIN) / STEP_DEG;
   const gy = (lat - LAT_MIN) / STEP_DEG;
@@ -61,8 +80,42 @@ export function elevationReal(lat, lonE) {
     const c = ELEV[(y0 + 1) * GRID_W + x0], d = ELEV[(y0 + 1) * GRID_W + x0 + 1];
     return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
   }
-  // off the table: a rolling plain pinned near the regional level
-  return -2400 + (fbm2(lonE * 6, lat * 6) - 0.5) * 400;
+  return globalElevation(lat, lonE);
+}
+
+// ---------- the gazetteer: the land's own names ----------
+// world x wraps at half the planet's girth; distances use the short way round
+const WORLD_WRAP = 360 * M_PER_DEG;
+export const FEATURES = RAW_FEATURES.map(([name, lat, lonE, kind, diamKm]) => {
+  // project via the wrap-aware shortest longitude offset from HOME
+  let dLon = lonE - HOME.lon;
+  if (dLon > 180) dLon -= 360;
+  if (dLon < -180) dLon += 360;
+  return {
+    name, lat, lonE, kind, diamKm,
+    x: dLon * M_PER_DEG, z: -(lat - HOME.lat) * M_PER_DEG,
+  };
+});
+
+export function nearestFeature(x, z) {
+  let best = null, bestD = Infinity;
+  for (const f of FEATURES) {
+    let dx = Math.abs(f.x - x) % WORLD_WRAP;
+    if (dx > WORLD_WRAP / 2) dx = WORLD_WRAP - dx;
+    const d = Math.hypot(dx, f.z - z);
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  return best;
+}
+
+export function featuresInBox(x0, z0, x1, z1) {
+  return FEATURES.filter((f) => {
+    let fx = f.x;
+    // consider the wrapped twin when the box crosses the seam
+    if (fx < x0 - WORLD_WRAP / 2) fx += WORLD_WRAP;
+    if (fx > x1 + WORLD_WRAP / 2) fx -= WORLD_WRAP;
+    return fx >= x0 && fx <= x1 && f.z >= z0 && f.z <= z1;
+  });
 }
 
 // --- procedural skin: the ground below the skeleton's resolution ---------
