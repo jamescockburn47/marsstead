@@ -30,7 +30,7 @@ import {
 import { HeritageLayer } from './heritagelayer.js';
 import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
 import {
-  createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
+  createHopper, loadTank as hopperLoadTank, beginHop, tickHop, TANK_FUEL_KG,
   serializeHopper, deserializeHopper, CRADLE_BUGGY_KG,
 } from './hopper.js';
 import { HopperLayer } from './hopperlayer.js';
@@ -132,7 +132,7 @@ import { RigLayer } from './riglayer.js';
 import { TitleScreen } from './title.js';
 import { TouchControls } from './touch.js';
 import {
-  MACHINE_TYPES, createMachine, canPlaceMachine, machineFeed, machineTick,
+  MACHINE_TYPES, createMachine, canPlaceMachine, machineFeed, machineTick, payableCosts,
   machineTake, machineOutCount,
 } from './machines.js';
 import { MachineLayer } from './machinelayer.js';
@@ -364,7 +364,15 @@ class Game {
     // ---- STAGE 3: the hopper — the pure craft, its layer, the vista
     // for the arc, and the pad's console. hopper.js owns the numbers.
     this.hopper = createHopper();
-    this.hopperBuilt = false;
+    // THE SHIP (2026-07-20, James's call): the lander and the hopper are
+    // ONE vehicle — you land flight-ready, fuel willing. Three tanks
+    // ride down with you: a few flights from sol one, then the mines
+    // and the works must pay for more. hopperBuilt survives in the save
+    // for compatibility but is always true — the ship simply exists.
+    this.hopperBuilt = true;
+    this.hopper.x = this.landerPos.x + 4.5;
+    this.hopper.z = this.landerPos.z + 0.5;
+    this.hopper.fuelKg = 3 * TANK_FUEL_KG;
     this.hopperLayer = new HopperLayer(this.scene, this.renderer);
     this.vista = new VistaLayer(this.scene, this.terrain.frost);
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
@@ -425,7 +433,7 @@ class Game {
       ...(this.steadOrigin
         ? [{ x: this.steadOrigin.x, z: this.steadOrigin.z, label: 'HAB', glyph: '⌂', colour: '#e8c46a' }]
         : []),
-      { x: this.landerPos.x, z: this.landerPos.z, label: 'LANDER', glyph: '▲', colour: '#cfc5b6' },
+      // (the LANDER row died with the merge — the SHIP mark carries it)
     ];
     this.hopUI = new HopConsole({
       getHopper: () => this.hopper,
@@ -497,9 +505,8 @@ class Game {
         this.machineLayer.sync(this.machines, meshGroundHeight);
       },
       raiseHopper: () => {
-        this.hopperBuilt = true;
-        this.hopper.x = this.crownPos.x + 21; this.hopper.z = this.crownPos.z - 9;
-        this.hopper.fuelKg = 6 * 110;
+        // the ship always exists now: the refit just fills the rack
+        this.hopper.fuelKg = 6 * TANK_FUEL_KG;
       },
       digBurrow: () => {
         const stage = (piece, c, d) => {
@@ -724,9 +731,25 @@ class Game {
     this.talks = s.talks || 0;
     this.regard = deserializeRegard(s.regard); // the pairing, as it stood
     this.hopper = deserializeHopper(s.hopper); // the craft, where it stood
-    this.hopperBuilt = !!s.hopperBuilt;
+    // the ship always exists now; a pre-merge save wakes with the ship
+    // beside the hull and grace fuel for the new life it never had
+    this.hopperBuilt = true;
+    if (!s.hopperBuilt) {
+      this.hopper.x = this.landerPos.x + 4.5;
+      this.hopper.z = this.landerPos.z + 0.5;
+      this.hopper.fuelKg = Math.max(this.hopper.fuelKg, 2 * TANK_FUEL_KG);
+    }
+    // ONE VEHICLE, wherever the save left it: the hull seats beside the
+    // ship (a pre-merge hopper parked afield takes its home with it now)
+    this.landerPos.x = this.hopper.x - 4.5;
+    this.landerPos.z = this.hopper.z - 0.5;
+    this.landerLayer.group.position.set(this.landerPos.x,
+      meshGroundHeight(this.landerPos.x, this.landerPos.z), this.landerPos.z);
     this.mystery = deserializeMystery(s.mystery); // the chain, as far as it got
     this.heritage = deserializeHeritage(s.heritage); // the hauls already carried home
+    // logs already recovered never re-announce
+    this._hadRecord = Object.fromEntries(HERITAGE
+      .filter((hs) => hs.record && this.heritage[hs.id]).map((hs) => [hs.id, true]));
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -815,7 +838,7 @@ class Game {
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
     if (e.code === 'F9' && isWarden(this.wardenAuth)) this.wardenUI.toggle();
-    if (e.code === 'KeyJ') this.journalUI.toggle(this.mystery);
+    if (e.code === 'KeyJ') this.journalUI.toggle(this.mystery, this.heritage);
     if (e.code === 'KeyM') this.map.toggle();
     if (e.code === 'KeyO') this.orders.toggle();
     if (e.code === 'KeyH') this.toggleHitch();
@@ -1047,6 +1070,10 @@ class Game {
     const heading = H ? Math.atan2(H.to[0] - H.from[0], H.to[1] - H.from[1]) : 0;
     const lean = snap.phase === 'ascent' ? 0.1 : snap.phase === 'descent' ? -0.08 : 0;
     this.hopperLayer.setPose(snap.x + jx, groundY + snap.alt + jy, snap.z + jz, heading, lean);
+    // ONE VEHICLE: the hull — bench, stores, bed — flies with the craft
+    this.landerLayer.group.position.set(
+      snap.x - 4.5 + jx, groundY + snap.alt + jy, snap.z - 0.5 + jz,
+    );
     this.hopperLayer.setFuel(this.hopper.fuelKg);
     // the drama channels are the pure module's word: throttle and scour
     this.hopperLayer.setFlame(snap.burn, this.t);
@@ -1096,6 +1123,13 @@ class Game {
       this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z,
         meshGroundHeight(this.hopper.x, this.hopper.z) + 0.1, heading);
       this.hopperLayer.setFlame(0, this.t);
+      // the whole homestead-on-legs has MOVED: the hull settles beside
+      // the craft, and everything anchored to it (the bench, the cabin,
+      // the shelter rule, the spare skin, the maps) follows
+      this.landerPos.x = this.hopper.x - 4.5;
+      this.landerPos.z = this.hopper.z - 0.5;
+      this.landerLayer.group.position.set(this.landerPos.x,
+        meshGroundHeight(this.landerPos.x, this.landerPos.z), this.landerPos.z);
       if (F.cradle) {
         this.buggy.x = this.hopper.x - 4.2; this.buggy.z = this.hopper.z + 3.5;
         this.buggy.u = 0; this.buggy.v = 0;
@@ -1442,7 +1476,15 @@ class Game {
   }
 
   isMachine(type) { return !!MACHINE_TYPES[type]; }
-  costsOf(type) { return (MACHINE_TYPES[type] ?? PART_TYPES[type]).costs; }
+
+  // machines may take a salvage alternative (a wreck's solar wing IS an
+  // array): show and spend the payable list, falling back to the base
+  costsOf(type) {
+    if (this.isMachine(type)) {
+      return payableCosts(type, (id) => count(this.suit, id)) ?? MACHINE_TYPES[type].costs;
+    }
+    return PART_TYPES[type].costs;
+  }
 
   canAfford(type) {
     return this.costsOf(type).every(([id, n]) => count(this.suit, id) >= n);
@@ -2132,7 +2174,7 @@ class Game {
       this.hud.setPrompt('|*E| read the ground');
     } else if (this.hopperBuilt && !this.hopFlight
       && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
-      this.hud.setPrompt('|*E| the hopper');
+      this.hud.setPrompt('|*E| the ship');
     } else if (this.nearestMachine()) {
       const m = this.nearestMachine();
       const bits = [];
@@ -2539,7 +2581,13 @@ class Game {
               }
               if (full) break;
             }
-            if (took) this.say('heritage-salvage');
+            // a listening machine gives up its LOG with the first haul —
+            // the old missions were not idle all those years
+            if (took && site.record && !this._hadRecord?.[site.id]) {
+              this._hadRecord = { ...(this._hadRecord || {}), [site.id]: true };
+              this.hud.say(`${site.name}'s memory recovered — it kept a log. THE RECORD holds it now (J).`, this.t);
+              this.say('heritage-record');
+            } else if (took) this.say('heritage-salvage');
             if (full) this.say('suit-full');
             this.persist();
           }

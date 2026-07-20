@@ -43,8 +43,11 @@ export const MACHINE_TYPES = {
   'solar-array': {
     name: 'Solar array',
     // thin-film on steel substrate (real tech): the ORDERS loop is code —
-    // dig spoil → rake → smelt → array, closed at the fab on sol one
+    // dig spoil → rake → smelt → array, closed at the fab on sol one.
+    // OR: a wreck's own solar wing, re-raised whole (the cleanup charter
+    // pays its way — altCosts is checked FIRST when the bags hold one)
     costs: [['steel-panel', 2]],
+    altCosts: [['solar-wing', 1]],
     recipes: {},
   },
   // (the landing-pad machine died 2026-07-20 — every landing is exact
@@ -83,6 +86,16 @@ export const MACHINE_SPACING = 3;   // m — machines don't stack
 export function createMachine(type, x, z, heading = 0) {
   if (!MACHINE_TYPES[type]) return null;
   return { type, x, z, heading, queue: [], t: 0, out: {} };
+}
+
+// which cost list a holder can pay: the salvage alternative first (the
+// charter's materials WANT re-using), then the standard build. null when
+// neither is affordable. countOf: (itemId) -> n held.
+export function payableCosts(type, countOf) {
+  const t = MACHINE_TYPES[type];
+  if (!t) return null;
+  const lists = [...(t.altCosts ? [t.altCosts] : []), t.costs];
+  return lists.find((list) => list.every(([id, n]) => countOf(id) >= n)) || null;
 }
 
 // placement law: known type, tolerable ground (stations may demand

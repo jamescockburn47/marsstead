@@ -124,10 +124,18 @@ draws only where you have walked.
 
 ## 5. The road ahead (STRUCTURE.md)
 
-A suborbital **hopper** with the buggy slung beneath it — plotted,
-semi-cinematic hops over the WHOLE real planet (global MOLA baked, the
-USGS gazetteer naming the country), landing exactly where you aim — no
-pads, no scatter: the fuel circle is the only law. **The signal chain**
+**THE SHIP** (2026-07-20: the lander and the hopper merged) — lander,
+workshop and wings in one hull, flight-ready from sol one with three
+tanks aboard: plotted, semi-cinematic hops over the WHOLE real planet
+(global MOLA baked, the USGS gazetteer naming the country), landing
+exactly where you aim, the whole homestead-on-legs moving with you —
+bench, stores, bed and spare skin. The fuel circle is the only law,
+and the mining loop pays for the sky. **Heritage** is the second
+reason to fly (and drive): thirteen real missions at their true
+places, salvaged under the cleanup charter — wreck solar wings
+re-raise whole as arrays, reclaimed electronics are earmarked for the
+great work, and some of the old machines kept LOGS that say they were
+listening to something long before anyone landed. **The signal chain**
 (marslegends) is the reason to fly: five beats at real places, one live
 signal at a time, the band warming as you close, the ground read on
 foot, relics landing in THE RECORD — the surface on-ramp of the hidden

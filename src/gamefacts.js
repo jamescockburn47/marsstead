@@ -57,13 +57,13 @@ export const GAME_FACTS = [
     text: 'A buggy stranded anywhere — down a cliff, out past walking range — is never lost: open the Burrow console at the crown and press RECALL THE BUGGY. The drones tow it home in a few minutes for a few kilowatt-hours. The settler themselves can always walk home, or let the suit run out: a blackout wakes them at shelter, cargo dropped where they fell, never worse.' },
   { topic: 'world', keywords: ['storm', 'dust', 'weather', 'forecast', 'tau', 'clear', 'sky'],
     text: 'Dust is weather with a real forecast: clear spells and dusty spells run in sols-long runs. Dust taxes solar and thickens the sky; deep storms are coming in a later phase but have not arrived yet.' },
-  // --- the hopper (Stage 3; pads died 2026-07-20 — fly anywhere) ---
-  { topic: 'hopper', keywords: ['hopper', 'fly', 'flight', 'hop', 'landing', 'assemble', 'rocket', 'horizon', 'range', 'travel'],
-    text: 'The hopper crosses horizons: assemble the craft at the ASSEMBLER (the works console, T at any bench) from six steel panels, four machine parts and two electronics. Hops are ballistic and plotted — E beside the craft opens its console; mark any target inside the fuel circle and light the engine. Every landing is exact where you aim.' },
-  { topic: 'hopper', keywords: ['stuck', 'stranded', 'lost', 'landed', 'find', 'return', 'recover', 'console', 'enter'],
-    text: 'The craft is its own console: E beside the hopper opens it wherever it stands — a far landing is never a stranding. Load fresh tanks there and plot the next hop home. The hopper rings teal on the wrist map, so the ship is always findable.' },
-  { topic: 'hopper', keywords: ['fuel', 'methane', 'tank', 'tanks', 'cradle', 'payload', 'reach'],
-    text: 'Hopper fuel is methane tanks (assembler-made from machine parts), loaded whole and spent whole at ignition: a full rack of six reaches about twenty-five kilometres, one tank a kilometre and a half. Cradling the buggy nearly halves range but brings wheels — and its stores — to the far country.' },
+  // --- THE SHIP (2026-07-20: lander + hopper merged, flight from sol one) ---
+  { topic: 'ship', keywords: ['ship', 'hopper', 'lander', 'fly', 'flight', 'hop', 'landing', 'rocket', 'horizon', 'range', 'travel'],
+    text: 'The ship is lander, workshop and wings in ONE hull — you landed flight-ready with three tanks aboard. E beside it opens the flight console; mark any target inside the fuel circle and light the engine. Every landing is exact, and the WHOLE ship moves with you: the bench, the stores, the bed, the spare skin.' },
+  { topic: 'ship', keywords: ['stuck', 'stranded', 'lost', 'landed', 'find', 'return', 'recover', 'console', 'enter'],
+    text: 'The ship is its own console: E beside it opens the chart wherever it stands — a far landing is never a stranding, because home came with you. It rings teal as SHIP on every map. Out of fuel far afield, the buggy still drives and the works can be raised anywhere there is sun and ore.' },
+  { topic: 'ship', keywords: ['fuel', 'methane', 'tank', 'tanks', 'cradle', 'payload', 'reach', 'mining'],
+    text: 'Ship fuel is methane tanks (assembler-made from machine parts — the mining loop pays for the sky), loaded whole and spent whole at ignition: a full rack of six reaches about twenty-five kilometres. The three landfall tanks go fast; the works exist to make more. Cradling the buggy nearly halves range but brings wheels to the far country.' },
   // --- the signal chain and the planet ---
   { topic: 'signal', keywords: ['signal', 'band', 'sweep', 'anomaly', 'chain', 'mystery', 'read', 'ground', 'journal', 'record'],
     text: 'The SIGNAL band by the wrist map warms as you close on the source — no bearing, only warmth: fly toward hotter. Inside the last stretch it becomes a sweep played on foot; at the heart, E reads the ground and the record lands in THE RECORD (J). Each read record wakes a new, farther signal.' },
@@ -76,8 +76,10 @@ export const GAME_FACTS = [
   // --- heritage: the cleanup charter ---
   { topic: 'heritage', keywords: ['heritage', 'salvage', 'viking', 'rover', 'perseverance', 'curiosity', 'pathfinder', 'mission', 'old', 'wreck', 'cleanup', 'charter'],
     text: 'The old robotic missions rest where they truly stopped — Perseverance a walk from home, Beagle 2 a buggy day into Isidis, Curiosity above Gale, the Vikings in the far country. The charter includes their cleanup: E beside one salvages its real kit (whatever the suit and rover can carry; the rest waits). Pale marks on every chart.' },
-  { topic: 'heritage', keywords: ['stripped', 'honours', 'tended', 'logged', 'materials', 'kit'],
-    text: 'Each old machine yields what it truly carried — power units and dishes read as electronics and cable, airbags as seal kits, the little helicopter as a drone frame. A fully salvaged site reads STRIPPED WITH HONOURS on the prompt and dims on the charts: tended, never forgotten.' },
+  { topic: 'heritage', keywords: ['stripped', 'honours', 'tended', 'logged', 'materials', 'kit', 'solar', 'wing', 'panel', 'recycle'],
+    text: 'Each old machine yields what it truly carried — solar wings that re-raise WHOLE as working arrays (B places one: the fastest power there is), power units and dishes as electronics and cable, airbags as seal kits. Reclaimed electronics are earmarked by the charter for the great work to come. A tended site reads STRIPPED WITH HONOURS and dims on the charts.' },
+  { topic: 'heritage', keywords: ['log', 'logs', 'record', 'memory', 'data', 'listening', 'anomaly'],
+    text: 'Some of the old machines kept LOGS — and the logs hold things their own engineers filed away as sensor error. Salvaging such a site recovers its memory into THE RECORD (J), under THE OLD LOGS. The machines were not idle all those years. Some of them were listening.' },
   { topic: 'meta', keywords: ['orders', 'help', 'controls', 'keys', 'manual', 'instructions'],
     text: 'O reopens the LANDFALL ORDERS (the written briefing); ENTER types to VESPER, V is push-to-talk. The orders sheet lists every key.' },
 ];

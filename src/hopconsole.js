@@ -87,8 +87,8 @@ export class HopConsole {
     this.root = document.createElement('div');
     this.root.id = 'hopc';
     this.root.innerHTML = `
-      <header><h1>THE HOPPER</h1>
-        <div class="sub">the horizon is a fuel problem — plot inside the circle</div>
+      <header><h1>THE SHIP</h1>
+        <div class="sub">lander, workshop and wings in one hull — the horizon is a fuel problem</div>
         <div class="x" id="hx">✕</div></header>
       <div id="hmain">
         <div id="hside">

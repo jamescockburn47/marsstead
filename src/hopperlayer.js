@@ -54,9 +54,12 @@ function strut(rTop, rBot, len) {
 }
 
 export class HopperLayer {
+  static BASE = 1.35;   // the merged ship stands half again the old craft
+
   constructor(scene, renderer) {
     this.group = new THREE.Group();
     this.group.visible = false;
+    this.group.scale.setScalar(HopperLayer.BASE);
     scene.add(this.group);
 
     // ---- materials (the colonist's recipe, hull-detailed) -----------------
@@ -286,10 +289,13 @@ export class HopperLayer {
   }
 
   // suspension compression: 0 standing tall .. 1 fully squashed — the
-  // group's origin sits at the feet, so y-scale plants the landing
+  // group's origin sits at the feet, so y-scale plants the landing.
+  // BASE scales the whole craft: the merged SHIP (2026-07-20) is a
+  // bigger vehicle than the old hopper — lander, workshop and wings.
   setSquash(s) {
     const k = Math.max(0, Math.min(1, s));
-    this.group.scale.set(1 + k * 0.025, 1 - k * 0.09, 1 + k * 0.025);
+    const B = HopperLayer.BASE;
+    this.group.scale.set(B * (1 + k * 0.025), B * (1 - k * 0.09), B * (1 + k * 0.025));
   }
 
   // parked on the ground (or a pad): the everyday state

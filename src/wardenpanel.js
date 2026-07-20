@@ -57,7 +57,7 @@ export class WardenPanel {
           <button data-act="refit">REFIT — air and warmth to full</button></div>
         <div class="wpanel"><h2>RAISE</h2>
           <button class="gold" data-act="raiseWorks">RAISE THE WORKS — the full yard</button>
-          <button class="gold" data-act="raiseHopper">RAISE THE HOPPER — pad, craft, six tanks</button>
+          <button class="gold" data-act="raiseHopper">REFIT THE SHIP — six tanks aboard</button>
           <button class="gold" data-act="digBurrow">DIG THE BURROW — the warren below</button></div>
         <div class="wpanel"><h2>THE CLOCK</h2>
           <button data-act="setHour" data-arg="6">DAWN</button>

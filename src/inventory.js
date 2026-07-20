@@ -13,6 +13,9 @@ export const ITEMS = {
   cable: { name: 'Cable spool', kg: 9, tier: 'salvage' },
   electronics: { name: 'Electronics', kg: 6, tier: 'salvage' },
   'airlock-ring': { name: 'Airlock ring', kg: 65, tier: 'salvage' },
+  // heritage salvage (2026-07-20): a wreck's solar wing, carried home
+  // whole — the recycling ethos made mechanical: one wing IS an array
+  'solar-wing': { name: 'Solar wing', kg: 18, tier: 'salvage' },
   // bulk — free, heavy
   regolith: { name: 'Regolith', kg: 14, tier: 'bulk' }, // per sack — two ride a suit
   // mined — the expedition pays in these

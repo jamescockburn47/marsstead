@@ -174,7 +174,7 @@ export class MarsMap {
     if (pois.crown) this.marker(ctx, pois.crown.x, pois.crown.z, '#e8c46a', 'BURROW');
     if (pois.stead) this.marker(ctx, pois.stead.x, pois.stead.z, '#e8c46a', 'HAB');
     if (pois.rig) this.marker(ctx, pois.rig.x, pois.rig.z, '#c9974a', 'RIG');
-    if (pois.hopper) this.marker(ctx, pois.hopper.x, pois.hopper.z, '#3fd0c9', 'HOPPER');
+    if (pois.hopper) this.marker(ctx, pois.hopper.x, pois.hopper.z, '#3fd0c9', 'SHIP');
 
     // the land's own names: quiet small caps, places not markers
     const v2 = this.view;

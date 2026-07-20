@@ -4,6 +4,7 @@
 // gives it up, and reading is how the settler holds the story.
 
 import { SITES } from './marslegends.js';
+import { HERITAGE } from './heritage.js';
 
 const CSS = `
   #recj { position: fixed; inset: 0; z-index: 56; display: none;
@@ -47,24 +48,26 @@ export class Journal {
     this.root.querySelector('#rx').addEventListener('click', () => this.close());
   }
 
-  open(mystery) {
+  open(mystery, heritage) {
     this.visible = true;
     this.root.classList.add('open');
-    this.render(mystery);
+    this.render(mystery, heritage);
     // opening is reading: every held relic becomes a read one
     mystery.read = SITES.filter((s) => mystery.found.includes(s.id))
       .map((s) => s.relic.id);
   }
 
   close() { this.visible = false; this.root.classList.remove('open'); }
-  toggle(mystery) { this.visible ? this.close() : this.open(mystery); }
+  toggle(mystery, heritage) {
+    this.visible ? this.close() : this.open(mystery, heritage);
+  }
 
   unread(mystery) {
     return SITES.filter((s) => mystery.found.includes(s.id)
       && !mystery.read.includes(s.relic.id)).length;
   }
 
-  render(mystery) {
+  render(mystery, heritage) {
     const main = this.root.querySelector('#rmain');
     const entries = [];
     for (const s of SITES) {
@@ -78,6 +81,19 @@ export class Journal {
       }
     }
     if (!entries.length) entries.push('<div class="rentry sealed">nothing yet — listen for the band</div>');
+    // THE OLD LOGS: what the salvaged machines were carrying all along —
+    // a record unlocks the moment a site has yielded ANYTHING (derived
+    // from the heritage state; no page of its own to lose)
+    const logs = HERITAGE.filter((s) => s.record && heritage && heritage[s.id]);
+    if (logs.length) {
+      entries.push('<div class="rentry" style="border-color:rgba(63,208,201,.3)"><h2>THE OLD LOGS</h2>'
+        + '<div class="where">RECOVERED UNDER THE CLEANUP CHARTER</div>'
+        + 'The machines were not idle all those years. Some of them were listening.</div>');
+      for (const s of logs) {
+        entries.push(`<div class="rentry"><h2>${s.name.toUpperCase()}, ${s.year}</h2>
+          <div class="where">${s.place.toUpperCase()}</div>${s.record}</div>`);
+      }
+    }
     main.innerHTML = entries.join('');
   }
 }

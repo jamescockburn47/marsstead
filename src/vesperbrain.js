@@ -306,6 +306,7 @@ export const BARK_MOMENTS = {
   'signal-found': 'the settler just read the ground at an anomaly site and recovered a record for the journal; a new, fainter signal has woken somewhere farther out',
   'heritage-visit': 'the settler has walked up to one of the old robotic missions resting where it truly stopped, decades ago — a real machine from the age before anyone lived here',
   'heritage-salvage': 'the settler just salvaged usable materials from one of the old missions under the cleanup charter — the hardware is honoured by being put back to work, and the site is logged as tended',
+  'heritage-record': 'salvaging one of the old missions just recovered its data log, and the log holds something odd: the machine seems to have been recording a faint anomaly for years, filed away as sensor error — the journal has the page now',
   wake: 'the settler has just woken for the new sol',
   'first-steps': 'the settler just took their first steps on Mars — the first bootprints ever made here',
   'first-jump': 'the settler just made their first jump in the low gravity',

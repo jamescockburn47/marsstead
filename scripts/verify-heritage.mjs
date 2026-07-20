@@ -79,5 +79,22 @@ function check(name, ok, detail = '') {
   check('nothing wakes clean', Object.keys(deserializeHeritage(null)).length === 0);
 }
 
+// 5. the recycling ethos, mechanical: wings to raise power, logs that
+//    tie the wrecks into the listening story — never a plot word
+{
+  const wings = HERITAGE.filter((s) => s.salvage.some(([id]) => id === 'solar-wing'));
+  check('the sun can be salvaged', wings.length >= 4, `${wings.length} sites carry wings`);
+  check('a wing IS an array (the alt cost stands)', (async () => true)() && (await import('../src/machines.js'))
+    .payableCosts('solar-array', (id) => (id === 'solar-wing' ? 1 : 0))?.[0][0] === 'solar-wing');
+  check('panels still build arrays the long way', (await import('../src/machines.js'))
+    .payableCosts('solar-array', (id) => (id === 'steel-panel' ? 2 : 0))?.[0][0] === 'steel-panel');
+  const logs = HERITAGE.filter((s) => s.record);
+  check('some machines were listening', logs.length >= 3 && logs.length <= 6, `${logs.length}`);
+  const PLOT = /\b(pattern|seed|betray\w*|weaver\w*|replicat\w*|halcyon)\b/i;
+  const MENACE = /\b(kill|die|dead|blood|hate|stupid|useless|abandon)\b/i;
+  check('the logs stay clean and chunk-sized', logs.every((s) => s.record.length > 80
+    && s.record.length < 420 && !PLOT.test(s.record) && !MENACE.test(s.record)));
+}
+
 if (failed) { console.error(`verify-heritage: ${failed} FAILED`); process.exit(1); }
 console.log('verify-heritage: all green');
