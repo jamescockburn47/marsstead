@@ -104,6 +104,94 @@ if (existsSync(MOLA_PATH)) {
   }
 }
 
+// ---- PHASE 1: the whole planet -------------------------------------------
+// The same MEGDR 4ppd file, whole: 1440x720 Int16, big-endian in the
+// product, little-endian in the bake (row 0 = lat +90 in the product;
+// we keep product row order and note it in the decode).
+let globalB64 = '', gSource = 'ABSENT (regional only)';
+if (existsSync(MOLA_PATH)) {
+  const buf = readFileSync(MOLA_PATH);
+  const MW = 1440, MH = 720;
+  const g = new Int16Array(MW * MH);
+  for (let i = 0; i < MW * MH; i++) g[i] = buf.readInt16BE(i * 2);
+  globalB64 = Buffer.from(new Uint8Array(g.buffer)).toString('base64');
+  gSource = 'MOLA MEGDR 4ppd global (megt90n000cb.img)';
+}
+
+// ---- the gazetteer: USGS nomenclature center points (DBF attribute table)
+// tools/MARS_nomenclature_center_pts.dbf — public domain. Filtered to the
+// major named features a hopper pilot would steer by.
+const DBF_PATH = 'tools/MARS_nomenclature_center_pts.dbf';
+let featuresJs = 'export const FEATURES = [];\n';
+if (existsSync(DBF_PATH)) {
+  const d = readFileSync(DBF_PATH);
+  const nRec = d.readUInt32LE(4), headSize = d.readUInt16LE(8), recSize = d.readUInt16LE(10);
+  const fields = [];
+  for (let off = 32; d[off] !== 0x0d; off += 32) {
+    const name = d.toString('ascii', off, off + 11).replace(/\0.*$/, '');
+    fields.push({ name, len: d[off + 16] });
+  }
+  const rows = [];
+  for (let r = 0; r < nRec; r++) {
+    const base = headSize + r * recSize;
+    if (d[base] === 0x2a) continue; // deleted
+    let off = base + 1;
+    const row = {};
+    for (const f of fields) {
+      row[f.name] = d.toString('ascii', off, off + f.len).trim();
+      off += f.len;
+    }
+    rows.push(row);
+  }
+  // field names (inspected): name, diameter, center_lat, center_lon, type…
+  const pick = (row, ...names) => {
+    for (const n of names) {
+      const k = Object.keys(row).find((x) => x.toLowerCase() === n);
+      if (k !== undefined && row[k] !== '') return row[k];
+    }
+    return '';
+  };
+  const KIND_MIN_KM = {
+    mons: 50, montes: 120, planitia: 500, planum: 350, terra: 900,
+    vallis: 250, valles: 250, chasma: 200, patera: 90, tholus: 60,
+    labyrinthus: 0, crater: 160, mensa: 0x7fffffff, // craters big, mensae never
+  };
+  const MUST = new Set(['Olympus Mons', 'Arsia Mons', 'Pavonis Mons',
+    'Ascraeus Mons', 'Elysium Mons', 'Hellas Planitia', 'Argyre Planitia',
+    'Isidis Planitia', 'Utopia Planitia', 'Acidalia Planitia',
+    'Valles Marineris', 'Jezero', 'Gale', 'Syrtis Major Planum',
+    'Noctis Labyrinthus', 'Alba Mons', 'Tharsis Montes']);
+  const feats = [];
+  for (const row of rows) {
+    const name = pick(row, 'name', 'feature_na', 'clean_name');
+    const lat = parseFloat(pick(row, 'center_lat', 'lat'));
+    const lon = parseFloat(pick(row, 'center_lon', 'lon'));
+    const diam = parseFloat(pick(row, 'diameter', 'diam')) || 0;
+    const typeRaw = pick(row, 'type', 'descriptor').toLowerCase();
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const kind = Object.keys(KIND_MIN_KM).find((k) => typeRaw.startsWith(k))
+      || (typeRaw.includes('crater') ? 'crater' : null);
+    const must = MUST.has(name);
+    if (!must && (!kind || diam < KIND_MIN_KM[kind])) continue;
+    feats.push({ name, lat: +lat.toFixed(2), lonE: +(((lon % 360) + 360) % 360).toFixed(2),
+      kind: kind || 'feature', diam: Math.round(diam) });
+  }
+  feats.sort((a, b) => b.diam - a.diam);
+  const kept = [];
+  const seen = new Set();
+  for (const f of feats) {
+    if (seen.has(f.name)) continue;
+    if (kept.length >= 90 && !MUST.has(f.name)) continue;
+    seen.add(f.name); kept.push(f);
+  }
+  featuresJs = '// name, latDeg, lonEastDeg, kind, diameterKm — USGS Gazetteer of\n'
+    + '// Planetary Nomenclature (public domain), filtered to the majors.\n'
+    + 'export const FEATURES = [\n'
+    + kept.map((f) => `  [${JSON.stringify(f.name)}, ${f.lat}, ${f.lonE}, ${JSON.stringify(f.kind)}, ${f.diam}],`).join('\n')
+    + '\n];\n';
+  console.log(`gazetteer: ${kept.length} features kept of ${rows.length} records`);
+}
+
 // ---- pack & emit -----------------------------------------------------------
 const bytes = new Uint8Array(grid.buffer);
 const b64 = Buffer.from(bytes).toString('base64');
@@ -120,7 +208,14 @@ export const LON_MIN = ${LON0}, LON_MAX = ${LON1};
 export const STEP_DEG = ${STEP};
 export const GRID_W = ${W}, GRID_H = ${H};
 export const ELEV_B64 = ${JSON.stringify(b64)};
-`;
+
+// ---- PHASE 1: the whole planet (same encoding; product row order:
+// row 0 = lat +90, col 0 = lon 0 East, 4 px/deg) --------------------------
+export const G_SOURCE = ${JSON.stringify(gSource)};
+export const G_W = 1440, G_H = 720, G_PPD = 4;
+export const GLOBAL_B64 = ${JSON.stringify(globalB64)};
+
+${featuresJs}`;
 
 writeFileSync('src/marsdata.js', out);
 console.log(`marsdata: ${W}x${H} cells, ${(b64.length / 1024).toFixed(0)} KiB base64 — ${source}`);
