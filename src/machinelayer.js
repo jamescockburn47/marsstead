@@ -144,25 +144,8 @@ function buildBattery() {
   return g;
 }
 
-// the landing pad: a sintered apron with a painted ring, a scorched
-// heart, and four teal edge lights — the hopper's free, exact landing
-function buildPad() {
-  const g = new THREE.Group();
-  const apron = cyl(4.3, 4.55, 0.2, 36, PAD); apron.position.y = 0.1;
-  const ringMark = new THREE.Mesh(new THREE.TorusGeometry(3.1, 0.07, 8, 40), mat(0xc9a35a));
-  ringMark.rotation.x = Math.PI / 2; ringMark.position.y = 0.21;
-  const scorch = cyl(1.5, 1.55, 0.03, 24, 0x241812); scorch.position.y = 0.21;
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    const light = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), lit(TEAL));
-    light.position.set(Math.cos(a) * 4.1, 0.32, Math.sin(a) * 4.1);
-    const stalk = cyl(0.03, 0.04, 0.22, 8, STEEL);
-    stalk.position.set(Math.cos(a) * 4.1, 0.15, Math.sin(a) * 4.1);
-    g.add(light, stalk);
-  }
-  g.add(apron, ringMark, scorch);
-  return g;
-}
+// (buildPad died with the landing-pad machine, 2026-07-20 — every
+// landing is exact now; old saves launder their pads away)
 
 const BUILDERS = {
   smelter: buildSmelter,
@@ -171,7 +154,6 @@ const BUILDERS = {
   assembler: buildAssembler,
   'solar-array': buildSolarArray,
   battery: buildBattery,
-  'landing-pad': buildPad,
 };
 
 export class MachineLayer {

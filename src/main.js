@@ -358,35 +358,35 @@ class Game {
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
     this._legSquash = 0;      // touchdown suspension impulse, decays parked
     this._scourPulse = 0;     // the landing blast's hanging dust, likewise
+    // the hopper's birth (pads dead 2026-07-20): assembly lives at the
+    // ASSEMBLER via the works console; these hooks are shared with it
     const HOP_COSTS = [['steel-panel', 6], ['machine-parts', 4], ['electronics', 2]];
     const hopPool = (id) => count(this.suit, id) + count(this.roverStore, id);
+    this.hopCanAssemble = () => {
+      const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
+      const listed = HOP_COSTS.map(([id, n]) => `${n} ${id.replace('-', ' ')}`).join(', ');
+      return {
+        ok: missing.length === 0 && !!this.grid && this.grid.charge >= BUILD_KWH.machine,
+        text: `it wants <b>${listed}</b> and ${BUILD_KWH.machine} kWh — `
+          + (missing.length ? `short of ${missing.map(([id]) => id.replace('-', ' ')).join(', ')}.`
+            : 'all aboard. Light the work.'),
+      };
+    };
+    this.hopAssemble = () => {
+      const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
+      if (missing.length || !spend(this.power, BUILD_KWH.machine)) { this.say('no-charge'); return; }
+      for (const [id, n] of HOP_COSTS) {
+        const fromSuit = remove(this.suit, id, n);
+        if (fromSuit < n) remove(this.roverStore, id, n - fromSuit);
+      }
+      const asm = this.machines.find((m) => m.type === 'assembler');
+      this.hopperBuilt = true;
+      this.hopper.x = asm ? asm.x + 9 : this.pos.x + 6;
+      this.hopper.z = asm ? asm.z + 4 : this.pos.z;
+      this.say('hopper-built');
+    };
     this.hopUI = new HopConsole({
       getHopper: () => this.hopper,
-      isBuilt: () => this.hopperBuilt,
-      canAssemble: () => {
-        const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
-        const listed = HOP_COSTS.map(([id, n]) => `${n} ${id.replace('-', ' ')}`).join(', ');
-        return {
-          ok: missing.length === 0 && !!this.grid && this.grid.charge >= BUILD_KWH.machine,
-          text: `It wants <b>${listed}</b> and ${BUILD_KWH.machine} kWh — `
-            + (missing.length ? `short of ${missing.map(([id]) => id.replace('-', ' ')).join(', ')}.`
-              : 'all aboard. Light the work.'),
-        };
-      },
-      onAssemble: () => {
-        const missing = HOP_COSTS.filter(([id, n]) => hopPool(id) < n);
-        if (missing.length || !spend(this.power, BUILD_KWH.machine)) { this.say('no-charge'); return; }
-        for (const [id, n] of HOP_COSTS) {
-          const fromSuit = remove(this.suit, id, n);
-          if (fromSuit < n) remove(this.roverStore, id, n - fromSuit);
-        }
-        const pad = this.nearestPad();
-        this.hopperBuilt = true;
-        this.hopper.x = pad ? pad.x : this.pos.x + 4;
-        this.hopper.z = pad ? pad.z : this.pos.z;
-        this.say('hopper-built');
-      },
-      getPads: () => this.machines.filter((m) => m.type === 'landing-pad'),
       getHome: () => this.crownPos,
       buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
       tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
@@ -396,7 +396,7 @@ class Game {
           hopperLoadTank(this.hopper);
         }
       },
-      onIgnite: (tx, tz, cradle, onPad) => this.igniteHop(tx, tz, cradle, onPad),
+      onIgnite: (tx, tz, cradle) => this.igniteHop(tx, tz, cradle),
       getBank: () => (this.grid ? { charge: this.grid.charge, capacity: this.grid.capacity } : null),
       line: () => this.hud.vesperLine.textContent || '…',
     });
@@ -452,13 +452,8 @@ class Game {
         this.machineLayer.sync(this.machines, meshGroundHeight);
       },
       raiseHopper: () => {
-        if (!this.machines.some((m) => m.type === 'landing-pad')) {
-          this.machines.push(createMachine('landing-pad', this.crownPos.x + 21, this.crownPos.z - 9, 0));
-          this.machineLayer.sync(this.machines, meshGroundHeight);
-        }
-        const pad = this.machines.find((m) => m.type === 'landing-pad');
         this.hopperBuilt = true;
-        this.hopper.x = pad.x; this.hopper.z = pad.z;
+        this.hopper.x = this.crownPos.x + 21; this.hopper.z = this.crownPos.z - 9;
         this.hopper.fuelKg = 6 * 110;
       },
       digBurrow: () => {
@@ -957,21 +952,11 @@ class Game {
     return best;
   }
 
-  nearestPad() {
-    let best = null, bestD = Infinity;
-    for (const m of this.machines) {
-      if (m.type !== 'landing-pad') continue;
-      const d = Math.hypot(m.x - this.pos.x, m.z - this.pos.z);
-      if (d < bestD) { best = m; bestD = d; }
-    }
-    return best;
-  }
-
   // ---- STAGE 3: ignition and the staged flight ----------------------------
-  igniteHop(tx, tz, cradle, onPad) {
+  igniteHop(tx, tz, cradle) {
     const payload = cradle ? CRADLE_BUGGY_KG : 0;
     const from = [this.hopper.x, this.hopper.z];
-    if (!beginHop(this.hopper, from, [tx, tz], payload, onPad)) return;
+    if (!beginHop(this.hopper, from, [tx, tz], payload)) return;
     this.vista.build(from, this.hopper.hop.to);
     this.hopFlight = { cradle, hidTerrain: false, landedSettling: false };
     this.colonist.group.visible = false;
@@ -1094,7 +1079,6 @@ class Game {
     put('solar-array', 10, 5, 0.4); put('solar-array', 13.5, 7, 0.4);
     put('battery', 9, 9, 0.2); put('smelter', -9, 7, 2.6);
     put('mill', -13, 3, 2.2); put('assembler', -10, 12, 1.9);
-    put('landing-pad', 21, -9, 0);
     this.machineLayer.sync(this.machines, meshGroundHeight);
     this.hopperBuilt = true;
     this.hopper.x = A.x + 21; this.hopper.z = A.z - 9;
@@ -1273,17 +1257,8 @@ class Game {
     if (this.burrowUI.visible) { this.burrowUI.close(); return; }
     if (this.worksUI.visible) { this.worksUI.close(); return; }
     if (this.hopUI.visible) { this.hopUI.close(); return; }
-    // the pad's console outranks the works view at a landing pad
-    {
-      const nm = this.nearestMachine();
-      if (!this.inLander && !this.driving && nm && nm.type === 'landing-pad'
-        && Math.hypot(nm.x - this.pos.x, nm.z - this.pos.z) < 8) {
-        this.hopUI.open();
-        return;
-      }
-    }
     // the craft is its own console — an open-ground landing must NEVER
-    // strand the ship: E beside the hopper opens the pad's brain anywhere
+    // strand the ship: E beside the hopper opens its brain anywhere
     if (!this.inLander && !this.driving && this.hopperBuilt && !this.hopFlight
       && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
       this.hopUI.open();
@@ -2069,8 +2044,7 @@ class Game {
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
     } else if (this.hopperBuilt && !this.hopFlight
-      && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7
-      && !(this.nearestMachine() && this.nearestMachine().type === 'landing-pad')) {
+      && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
       this.hud.setPrompt('|*E| the hopper');
     } else if (this.nearestMachine()) {
       const m = this.nearestMachine();

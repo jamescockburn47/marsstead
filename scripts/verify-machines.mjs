@@ -96,14 +96,12 @@ function check(name, ok, detail = '') {
   check('unknown type refuses', createMachine('replicator', 0, 0) === null);
 }
 
-// 2b. the pad's ground law: bigger footprint, flatter ground
+// 2b. the pad is DEAD (2026-07-20): every landing is exact, the hopper
+//     assembles at the assembler — the type must not exist, and an old
+//     save's pad launders away as any unknown type does
 {
-  check('a pad places on the level', canPlaceMachine('landing-pad', 0.05, [], 0, 0));
-  check('a pad refuses a tilt a smelter would take',
-    !canPlaceMachine('landing-pad', 0.1, [], 0, 0) && canPlaceMachine('smelter', 0.1, [], 0, 0));
-  const pad = createMachine('landing-pad', 0, 0);
-  check('the apron demands its ground', !canPlaceMachine('smelter', 0.05, [pad], 6, 0)
-    && canPlaceMachine('smelter', 0.05, [pad], 12, 0));
+  check('the landing pad is gone from the catalogue', !MACHINE_TYPES['landing-pad']);
+  check('an old save\'s pad refuses to build', createMachine('landing-pad', 0, 0) === null);
 }
 
 // 3. the cook: same contract as the fab, per-type recipes

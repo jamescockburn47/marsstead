@@ -47,7 +47,6 @@ const result = await page.evaluate(async () => {
   const out = { phases: [], midArc: {}, errors: [] };
   // stage: pad under our feet, hopper stood on it, four tanks racked
   const px = g.pos.x + 8, pz = g.pos.z;
-  g.machines.push(M.createMachine('landing-pad', px, pz, 0));
   g.machineLayer.sync(g.machines, (x, z) => g.groundAt(x, z));
   g.hopperBuilt = true;
   g.hopper.x = px; g.hopper.z = pz;

@@ -70,7 +70,7 @@ function check(name, ok, detail = '') {
   const fuelBefore = h.fuelKg;
   const plan = planHop(h, [0, 0], [12000, 0]);
   check('ignition needs a valid plan', !beginHop(h, [0, 0], [1000, 0]) && h.fuelKg === fuelBefore);
-  check('a valid hop ignites', beginHop(h, [0, 0], [12000, 0], 0, true)); // to a pad: exact
+  check('a valid hop ignites', beginHop(h, [0, 0], [12000, 0], 0));
   check('fuel spends once, at ignition, exactly the need',
     Math.abs(h.fuelKg - (fuelBefore - plan.fuelNeed)) < 1e-9);
   check('mid-flight loading refuses', !loadTank(h));
@@ -123,35 +123,17 @@ function check(name, ok, detail = '') {
   check('a longer hop earns a longer arc', hopDurations(20).arc > hopDurations(4).arc);
 }
 
-// 3b. the descent ellipse: pads are exact, open ground scatters
-//     deterministically, and longer hops spread further (mostly downtrack)
+// 3b. the landing law (pads dead 2026-07-20): EVERY landing is exact
+//     where you aim — the fuel circle is the only constraint
 {
-  const { descentEllipseM, landingPoint } = await import('../src/hopper.js');
-  const near = descentEllipseM(3), far = descentEllipseM(20);
-  check('the ellipse grows with the hop', far.along > near.along && far.cross > near.cross);
-  check('spread runs downtrack', near.along > near.cross && far.along >= far.cross);
-  check('the ellipse is bounded (never a lost landing)', far.along <= 700);
-  check('a pad lands exactly', (() => {
-    const [x, z] = landingPoint([0, 0], [10000, 0], 10, true);
-    return x === 10000 && z === 0;
-  })());
-  const [sx, sz] = landingPoint([0, 0], [10000, 0], 10, false);
-  check('open ground scatters inside the ellipse', (() => {
-    const e = descentEllipseM(10);
-    return Math.abs(sx - 10000) <= e.along && Math.abs(sz) <= e.cross
-      && (sx !== 10000 || sz !== 0);
-  })());
-  check('the scatter is deterministic', (() => {
-    const a = landingPoint([0, 0], [10000, 0], 10, false);
-    const b = landingPoint([0, 0], [10000, 0], 10, false);
-    return a[0] === b[0] && a[1] === b[1];
-  })());
-  // ignition flies to the true landing, and remembers the aim
+  const { landingPoint } = await import('../src/hopper.js');
+  const [x, z] = landingPoint([0, 0], [10000, 0]);
+  check('you land where you aim', x === 10000 && z === 0);
   const h = createHopper();
   for (let i = 0; i < 4; i++) loadTank(h);
-  beginHop(h, [0, 0], [10000, 0], 0, false);
-  check('the flight flies to the scattered point',
-    h.hop.to[0] === sx && h.hop.to[1] === sz && h.hop.aim[0] === 10000);
+  beginHop(h, [0, 0], [10000, 0], 0);
+  check('the flight flies to the aim itself',
+    h.hop.to[0] === 10000 && h.hop.to[1] === 0 && h.hop.aim[0] === 10000);
 }
 
 // 4. the save: a hop in progress collapses to its landing — refresh is
@@ -159,7 +141,7 @@ function check(name, ok, detail = '') {
 {
   const h = createHopper();
   for (let i = 0; i < 2; i++) loadTank(h);
-  beginHop(h, [0, 0], [4000, 0], 0, true);
+  beginHop(h, [0, 0], [4000, 0], 0);
   tickHop(h, 3);
   const back = deserializeHopper(serializeHopper(h));
   check('mid-hop save lands at the destination', back.x === 4000 && back.z === 0);

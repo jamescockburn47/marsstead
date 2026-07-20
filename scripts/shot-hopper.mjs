@@ -57,7 +57,6 @@ await page.evaluate(async () => {
   const M = await import('/src/machines.js');
   const px = g.pos.x + 26, pz = g.pos.z - 4;
   const py = g.groundAt(px, pz);
-  g.machines.push(M.createMachine('landing-pad', px, pz, 0));
   // the works row, spaced for the eye, well clear of the pad
   const row = ['smelter', 'mill', 'assembler', 'solar-array', 'battery'];
   const rx = g.pos.x - 10, rz = g.pos.z - 26;

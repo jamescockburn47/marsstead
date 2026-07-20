@@ -58,7 +58,6 @@ await page.evaluate(async () => {
   const M = await import('/src/machines.js');
   g.calibrateToLocalHour(12.1);
   const px = g.pos.x + 8, pz = g.pos.z;
-  g.machines.push(M.createMachine('landing-pad', px, pz, 0));
   g.machineLayer.sync(g.machines, (x, z) => g.groundAt(x, z));
   g.hopperBuilt = true;
   g.hopper.x = px; g.hopper.z = pz;

@@ -129,11 +129,24 @@ export class WorksConsole {
       const rec = recipes.map(([raw, r]) =>
         `<div>${nm(raw)} <b>→</b> ${nm(r.out)} <span style="opacity:.45">· ${r.seconds}s</span></div>`).join('');
       const tray = Object.entries(out).map(([id, n]) => `${nm(id)} <b>×${n}</b>`).join(' · ');
+      // STAGE 3 (pads dead 2026-07-20): the assembler is where the
+      // hopper is born — one commit row until the craft exists
+      let hopRow = '';
+      if (st.key === 'assembler' && built && this.h.hopBuilt && !this.h.hopBuilt()) {
+        const can = this.h.hopCan();
+        hopRow = `<div class="wtray">THE HOPPER — ${can.text}<br>
+          <button id="wassemble" ${can.ok ? '' : 'disabled'}
+            style="margin-top:6px;padding:7px 16px;cursor:pointer;font-family:inherit;
+            font-size:11.5px;letter-spacing:2px;border-radius:4px;color:#0c1a18;
+            background:linear-gradient(180deg,#3fd0c9,#2c9b95);border:1px solid #6fe0d8;">
+            ⬡ ASSEMBLE THE HOPPER</button></div>`;
+      }
       return `<div class="wstation">
         <h2>${st.name}</h2>
         <div class="built${built ? '' : ' none'}">${st.sub} · ${built ? `${built} standing` : 'NOT BUILT — B to place'}</div>
         <div class="wrec">${rec}</div>
         <div class="wtray">${queue ? `cooking <b>${queue}</b> · ` : ''}${tray || 'tray empty'}</div>
+        ${hopRow}
       </div>`;
     };
 
@@ -145,6 +158,10 @@ export class WorksConsole {
       html += stationHtml(st);
     });
     this.root.querySelector('#wmain').innerHTML = html;
+    const ab = this.root.querySelector('#wassemble');
+    if (ab) {
+      ab.onclick = () => { this.h.hopAssemble(); this.render(); };
+    }
 
     // ---- the grid strip: the thermostat's whole truth in one line
     const g = this.h.getGrid ? this.h.getGrid() : null;
