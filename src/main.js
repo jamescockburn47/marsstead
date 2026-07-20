@@ -30,6 +30,7 @@ import {
 import { HopperLayer } from './hopperlayer.js';
 import {
   wardenVerify, loadAuth as loadWardenAuth, saveAuth as saveWardenAuth, isWarden,
+  wardenNameCheck,
 } from './warden.js';
 import { WardenPanel } from './wardenpanel.js';
 import { VistaLayer } from './vistalayer.js';
@@ -583,6 +584,12 @@ class Game {
     });
 
     if (save) this.applySave(save);
+    // the name-as-key door (James, 2026-07-20): a settler named with the
+    // warden key IS the warden — the mark rides the save itself, so it
+    // survives any browser, any device, any cleared storage
+    wardenNameCheck(this.settlerName).then((ok) => {
+      if (ok) this.wardenAuth = { warden: true };
+    });
     if (this.attract) this.enterAttract(); // stage the demo set, hide the HUD
     this.booted = !this.attract; // until now, persist() must stay silent — a page
     // interrupted mid-boot must never write half-applied state over a

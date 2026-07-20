@@ -11,8 +11,11 @@
 
 export const AUTH_KEY = 'marsstead-auth';
 
-// SHA-256 of the warden key. The key lives with James, never in git.
-export const WARDEN_HASH = 'eb98565b2acb2b202c8bae29927db7b1aa3a1beb1dd42e9899bea50d38e91542';
+// SHA-256 of the warden key — the FAMILY key (James, 2026-07-20): the
+// simplest door is the settler's own name. Name yourself the key at
+// the title screen and the mark rides the SAVE itself — no browser
+// storage to lose, any device the save reaches is warden ground.
+export const WARDEN_HASH = '5a19e539f87a5776ee01e7d8d603fcc7b63e810a14f23c471f94150437e854d8';
 
 export async function sha256Hex(text, subtle = globalThis.crypto?.subtle) {
   if (!subtle) return null; // no subtle crypto — no warden, no matter
@@ -43,4 +46,10 @@ export function saveAuth(storage, auth) {
 
 export function isWarden(auth) {
   return !!(auth && auth.warden === true);
+}
+
+// the name-as-key door: normalised so 'Warden1981', ' warden1981 ' and
+// the exact key all open it
+export async function wardenNameCheck(name, hash = WARDEN_HASH, subtle = globalThis.crypto?.subtle) {
+  return wardenVerify(String(name || '').trim().toLowerCase(), hash, subtle);
 }

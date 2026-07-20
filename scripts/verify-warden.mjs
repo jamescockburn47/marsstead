@@ -3,6 +3,7 @@
 
 import {
   WARDEN_HASH, sha256Hex, wardenVerify, loadAuth, saveAuth, isWarden, AUTH_KEY,
+  wardenNameCheck,
 } from '../src/warden.js';
 
 let failed = 0;
@@ -22,6 +23,19 @@ function check(name, ok, detail = '') {
     && await wardenVerify(42, testHash) === false);
   check('no subtle crypto means no warden', await wardenVerify(testKey, testHash, null) === false);
   check('baked hash is a hash, not a key', /^[0-9a-f]{64}$/.test(WARDEN_HASH));
+}
+
+// 1b. the name-as-key door: normalised, so capitalisation and stray
+//     spaces never lock the warden out of their own homestead
+{
+  const testKey = 'test-name-key';
+  const testHash = await sha256Hex(testKey);
+  check('the exact name opens', await wardenNameCheck('test-name-key', testHash));
+  check('capitals open', await wardenNameCheck('Test-Name-KEY', testHash));
+  check('stray spaces open', await wardenNameCheck('  test-name-key ', testHash));
+  check('a plain settler stays plain', !(await wardenNameCheck('settler', testHash)));
+  check('an empty name stays plain', !(await wardenNameCheck('', testHash))
+    && !(await wardenNameCheck(null, testHash)));
 }
 
 // 2. the auth blob round-trips through injected storage
