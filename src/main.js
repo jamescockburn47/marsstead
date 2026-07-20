@@ -2263,6 +2263,11 @@ class Game {
       this.hud.setPrompt(this.fabLabel().replace(/^ · /, ''));
     } else if (canSleep(this.sunEl ?? 90) && this.sheltered()) {
       this.hud.setPrompt('|*R| sleep till dawn');
+    } else if (this.simMillis - (this.missionStart ?? this.simMillis) < 2 * 88775244) {
+      // the first two sols of a life: an idle hand always knows where
+      // the mission lives (2026-07-20 — "no clear way to learn the
+      // controls") — the hint yields to every real interaction above
+      this.hud.setPrompt('|*O| orders & controls · |*M| map · |*J| record · |*ENTER| ask VESPER');
     } else {
       this.hud.setPrompt(null);
     }
@@ -2823,16 +2828,13 @@ class Game {
     // but remembers nothing of the mechanics — staged over the first two
     // minutes, live in her own voice, once ever (sayOnce rides the save)
     if (this.freshLanding) {
-      // the written half: LANDFALL ORDERS open once, before she speaks —
-      // read at your pace, reopen with O, ask her the rest with ENTER
+      // the written half: LANDFALL ORDERS open at the start of EVERY new
+      // life (2026-07-20: the browser flag hid them from returning
+      // settlers — the sheet IS the entry briefing, the mission and the
+      // keys; a new landing always deserves it). Reopen any time with O.
       if (this.t > 4 && !this.ordersShown && !this.attract) {
         this.ordersShown = true;
-        let seen = null;
-        try { seen = localStorage.getItem('marsstead-orders-seen'); } catch { /* fine */ }
-        if (!seen) {
-          this.orders.open();
-          try { localStorage.setItem('marsstead-orders-seen', '1'); } catch { /* fine */ }
-        }
+        this.orders.open();
       }
       if (this.t > 8) this.sayOnce('brief-wake');
       if (this.t > 32) this.sayOnce('brief-power');
