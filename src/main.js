@@ -92,7 +92,7 @@ import {
   serialize as steadSerialize, deserialize as steadDeserialize,
 } from './build.js';
 import {
-  snapshotSave, acceptSave, saveGame, loadGame, clearSave,
+  snapshotSave, acceptSave, saveGame, loadGame, clearSave, saveWorthy,
 } from './save.js';
 import { analyse, volumeAtCell, canPressurise, findLeaks } from './pressure.js';
 import { SteadLayer, BED_DEPTH } from './steadlayer.js';
@@ -584,6 +584,8 @@ class Game {
     if (this.hopFlight) return; // mid-air is no place to write history
     if (this.resetting || !this.booted) return; // never resurrect a wiped
     // slate; never write from a page that hasn't fully woken up
+    if (!saveWorthy(this)) return; // a poisoned clock or walker must never
+    // overwrite a good save — acceptSave would discard it all on boot
     saveGame(snapshotSave({
       simMillis: this.simMillis,
       pos: this.pos, heading: this.heading,
@@ -1607,6 +1609,10 @@ class Game {
   }
 
   frame(now) {
+    // a non-finite timestamp (a manual frame() call, a broken RAF) would
+    // slip a NaN dt through the clamps below and poison the whole sim —
+    // skip the tick without touching the clock
+    if (!Number.isFinite(now)) { requestAnimationFrame((n) => this.frame(n)); return; }
     // clamped both ways: a backwards timestamp must never feed the physics
     // a negative dt (anti-damped springs explode)
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));

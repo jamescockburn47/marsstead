@@ -1,7 +1,7 @@
 // verify-save: the homestead save round-trips, refuses the future, and
 // launders garbage into a playable state — never a crash, never a cheat.
 
-import { SAVE_VERSION, snapshotSave, acceptSave } from '../src/save.js';
+import { SAVE_VERSION, snapshotSave, acceptSave, saveWorthy } from '../src/save.js';
 import { LANDER_STOCK } from '../src/salvage.js';
 
 let failed = 0;
@@ -131,6 +131,25 @@ const state = {
   const mc = acceptSave(mm);
   check('machine junk laundered', mc.machines.length === 1
     && mc.machines[0].queue.join() === 'iron-ore' && !('junk' in mc.machines[0].out));
+}
+
+// 5. the writer's gate: a NaN-poisoned state must never be persisted —
+//    acceptSave would silently discard the whole save on the next boot,
+//    so saveWorthy refuses upstream, and the pairing holds: everything
+//    saveWorthy declines, acceptSave would have rejected wholesale
+{
+  check('lived state is worthy', saveWorthy(state) === true);
+  const poisoned = [
+    { ...state, simMillis: NaN },
+    { ...state, pos: { x: state.pos.x, z: NaN } },
+    { ...state, pos: { x: Infinity, z: state.pos.z } },
+    { ...state, pos: null },
+  ];
+  poisoned.forEach((s, i) => {
+    check(`poisoned state ${i} refused by the writer`, saveWorthy(s) === false);
+    check(`poisoned state ${i} would be lost by the reader`,
+      s.pos === null || acceptSave(snapshotSave(s)) === null);
+  });
 }
 
 if (failed) { console.error(`verify-save: ${failed} FAILED`); process.exit(1); }

@@ -95,6 +95,15 @@ export function snapshotSave(state) {
   };
 }
 
+// the writer's gate, paired with acceptSave's reader gate below: a state
+// whose clock or walker has gone non-finite would snapshot into a save
+// acceptSave rejects WHOLESALE on the next boot — the silent loss of the
+// entire world. Refuse upstream instead, keeping the last good save.
+export function saveWorthy(state) {
+  return !!state && Number.isFinite(state.simMillis)
+    && !!state.pos && [state.pos.x, state.pos.z].every(Number.isFinite);
+}
+
 // null unless the meta is a well-formed save THIS client can carry
 export function acceptSave(meta) {
   if (!meta || typeof meta !== 'object') return null;
