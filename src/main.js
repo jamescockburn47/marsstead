@@ -22,6 +22,10 @@ import {
   serializeHopper, deserializeHopper, CRADLE_BUGGY_KG,
 } from './hopper.js';
 import { HopperLayer } from './hopperlayer.js';
+import {
+  wardenVerify, loadAuth as loadWardenAuth, saveAuth as saveWardenAuth, isWarden,
+} from './warden.js';
+import { WardenPanel } from './wardenpanel.js';
 import { VistaLayer } from './vistalayer.js';
 import { HopConsole } from './hopconsole.js';
 import { reelAt, shotCam, driveInput } from './attract.js';
@@ -394,6 +398,102 @@ class Game {
       line: () => this.hud.vesperLine.textContent || '…',
     });
 
+    // ---- THE WARDEN: the family admin mark (warden.js). ?warden=<key>
+    // claims it once (the key is stripped from the URL immediately),
+    // ?warden=off renounces, F9 opens the bench. A cheat code, not
+    // security — see warden.js's header.
+    this.wardenAuth = loadWardenAuth(localStorage);
+    try {
+      const q = new URLSearchParams(location.search);
+      const wk = q.get('warden');
+      if (wk !== null) {
+        q.delete('warden');
+        const qs = q.toString();
+        history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+        if (wk === 'off') { saveWardenAuth(localStorage, null); this.wardenAuth = null; }
+        else {
+          wardenVerify(wk).then((ok) => {
+            if (!ok) return;
+            this.wardenAuth = { warden: true };
+            saveWardenAuth(localStorage, this.wardenAuth);
+          });
+        }
+      }
+    } catch { /* odd embeds without URL games — the mark just isn't claimed */ }
+    this.wardenUI = new WardenPanel({
+      fillBags: () => {
+        for (const id of Object.keys(ITEMS)) {
+          this.suit.slots[id] = 24;
+          this.roverStore.slots[id] = 48;
+        }
+      },
+      fullCharge: () => {
+        const cap = this.grid ? this.grid.capacity : 12;
+        this.power.charge = cap;
+        if (this.grid) this.grid.charge = cap;
+      },
+      refit: () => { this.air = 1; this.warm = 1; },
+      // the attract reel's yard, raised for real — same shape, same spots
+      raiseWorks: () => {
+        const A = this.crownPos;
+        for (const [type, dx, dz, h] of [
+          ['solar-array', 10, 5, 0.4], ['solar-array', 13.5, 7, 0.4],
+          ['battery', 9, 9, 0.2], ['smelter', -9, 7, 2.6],
+          ['mill', -13, 3, 2.2], ['assembler', -10, 12, 1.9],
+        ]) {
+          const x = A.x + dx, z = A.z + dz;
+          if (!this.machines.some((m) => m.type === type && Math.hypot(m.x - x, m.z - z) < 1)) {
+            this.machines.push(createMachine(type, x, z, h));
+          }
+        }
+        this.machineLayer.sync(this.machines, meshGroundHeight);
+      },
+      raiseHopper: () => {
+        if (!this.machines.some((m) => m.type === 'landing-pad')) {
+          this.machines.push(createMachine('landing-pad', this.crownPos.x + 21, this.crownPos.z - 9, 0));
+          this.machineLayer.sync(this.machines, meshGroundHeight);
+        }
+        const pad = this.machines.find((m) => m.type === 'landing-pad');
+        this.hopperBuilt = true;
+        this.hopper.x = pad.x; this.hopper.z = pad.z;
+        this.hopper.fuelKg = 6 * 110;
+      },
+      digBurrow: () => {
+        const stage = (piece, c, d) => {
+          planBurrow(this.burrow, piece, c, d);
+          burrowTick(this.burrow, 999, 4);
+        };
+        stage('shaft', 0, 1); installRing(this.burrow);
+        stage('corridor', 1, 1); stage('corridor', -1, 1);
+        stage('bunk', 2, 1); stage('store', -2, 1);
+        stage('shaft', 0, 2); stage('corridor', 1, 2); stage('garden', 2, 2);
+      },
+      setHour: (h) => this.calibrateToLocalHour(h),
+      sites: () => [
+        { id: 'crown', label: 'THE CROWN — home' },
+        { id: 'lander', label: 'THE LANDER' },
+        { id: 'arctic', label: 'THE ARCTIC — 18 km north' },
+        { id: 'evening', label: 'EVENING COUNTRY — 12 km east' },
+      ],
+      teleport: (id) => {
+        const S = {
+          crown: { x: this.crownPos.x + 4, z: this.crownPos.z + 6 },
+          lander: { x: this.landerPos.x + 5, z: this.landerPos.z + 3 },
+          arctic: { x: this.crownPos.x, z: this.crownPos.z - 18000 },
+          evening: { x: this.crownPos.x + 12000, z: this.crownPos.z },
+        }[id];
+        if (!S) return;
+        this.pos.x = S.x; this.pos.z = S.z;
+        this.vy = 0;
+        if (this.driving) {
+          this.buggy.x = S.x + 3; this.buggy.z = S.z;
+          this.buggy.u = 0; this.buggy.v = 0;
+        }
+        this.wardenUI.close();
+      },
+      renounce: () => { saveWardenAuth(localStorage, null); this.wardenAuth = null; },
+    });
+
     // the suit
     this.air = 1; this.warm = 1;
     this.saidCounts = {}; this.lamp = false;
@@ -661,6 +761,7 @@ class Game {
       }
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
+    if (e.code === 'F9' && isWarden(this.wardenAuth)) this.wardenUI.toggle();
     if (e.code === 'KeyM') this.map.toggle();
     if (e.code === 'KeyO') this.orders.toggle();
     if (e.code === 'KeyH') this.toggleHitch();
