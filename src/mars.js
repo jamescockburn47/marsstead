@@ -122,43 +122,31 @@ export function featuresInBox(x0, z0, x1, z1) {
 // Dune ripples, scattered rock rubble, worn gullies — deterministic from
 // world position, added in GAME metres at human scale.
 //
-// ONE SKIN (James, 2026-07-20: "the same skin everywhere — why would
-// it differ away from home?"). The ground law is a single function of
-// position across the whole planet: rubble, long swells, and dunes in
-// km-scale FIELDS with wandering crest directions — curved trains with
-// clean country between them, at Jezero exactly as at Hellas. (The old
-// always-on fixed-direction dune band is dead everywhere: alone on
-// smooth data it WAS the world-wide corduroy.)
-//
-// The one term that varies is not skin but SKELETON COMPENSATION: the
-// mid-scale bones stand in for relief the coarse 4ppd grid cannot
-// carry, and fade to zero where the fine 0.02° survey data carries the
-// mid-scale itself. Data-driven, blended over ~0.35°: constant TOTAL
-// character, no double-counting, no seam.
+// ONE SKIN, NO EXCEPTIONS (James, 2026-07-20 — twice: "the same skin
+// everywhere" / "why can't we use the bones everywhere?"). The ground
+// law is ONE pure formula of position across the whole planet, with no
+// window logic at all: rubble, long swells, mid-scale bones, and dunes
+// in km-scale FIELDS with wandering crest directions — curved trains
+// with clean country between them, at Jezero exactly as at Hellas.
+// (The bones sit atop real data everywhere, exactly as the swells
+// always have — the same fun-over-truth garnish at a longer wavelength.
+// The old always-on fixed-direction dune band is dead everywhere:
+// alone on smooth data it WAS the world-wide corduroy.)
 const smoothT = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 
 export function detailGame(x, z) {
   let d = (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5          // rubble & pocking
-    + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;        // long soft swells
+    + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5         // long soft swells
+    + (fbm2(x * 0.006 + 71, z * 0.006 - 13) - 0.5) * 6.5  // rolling country
+    + (ridge2(x * 0.0016 + 5, z * 0.0016 + 55) - 0.5) * 9.0; // worn ridgelines
 
-  // dune FIELDS, planet-wide: masked patches, wandering crests
+  // dune FIELDS: masked patches, wandering crests — never a world grain
   const mask = fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4);
   const duneAmp = 2.4 * smoothT((mask - 0.48) * 3.2);
   if (duneAmp > 0.02) {
     const ang = fbm2(x * 0.00045 + 3.3, z * 0.00045 - 8.8) * 3.0;
     const ca = Math.cos(ang), sa = Math.sin(ang);
     d += (ridge2((x * ca + z * sa) * 0.045, (z * ca - x * sa) * 0.045) - 0.5) * duneAmp;
-  }
-
-  // the bones: mid-scale stand-in, present exactly where the data is coarse
-  const { lat, lon } = worldToLatLon(x, z);
-  const dLat = Math.max(0, LAT_MIN - lat, lat - LAT_MAX);
-  const lonW = ((lon % 360) + 360) % 360;
-  const dLon = Math.max(0, LON_MIN - lonW, lonW - LON_MAX);
-  const coarse = smoothT(Math.max(dLat, dLon) / 0.35);
-  if (coarse > 0) {
-    d += ((fbm2(x * 0.006 + 71, z * 0.006 - 13) - 0.5) * 6.5
-      + (ridge2(x * 0.0016 + 5, z * 0.0016 + 55) - 0.5) * 9.0) * coarse;
   }
   return d;
 }

@@ -115,18 +115,18 @@ console.log(`  placeholder: ${IS_PLACEHOLDER}`);
   check('the chart finds the mountain', box.some((f) => f.name === 'Olympus Mons'));
 }
 
-// ---- ONE SKIN (2026-07-20, James: "the same skin everywhere"): the
-// ground law is a single function of position — dune FIELDS with
-// wandering crests at Jezero exactly as at Hellas; only the mid-scale
-// BONES vary, and by DATA COARSENESS, never by address
+// ---- ONE SKIN, NO EXCEPTIONS (2026-07-20, James, twice): the ground
+// law is ONE pure formula of position, bones included, with no window
+// logic at all — home and Hellas must match the independently
+// recomputed formula bit for bit, and the statistics hold everywhere
 {
   const { fbm2, ridge2 } = await import('../src/noise.js');
   const smoothT = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
-  // the skin formula, recomputed independently — home must match it
-  // EXACTLY (bones are zero where the fine data carries the mid-scale)
   const skin = (x, z) => {
     let d = (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5
-      + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;
+      + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5
+      + (fbm2(x * 0.006 + 71, z * 0.006 - 13) - 0.5) * 6.5
+      + (ridge2(x * 0.0016 + 5, z * 0.0016 + 55) - 0.5) * 9.0;
     const mask = fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4);
     const amp = 2.4 * smoothT((mask - 0.48) * 3.2);
     if (amp > 0.02) {
@@ -136,46 +136,30 @@ console.log(`  placeholder: ${IS_PLACEHOLDER}`);
     }
     return d;
   };
+  const farP = latLonToWorld(-40, 66);   // Hellas country
   let oneSkin = true;
   for (let i = 0; i < 60; i++) {
-    const x = (i * 37.7) % 700 - 350, z = (i * 53.3) % 700 - 350;
-    if (Math.abs(detailGame(x, z) - skin(x, z)) > 1e-12) oneSkin = false;
+    const hx = (i * 37.7) % 700 - 350, hz = (i * 53.3) % 700 - 350;
+    if (Math.abs(detailGame(hx, hz) - skin(hx, hz)) > 1e-12) oneSkin = false;
+    if (Math.abs(detailGame(farP.x + hx, farP.z + hz)
+      - skin(farP.x + hx, farP.z + hz)) > 1e-12) oneSkin = false;
   }
-  check('home wears the ONE skin, bones zeroed on fine data', oneSkin);
-  // the same clean-country statistics hold AT HOME as anywhere
-  let cleanHome = 0;
-  for (let i = 0; i < 200; i++) {
-    const x = (i % 14) * 900 - 6000, z = Math.floor(i / 14) * 900 - 6000;
-    if (fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4) < 0.48) cleanHome++;
+  check('ONE skin, bit for bit, home and Hellas alike', oneSkin);
+  // the bones roll everywhere; the dune mask leaves clean country everywhere
+  for (const [name, px, pz] of [['home', 0, 0], ['Hellas', farP.x, farP.z]]) {
+    let lo = Infinity, hi = -Infinity, clean = 0;
+    for (let i = 0; i < 300; i++) {
+      const d = detailGame(px + i * 11.3, pz + (i * 7.9) % 500);
+      lo = Math.min(lo, d); hi = Math.max(hi, d);
+    }
+    for (let i = 0; i < 200; i++) {
+      const x = px + (i % 14) * 900, z = pz + Math.floor(i / 14) * 900;
+      if (fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4) < 0.48) clean++;
+    }
+    check(`${name} country has bones`, hi - lo > 4, `${(hi - lo).toFixed(1)} m spread`);
+    check(`${name} country is patchy of dunes`, clean / 200 > 0.3 && clean / 200 < 0.98,
+      `${Math.round((clean / 200) * 100)}% clean`);
   }
-  check('home country is patchy too, same law', cleanHome / 200 > 0.3 && cleanHome / 200 < 0.98,
-    `${Math.round((cleanHome / 200) * 100)}% clean`);
-  // (b) the far country is NOT a billiard table: mid-scale bones exist
-  const farP = latLonToWorld(-40, 66);   // Hellas country
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < 300; i++) {
-    const d = detailGame(farP.x + i * 11.3, farP.z + (i * 7.9) % 500);
-    lo = Math.min(lo, d); hi = Math.max(hi, d);
-  }
-  check('the far country has bones', hi - lo > 4, `${(hi - lo).toFixed(1)} m spread`);
-  // (c) the dune MASK leaves real clean ground between the fields
-  let clean = 0, total = 0;
-  for (let i = 0; i < 400; i++) {
-    const x = farP.x + (i % 20) * 900, z = farP.z + Math.floor(i / 20) * 900;
-    total++;
-    if (fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4) < 0.48) clean++;
-  }
-  check('most far country is clean of dune trains', clean / total > 0.3
-    && clean / total < 0.98, `${Math.round((clean / total) * 100)}% clean`);
-  // (d) no seam walks the window boundary (the blend is 100 m wide)
-  const seamZ = latLonToWorld(LAT_MAX, 77).z;
-  let seamMax = 0;
-  for (let i = 0; i < 40; i++) {
-    const x = i * 53.1;
-    seamMax = Math.max(seamMax, Math.abs(
-      detailGame(x, seamZ - 0.5) - detailGame(x, seamZ + 0.5)));
-  }
-  check('no seam at the window edge', seamMax < 0.6, `${seamMax.toFixed(2)} m`);
   check('the skin is deterministic', detailGame(farP.x + 5, farP.z + 5)
     === detailGame(farP.x + 5, farP.z + 5));
 }

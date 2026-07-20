@@ -708,7 +708,13 @@ class Game {
     this.lander.stock = s.lander;
     if (s.steadBaseY !== null && s.stead.length) {
       this.stead = steadDeserialize(s.stead);
-      this.steadBaseY = s.steadBaseY;
+      // RE-SEAT on load (2026-07-20): baseY re-derives from the CURRENT
+      // ground at the stead's own origin, exactly as a first build
+      // would — so no ground-law evolution can ever bury or float a
+      // saved hab. The saved value only stands if the origin was lost.
+      this.steadBaseY = s.steadOrigin
+        ? meshGroundHeight(s.steadOrigin.x, s.steadOrigin.z) - BED_DEPTH
+        : s.steadBaseY;
       this.steadLayer.setBase(this.steadBaseY);
       this.steadLayer.sync(this.stead, meshGroundHeight);
       this.analysis = analyse(this.stead);
