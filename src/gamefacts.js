@@ -60,6 +60,8 @@ export const GAME_FACTS = [
   // --- the hopper (Stage 3) ---
   { topic: 'hopper', keywords: ['hopper', 'fly', 'flight', 'hop', 'pad', 'landing', 'assemble', 'rocket', 'horizon', 'range', 'travel'],
     text: 'The hopper crosses horizons: build a landing pad (four steel panels, with B), then assemble the craft at the pad console (E at the pad) from six steel panels, four machine parts and two electronics. Hops are ballistic and plotted — mark a target inside the fuel circle on the pad console and light the engine.' },
+  { topic: 'hopper', keywords: ['stuck', 'stranded', 'lost', 'landed', 'find', 'return', 'recover', 'console', 'map', 'enter'],
+    text: 'The craft is its own console: E beside the hopper opens it wherever it stands — an open-ground landing is never a stranding. Load fresh tanks there and plot the next hop home. The hopper rings teal on the wrist map, so a scattered landing is always findable.' },
   { topic: 'hopper', keywords: ['fuel', 'methane', 'tank', 'tanks', 'cradle', 'payload', 'ellipse', 'reach'],
     text: 'Hopper fuel is methane tanks (assembler-made from machine parts), loaded whole and spent whole at ignition: a full rack of six reaches about twenty-five kilometres, one tank a kilometre and a half. Cradling the buggy nearly halves range. Pads land exact; open ground lands inside a descent ellipse that grows with the hop.' },
   { topic: 'meta', keywords: ['orders', 'help', 'controls', 'keys', 'manual', 'instructions'],
