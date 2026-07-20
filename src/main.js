@@ -15,7 +15,8 @@
 import * as THREE from 'three';
 import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
-import { sunElevation, sunAzimuth, solClock, solarLongitude, season } from './marstime.js';
+import { sunElevation, sunAzimuth, solClock, solarLongitude, season, ltst } from './marstime.js';
+import { frostLineLat, morningFrost } from './frost.js';
 import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
 import {
   createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
@@ -353,7 +354,7 @@ class Game {
     this.hopper = createHopper();
     this.hopperBuilt = false;
     this.hopperLayer = new HopperLayer(this.scene, this.renderer);
-    this.vista = new VistaLayer(this.scene);
+    this.vista = new VistaLayer(this.scene, this.terrain.frost);
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
     this._legSquash = 0;      // touchdown suspension impulse, decays parked
     this._scourPulse = 0;     // the landing blast's hanging dust, likewise
@@ -2381,6 +2382,25 @@ class Game {
     this.sunEl = sunEl; // live handles: the console + live checks read these
     const sunAz = sunAzimuth(this.simMillis, lat, lon);
     this.sunAz = sunAz;
+
+    // ---- the frost rig: frost.js dictates, the shaders obey (terrain and
+    // vista share these uniform objects — one sword, two surfaces)
+    {
+      const F = this.terrain.frost;
+      const ls = solarLongitude(this.simMillis);
+      F.uFrostLineN.value = frostLineLat(ls, true);
+      F.uFrostLineS.value = frostLineLat(ls, false);
+      F.uMorningK.value = morningFrost(ltst(this.simMillis, lon) / 24);
+      // azimuth deg clockwise from north -> world xz unit (north is -z)
+      const azR = sunAz * Math.PI / 180;
+      F.uSunAzimXZ.value.set(Math.sin(azR), -Math.cos(azR));
+      F.uSunLow.value = sunEl > 0 ? Math.min(1, Math.max(0, 1 - sunEl / 25)) : 0;
+      // the blade burns brightest at the grazing hour: the master gain
+      // rides low sun up to ~1.9, settles to 1 by mid-morning
+      F.uGlintK.value = Math.min(1, Math.max(0, sunEl / 3.5)) * (1 + F.uSunLow.value * 0.9);
+      F.uCamPos.value.copy(this.cam.position);
+      F.uGlintT.value = this.t;
+    }
     const sol = Math.floor(this.simMillis / 88775244);
     const tau = this.attract && this.attractTau != null
       ? this.attractTau : tauAt(mtc(this.simMillis), sol);

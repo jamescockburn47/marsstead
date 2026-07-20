@@ -31,14 +31,9 @@ export function frostLineLat(seasonLs, north = true) {
   return north ? line : -line;
 }
 
-export function frostCover(latDeg, seasonLs, hourFrac) {
-  // the caps: cover ramps over ~12° past the line toward the pole
-  const capN = smooth((latDeg - frostLineLat(seasonLs, true)) / 12 + 0.5);
-  const capS = smooth((frostLineLat(seasonLs, false) - latDeg) / 12 + 0.5);
-  const cap = Math.max(capN, capS);
-
-  // the morning: condensation deepens through the night, crests before
-  // dawn (~0.23), burns off exponentially once the sun is up (~0.27)
+// the morning term alone, before the latitude boost — the shader twin
+// (FROST_GLINT_GLSL's marsFrost) takes exactly this as its uniform
+export function morningFrost(hourFrac) {
   const night = hourFrac < 0.23
     ? 0.35 + 0.65 * smooth(hourFrac / 0.23 + 0.25)      // deepening small hours
     : 1;
@@ -46,9 +41,15 @@ export function frostCover(latDeg, seasonLs, hourFrac) {
     ? Math.exp(-(hourFrac - 0.27) / 0.05)               // sunrise takes it fast
     : 1;
   const evening = hourFrac > 0.85 ? smooth((hourFrac - 0.85) / 0.15) * 0.3 : 0;
+  return 0.6 * Math.min(night, burn) + evening * 0.5;
+}
+
+export function frostCover(latDeg, seasonLs, hourFrac) {
+  // the caps: cover ramps over ~12° past the line toward the pole
+  const capN = smooth((latDeg - frostLineLat(seasonLs, true)) / 12 + 0.5);
+  const capS = smooth((frostLineLat(seasonLs, false) - latDeg) / 12 + 0.5);
+  const cap = Math.max(capN, capS);
   // stronger toward the cold latitudes, never zero even at the equator
   const latBoost = 0.55 + 0.45 * smooth(Math.abs(latDeg) / 55);
-  const morning = 0.6 * Math.min(night, burn) * latBoost + evening * latBoost * 0.5;
-
-  return Math.min(1, Math.max(cap, morning));
+  return Math.min(1, Math.max(cap, morningFrost(hourFrac) * latBoost));
 }

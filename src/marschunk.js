@@ -40,6 +40,12 @@ export function colourFor(h, x, z, steep) {
   // basalt shows through where the ground is steep or scoured
   if (steep > 0.55) return [0.27, 0.12, 0.08];
   const dustier = fbm2(x * 0.02 + 7, z * 0.02) * 0.12;
+  // PHASE 1: the planet's own stratigraphy, keyed to real elevation
+  // (game h = real m × 0.025). The colour law holds in every band: warm,
+  // g < r, no green ever. Frost is the shader's business, not this table's.
+  if (h < -160) return [0.63 + dustier, 0.35, 0.19]; // the great basins: pale dust seas
+  if (h > 260) return [0.60 + dustier, 0.38, 0.24];  // Tharsis heights: high pale ochre
+  if (h > 55) return [0.45 + dustier * 0.6, 0.21, 0.11]; // highland basalt, dust-thin
   if (h > 12) return [0.68 + dustier, 0.38, 0.20];   // pale high dust
   if (h < -14) return [0.36, 0.15, 0.09];            // low dark floor
   return [0.56 + dustier, 0.27, 0.13];               // the rust plain

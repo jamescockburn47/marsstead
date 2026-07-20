@@ -14,7 +14,8 @@
 
 import * as THREE from 'three';
 import { CHUNK, buildChunkData, resForRing } from './marschunk.js';
-import { FBM_GLSL } from './glsl.js';
+import { FBM_GLSL, FROST_GLINT_GLSL } from './glsl.js';
+import { HOME, M_PER_DEG } from './mars.js';
 
 const RADIUS = 9;            // chunks kept loaded around the colonist
 const BUILDS_PER_FRAME = 3;
@@ -28,10 +29,23 @@ export class TerrainLayer {
       uAlbedoAmp: { value: 0.16 },
       uNormalAmp: { value: 0.5 },
     };
+    // the frost rig: main.js drives these each frame from frost.js +
+    // marstime (the pure contract) — the shader only renders them
+    this.frost = {
+      uFrostLineN: { value: 90 },   // frost line latitudes (deg)
+      uFrostLineS: { value: -90 },
+      uMorningK: { value: 0 },      // morningFrost(hourFrac), pre-lat-boost
+      uSunAzimXZ: { value: new THREE.Vector2(0, -1) },
+      uSunLow: { value: 0 },        // 1 at grazing sun
+      uGlintK: { value: 0 },        // master: 0 at night
+      uCamPos: { value: new THREE.Vector3() },
+      uGlintT: { value: 0 },
+    };
     this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.mat.onBeforeCompile = (shader) => {
       shader.uniforms.uAlbedoAmp = this.detail.uAlbedoAmp;
       shader.uniforms.uNormalAmp = this.detail.uNormalAmp;
+      for (const k of Object.keys(this.frost)) shader.uniforms[k] = this.frost[k];
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>
 varying vec3 vMarsPos;
@@ -48,7 +62,13 @@ varying vec3 vMarsPos;
 varying vec3 vMarsNrm;
 varying float vMarsDist;
 uniform float uAlbedoAmp, uNormalAmp;
+uniform float uFrostLineN, uFrostLineS, uMorningK, uSunLow, uGlintK, uGlintT;
+uniform vec2 uSunAzimXZ;
+uniform vec3 uCamPos;
 ${FBM_GLSL}
+${FROST_GLINT_GLSL}
+const float MARS_LAT0 = ${HOME.lat.toFixed(4)};
+const float MARS_LAT_PER_Z = ${(-1 / M_PER_DEG).toFixed(8)};
 const vec2 MARSWIND2 = vec2(0.879, 0.477);
 // wind-frame coordinates, stretched along the prevailing wind: isotropic
 // blobs read as leopard at grazing sun; elongated ones read as dunes and
@@ -85,7 +105,26 @@ if (uAlbedoAmp > 0.001) {
   diffuseColor.rgb *= 1.0 + mBand * 2.0 * uAlbedoAmp;
   diffuseColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.70, 0.67),
     mRocky * min(1.0, uAlbedoAmp * 8.0));
+}
+// the frost lies ON the palette: whitening toward a near-neutral warm
+// white where cover holds (flats first — dust slides off the steeps),
+// patchy at the edge of cover via the country fbm. mFrostCover is a
+// main()-scope local: the glint pass below the lighting reads it too.
+float mFrostCover = 0.0;
+{
+  float mfLat = MARS_LAT0 + vMarsPos.z * MARS_LAT_PER_Z;
+  float mfPatch = 0.75 + 0.5 * fbm(vMarsPos.xz * 0.06 + 31.7);
+  float mFrost = marsFrost(mfLat, uFrostLineN, uFrostLineS, uMorningK) * mfPatch;
+  mFrost *= 1.0 - smoothstep(0.10, 0.32, clamp(1.0 - vMarsNrm.y, 0.0, 1.0));
+  mFrostCover = clamp(mFrost, 0.0, 1.0);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.93, 0.90), mFrostCover * 0.55);
 }`)
+        .replace('#include <opaque_fragment>', `
+// the sword of the sun, on ground frost: added AFTER lighting so the
+// pinpricks punch through the dawn's own dimness
+outgoingLight = frostGlint(outgoingLight, vMarsPos, mFrostCover, uCamPos,
+  uSunAzimXZ, uSunLow, uGlintK, uGlintT, 1.7, 8.0, 30.0, 600.0, 2400.0);
+#include <opaque_fragment>`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
 if (uNormalAmp > 0.001) {
   // per-pixel normal detail: height fields read as gradients tilting the

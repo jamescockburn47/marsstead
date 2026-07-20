@@ -180,5 +180,26 @@ check('chunk size sane', CHUNK >= 32 && CHUNK <= 128);
     `shared=${borderShared}`);
 }
 
+// ---- PHASE 1: the stratigraphy palette — distinct bands, the colour law
+{
+  const { colourFor } = await import('../src/marschunk.js');
+  const flat = (h) => colourFor(h, 100, 100, 0);
+  const bands = [flat(-200), flat(-40), flat(0), flat(20), flat(80), flat(300)];
+  // distinct: the basins, floors, plain, high dust, highland, heights all read apart
+  let distinct = true;
+  for (let i = 0; i < bands.length; i++) {
+    for (let j = i + 1; j < bands.length; j++) {
+      if (bands[i].every((c, k) => Math.abs(c - bands[j][k]) < 0.02)) distinct = false;
+    }
+  }
+  check('the stratigraphy reads in bands', distinct);
+  // the colour law: warm everywhere — no green ever, red leads every band
+  const lawful = bands.concat([colourFor(0, 5, 5, 1)])
+    .every(([r, g, b]) => r > g && g >= b - 0.02 && r <= 1);
+  check('the colour law holds in every band', lawful);
+  // determinism
+  check('palette deterministic', JSON.stringify(flat(33)) === JSON.stringify(flat(33)));
+}
+
 if (failed) { console.error(`verify-marschunk: ${failed} FAILED`); process.exit(1); }
 console.log('verify-marschunk: all green');
