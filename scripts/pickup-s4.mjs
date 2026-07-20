@@ -50,9 +50,12 @@ const staged = await page.evaluate(async () => {
   const { lon } = M.worldToLatLon(g.pos.x, g.pos.z);
   g.calibrateToLocalHour(16.6 - lon / 15 + M.HOME.lon / 15);
   for (let i = 0; i < 180; i++) { window.__base += 60; g.frame(window.__base); }
-  // land 16 m EAST and 18 m SOUTH of the wreck: from the north-facing
-  // camera the old machine sits clear, up-left of the hull
-  const ok = (() => { g.igniteHop(v.x + 16, v.z + 18, false); return !!g.hopFlight; })();
+  // Offset COMPUTED from the camera formula (main.js frameFlying): the
+  // yaw=π lens sits at pos+(0, D·sinP+2.4, D·cosP) looking at pos+1.2y.
+  // To put Viking ~12 m from the lens, ~15deg screen-left, clear of the
+  // dust bloom, the ship must land at V+(3.2, -10.6). (James: "its the
+  // real money shot" — big in the foreground, not small and up-left.)
+  const ok = (() => { g.igniteHop(v.x + 3.2, v.z - 10.6, false); return !!g.hopFlight; })();
   let steps = 0;
   while (g.hopFlight && steps++ < 2000) {
     window.__base += 100; g.frame(window.__base);
@@ -62,6 +65,11 @@ const staged = await page.evaluate(async () => {
     if (H2 && H2.t > H2.dur.total - 8) break;
   }
   window.__vik = v;
+  // the exact canon line the game speaks near Viking 1 (heritage.js) —
+  // held on the HUD through the whole descent so the money shot carries
+  // VESPER on the lander's history, relay up or down (James's ask)
+  const vs = H.HERITAGE.find((s) => s.id === 'viking1');
+  window.__vLine = `${vs.name}, ${vs.year}. ${vs.story}`;
   return { ignited: ok, state: g.hopper.state, alt: Math.round(g.hopAlt || 0), steps };
 });
 console.log('staged:', JSON.stringify(staged));
@@ -73,10 +81,33 @@ if (!staged.ignited || staged.state === 'parked') {
 for (let i = 0; i < 420; i++) {
   await page.evaluate(() => {
     const g = window.marsstead;
-    g.camYaw = Math.PI;                        // due north: wreck up-left
-    g.camPitch = g.hopFlight ? 0.10 : 0.13;
-    g.camDist = g.hopFlight ? 22 : 15;
+    g.camYaw = Math.PI;                        // wreck foreground-left
+    g.camPitch = g.hopFlight ? 0.13 : 0.12;   // 0.12 lifts Viking off the bottom edge
+    g.camDist = g.hopFlight ? 24 : 22;
     window.__base += 33.4; g.frame(window.__base);
+    // Once down, the game lerps the camera IN to a walking close-up and
+    // disembarks the settler — that buries the money shot in ~0.5 s. Lock
+    // the lens to the wide landing framing (fixed pivot = the touchdown
+    // spot) and hide the figure, so the Viking reveal HOLDS. Re-render
+    // after g.frame() so this, not the game's lerp, is what's captured.
+    if (!g.hopFlight) {
+      if (!window.__L) window.__L = { x: g.pos.x, y: g.pos.y, z: g.pos.z };
+      const L = window.__L, D = 22, P = 0.12, Y = Math.PI, cp = Math.cos(P);
+      g.colonist.group.visible = false;
+      g.cam.position.set(
+        Math.sin(Y) * -D * cp + L.x,
+        D * Math.sin(P) + 2.4 + L.y,
+        Math.cos(Y) * -D * cp + L.z,
+      );
+      g.cam.lookAt(L.x, L.y + 1.2, L.z);
+      g.renderer.render(g.scene, g.cam);
+    }
+    // assert the Viking history line AFTER the frame so no live bark or
+    // flight prompt overwrites it in the captured screenshot
+    if (window.__vLine && g.hud && g.hud.vesperLine) {
+      g.hud.vesperLine.textContent = window.__vLine;
+      g.hud.vesper.style.opacity = '1';
+    }
   });
   writeFileSync(`${OUT}/s4_${String(i).padStart(4, '0')}.jpg`,
     await page.screenshot({ type: 'jpeg', quality: 85 }));

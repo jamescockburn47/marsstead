@@ -79,7 +79,7 @@ export const HERITAGE = [
     id: 'viking1', name: 'Viking 1', year: 1976,
     kind: 'lander', lat: 22.48, lonE: 312.03,
     place: 'Chryse Planitia',
-    story: 'The first machine to work on Mars and live. It ran six years on the heat of its own plutonium and asked the soil the biggest question there is.',
+    story: 'The first of ours to land whole and work. It sent home the first pictures ever taken from the surface, ran on the heat of its own plutonium, and asked the soil whether anything lived. Six years it listened.',
     salvage: [['electronics', 2], ['alloy-panel', 2], ['cable', 1], ['window-pane', 1]],
   },
   {

@@ -17,10 +17,8 @@ const CSS = `
     background: radial-gradient(ellipse at center,
       rgba(23,10,6,.10) 0%, rgba(23,10,6,.42) 62%, rgba(23,10,6,.78) 100%);
     text-shadow: 0 1px 4px rgba(20,8,4,.9), 0 0 22px rgba(20,8,4,.75); }
-  #title h1 { margin: 0 0 2px; font-size: 46px; letter-spacing: 10px;
+  #title h1 { margin: 0 0 28px; font-size: 46px; letter-spacing: 10px;
     font-weight: normal; }
-  #title .sub { opacity: .78; letter-spacing: 2px; font-size: 13px;
-    margin-bottom: 26px; }
   #title button { display: block; width: 300px; margin: 7px 0; padding: 12px 26px;
     font-family: inherit; font-size: 14px; letter-spacing: 5px; cursor: pointer;
     color: #e8c46a; background: rgba(232,196,106,.08);
@@ -52,10 +50,7 @@ export class TitleScreen {
     this.root.id = 'title';
     const h1 = document.createElement('h1');
     h1.textContent = 'MARSSTEAD';
-    const sub = document.createElement('div');
-    sub.className = 'sub';
-    sub.textContent = 'the tide went out four billion years ago';
-    this.root.append(h1, sub);
+    this.root.append(h1);   // no tagline: the reel behind it speaks for itself
 
     // the settler's name: VESPER uses it, the save keeps it. Prefilled
     // from the save; laundered (cleanName) before it goes anywhere.

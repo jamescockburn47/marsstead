@@ -61,14 +61,27 @@ export class HeritageLayer {
       // RTG wind covers — the two humps that kept Viking warm for years
       box(0.62, 0.34, 0.85, M.worn, 0.62, 1.62, -0.42, 0.52);
       box(0.62, 0.34, 0.85, M.worn, -0.68, 1.62, 0.34, -0.35);
-      // three legs, splayed wide, round feet
+      // three legs as TRUE hip-to-foot struts (2026-07-20, James's eye:
+      // "legs akimbo" — one-axis rotations splayed them sideways; a leg
+      // is a line between two points, so build it as one)
+      const strut = (from, to, r0, r1, m) => {
+        const len = from.distanceTo(to);
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len, 10), m);
+        mesh.position.copy(from).lerp(to, 0.5);
+        mesh.lookAt(to);
+        mesh.rotateX(Math.PI / 2);
+        g.add(mesh);
+      };
       for (let i = 0; i < 3; i++) {
         const a = (i / 3) * Math.PI * 2 + 0.4;
-        cyl(0.08, 0.11, 1.7, M.metal, Math.cos(a) * 1.95, 0.68, Math.sin(a) * 1.95,
-          Math.cos(a) * 0.55);
-        cyl(0.09, 0.06, 1.1, M.dark, Math.cos(a) * 1.35, 0.85, Math.sin(a) * 1.35,
-          Math.cos(a) * 0.2);
-        cyl(0.36, 0.42, 0.12, M.rust, Math.cos(a) * 2.5, 0.07, Math.sin(a) * 2.5);
+        const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+        const hip = dir.clone().multiplyScalar(1.35).setY(1.05);
+        const foot = dir.clone().multiplyScalar(2.45).setY(0.14);
+        strut(hip, foot, 0.09, 0.11, M.metal);
+        // the shock strut back up to the deck edge
+        strut(dir.clone().multiplyScalar(1.05).setY(0.72),
+          dir.clone().multiplyScalar(1.95).setY(0.6), 0.05, 0.05, M.dark);
+        cyl(0.36, 0.42, 0.12, M.rust, Math.cos(a) * 2.45, 0.07, Math.sin(a) * 2.45);
       }
       // the high-gain dish, held to a sky it stopped hearing decades ago
       cyl(0.055, 0.055, 1.15, M.metal, -0.55, 2.15, 0.35, 0.4);
