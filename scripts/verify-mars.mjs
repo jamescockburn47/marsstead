@@ -115,5 +115,49 @@ console.log(`  placeholder: ${IS_PLACEHOLDER}`);
   check('the chart finds the mountain', box.some((f) => f.name === 'Olympus Mons'));
 }
 
+// ---- the two skins (2026-07-20): home keeps its approved ground EXACTLY;
+// the far country loses the world-wide corduroy and gains its own bones
+{
+  const { fbm2, ridge2 } = await import('../src/noise.js');
+  // (a) inside the fine window the skin is the OLD formula, bit for bit
+  let homeExact = true;
+  for (let i = 0; i < 60; i++) {
+    const x = (i * 37.7) % 700 - 350, z = (i * 53.3) % 700 - 350;
+    const old = (ridge2(x * 0.045, z * 0.045) - 0.5) * 2.4
+      + (fbm2(x * 0.35, z * 0.35) - 0.5) * 0.5
+      + (fbm2(x * 0.02 + 40, z * 0.02) - 0.5) * 4.5;
+    if (Math.abs(detailGame(x, z) - old) > 1e-12) homeExact = false;
+  }
+  check('home keeps its approved skin, bit for bit', homeExact);
+  // (b) the far country is NOT a billiard table: mid-scale bones exist
+  const farP = latLonToWorld(-40, 66);   // Hellas country
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < 300; i++) {
+    const d = detailGame(farP.x + i * 11.3, farP.z + (i * 7.9) % 500);
+    lo = Math.min(lo, d); hi = Math.max(hi, d);
+  }
+  check('the far country has bones', hi - lo > 4, `${(hi - lo).toFixed(1)} m spread`);
+  // (c) the dune MASK leaves real clean ground between the fields
+  let clean = 0, total = 0;
+  for (let i = 0; i < 400; i++) {
+    const x = farP.x + (i % 20) * 900, z = farP.z + Math.floor(i / 20) * 900;
+    total++;
+    if (fbm2(x * 0.0011 + 9.1, z * 0.0011 - 4.4) < 0.48) clean++;
+  }
+  check('most far country is clean of dune trains', clean / total > 0.3
+    && clean / total < 0.98, `${Math.round((clean / total) * 100)}% clean`);
+  // (d) no seam walks the window boundary (the blend is 100 m wide)
+  const seamZ = latLonToWorld(LAT_MAX, 77).z;
+  let seamMax = 0;
+  for (let i = 0; i < 40; i++) {
+    const x = i * 53.1;
+    seamMax = Math.max(seamMax, Math.abs(
+      detailGame(x, seamZ - 0.5) - detailGame(x, seamZ + 0.5)));
+  }
+  check('no seam at the window edge', seamMax < 0.6, `${seamMax.toFixed(2)} m`);
+  check('the skin is deterministic', detailGame(farP.x + 5, farP.z + 5)
+    === detailGame(farP.x + 5, farP.z + 5));
+}
+
 if (failed) { console.error(`verify-mars: ${failed} FAILED`); process.exit(1); }
 console.log('verify-mars: all green');
