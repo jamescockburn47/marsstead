@@ -54,7 +54,13 @@ export const FROST_GLINT_GLSL = /* glsl */`
     float pr = length(cellF - pt);
     float size = 0.10 + 0.18 * h2;                 // crystals come in sizes
     float spot = 1.0 - smoothstep(size * 0.35, size, pr);
-    float tw = 0.55 + 0.45 * sin(t * (1.5 + h2 * 3.0) + h2 * 6.2831);
+    // NO self-twinkle (James's eye, 2026-07-20): a crystal lights when
+    // YOUR line to it crosses its own facet. Stand still and the field
+    // stands still; walk and it churns — near crystals fast, far ones
+    // slow, exactly as real frost does. align and vl move only when
+    // the camera does; t plays no part.
+    float facet = fract(h2 * 7.31 + align * 17.0 + vl * 0.013);
+    float tw = smoothstep(0.3, 0.45, facet) * (1.0 - smoothstep(0.55, 0.7, facet));
     // sqrt lifts thin morning cover into a real field of lights while a
     // full cap still outshines it — the centrepiece must READ at dawn
     float fr = sqrt(frost);

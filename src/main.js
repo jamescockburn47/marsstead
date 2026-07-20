@@ -2777,6 +2777,8 @@ class Game {
     });
     this.wake.update(dt, this.buggy, this.buggyFlags, L.sunIntensity);
     this.dust.update(dt, this.t, this.pos.x, this.pos.z, this.vel.x, this.vel.z);
+    // the sheets wear the land: drape + true-rockiness mask (throttled)
+    this.dust.conform(this.pos.x, this.pos.z, rockiness);
     // dust is sunlit matter: it fades with the light (never glows at night).
     // Motes retired to 0 — particle floaters read as noise; the fractal
     // dome/sheet registers carry suspension now (no-particles verdict)
