@@ -12,8 +12,8 @@ FONT='georgia.ttf'   # copied local — sidesteps the drive-colon escape rathole
 
 cap () { printf '%s' "$2" > "cap$1.txt"; }
 cap 1 'MARS. REAL TERRAIN - IN YOUR BROWSER'
-cap 2 'OLYMPUS MONS, ON FOOT'
-cap 3 'THE MILKY WAY, FROM A ROVER'
+cap 2 'THE OPEN COUNTRY, BY ROVER'
+cap 3 'THE WHOLE SKY, FROM THE SUMMIT OF OLYMPUS'
 cap 4 'LAND BESIDE VIKING 1 - 50 YEARS ON'
 cap 5 'SOMETHING IS SIGNALLING'
 cap 6 'FLY ANYWHERE'
@@ -29,7 +29,7 @@ clip () {  # $1 seq prefix  $2 cap-number  $3 fontsize  $4 out  $5 fadeout-start
 clip s1  1 44 c1.mp4 7.6
 clip s2  2 44 c2.mp4 7.6
 clip s3  3 44 c3.mp4 8.6
-clip s4  4 44 c4.mp4 9.6
+clip s4  4 44 c4.mp4 13.6
 clip s5  5 44 c5.mp4 4.0
 clip s5b 5 44 c5b.mp4 1.6
 clip s6  6 44 c6.mp4 7.6
