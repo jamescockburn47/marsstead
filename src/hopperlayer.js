@@ -216,6 +216,53 @@ export class HopperLayer {
 
     g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.flame.castShadow = false;
+
+    // ---- the scour: ground-effect dust blasted out by a close burn — a
+    // fractal ring torn at the edges, on the GROUND (scene-anchored: the
+    // blast stays below while the craft rises). No particles, ever.
+    this.scourMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uT: { value: 0 }, uK: { value: 0 } },
+      vertexShader: `varying vec2 vUv;
+        void main() { vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uT; uniform float uK;
+        ${FBM_GLSL}
+        void main() {
+          vec2 p = vUv - 0.5;
+          float r = length(p) * 2.0;
+          float a = atan(p.y, p.x);
+          // the ring runs outward with the blast; fbm tears its edge ragged
+          float ring = smoothstep(0.1, 0.34, r)
+            * (1.0 - smoothstep(0.5 + uK * 0.4, 0.98, r));
+          float swirl = fbm(vec2(a * 2.3 + uT * 0.9, r * 5.0 - uT * 2.8));
+          float dust = ring * (0.3 + 0.7 * swirl) * uK;
+          // the colour law: the blast is Mars's own warm matter
+          vec3 warm = mix(vec3(0.68, 0.42, 0.26), vec3(0.93, 0.72, 0.5), swirl);
+          gl_FragColor = vec4(warm, dust * 0.85);
+        }`,
+    });
+    this.scour = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), this.scourMat);
+    this.scour.rotation.x = -Math.PI / 2;
+    this.scour.renderOrder = 2;
+    this.scour.visible = false;
+    scene.add(this.scour);
+  }
+
+  // ground-effect at (x, groundY, z): k 0..1 blast strength
+  setScour(x, groundY, z, k, t) {
+    this.scour.visible = k > 0.02;
+    if (!this.scour.visible) return;
+    this.scour.position.set(x, groundY + 0.15, z);
+    this.scourMat.uniforms.uT.value = t;
+    this.scourMat.uniforms.uK.value = Math.min(1, k);
+  }
+
+  // suspension compression: 0 standing tall .. 1 fully squashed — the
+  // group's origin sits at the feet, so y-scale plants the landing
+  setSquash(s) {
+    const k = Math.max(0, Math.min(1, s));
+    this.group.scale.set(1 + k * 0.025, 1 - k * 0.09, 1 + k * 0.025);
   }
 
   // parked on the ground (or a pad): the everyday state
@@ -246,11 +293,11 @@ export class HopperLayer {
   // short plume, hard warm light on the apron. No particles, ever.
   setFlame(k, t = 0) {
     const f = Math.max(0, Math.min(1, k));
-    const flick = f > 0 ? 0.9 + 0.1 * Math.sin(t * 37) : 0;
-    this.flame.material.opacity = f * 0.9 * flick;
-    this.flame.scale.y = 1 + f * 0.8;
-    this.flame.position.y = -f * 0.34;      // the plume reaches for the ground
-    this.flameLight.intensity = f * 7.5 * flick;
+    const flick = f > 0 ? 0.88 + 0.12 * Math.sin(t * 37) + 0.04 * Math.sin(t * 61) : 0;
+    this.flame.material.opacity = f * 0.92 * flick;
+    this.flame.scale.y = 1 + f * 1.6;       // a full burn is a PLUME
+    this.flame.position.y = -f * 0.6;       // reaching hard for the ground
+    this.flameLight.intensity = f * 11 * flick;
   }
 
   update(t, night) {

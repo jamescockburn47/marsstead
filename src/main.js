@@ -355,6 +355,8 @@ class Game {
     this.hopperLayer = new HopperLayer(this.scene, this.renderer);
     this.vista = new VistaLayer(this.scene);
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
+    this._legSquash = 0;      // touchdown suspension impulse, decays parked
+    this._scourPulse = 0;     // the landing blast's hanging dust, likewise
     const HOP_COSTS = [['steel-panel', 6], ['machine-parts', 4], ['electronics', 2]];
     const hopPool = (id) => count(this.suit, id) + count(this.roverStore, id);
     this.hopUI = new HopConsole({
@@ -984,21 +986,32 @@ class Game {
   frameFlight(dt) {
     if (!this.hopper.hop && !this.hopFlight) return 0;
     const F = this.hopFlight;
-    const snap = this.hopper.hop ? tickHop(this.hopper, dt) : { phase: 'landed', prog: 1, alt: 0, x: this.hopper.x, z: this.hopper.z };
+    const snap = this.hopper.hop ? tickHop(this.hopper, dt)
+      : {
+        phase: 'landed', prog: 1, alt: 0, x: this.hopper.x, z: this.hopper.z,
+        burn: 0, shake: 0, scour: 0, touchdown: false,
+      };
     const groundY = meshGroundHeight(snap.x, snap.z);
-    // the settler rides: pos IS the craft; inputs are dead weight
-    this.pos.set(snap.x, groundY + snap.alt, snap.z);
+    // the settler rides: pos IS the craft; inputs are dead weight.
+    // The shake channel trembles the whole shot — craft, camera, world —
+    // by jittering the one position everything hangs from (deterministic:
+    // sines of the sim clock, never Math.random)
+    const sh = (snap.shake || 0) * 0.14;
+    const jx = sh * Math.sin(this.t * 23.7), jy = sh * 0.7 * Math.sin(this.t * 31.3);
+    const jz = sh * Math.sin(this.t * 27.1 + 1.7);
+    this.pos.set(snap.x + jx, groundY + snap.alt + jy, snap.z + jz);
     this.vel.set(0, 0, 0); this.vy = 0; this.airborne = false;
     const H = this.hopper.hop;
     const heading = H ? Math.atan2(H.to[0] - H.from[0], H.to[1] - H.from[1]) : 0;
     const lean = snap.phase === 'ascent' ? 0.1 : snap.phase === 'descent' ? -0.08 : 0;
-    this.hopperLayer.setPose(snap.x, groundY + snap.alt, snap.z, heading, lean);
+    this.hopperLayer.setPose(snap.x + jx, groundY + snap.alt + jy, snap.z + jz, heading, lean);
     this.hopperLayer.setFuel(this.hopper.fuelKg);
-    // the burn: full on ascent, dead ballistic on the arc, the landing
-    // burn waking as the ground comes back up
-    const burn = snap.phase === 'ascent' ? 1
-      : snap.phase === 'descent' ? Math.min(1, Math.max(0, 1 - snap.alt / 2200)) : 0;
-    this.hopperLayer.setFlame(burn, this.t);
+    // the drama channels are the pure module's word: throttle and scour
+    this.hopperLayer.setFlame(snap.burn, this.t);
+    this.hopperLayer.setScour(snap.x, groundY, snap.z, snap.scour, this.t);
+    // the hold-down compresses the legs under full thrust; settle rides soft
+    this.hopperLayer.setSquash(snap.phase === 'ignition' ? snap.burn * 0.55
+      : snap.phase === 'settle' ? 0.15 : 0);
     // the vista swap: streamed ground hides above the haze (or above half
     // the apex on a short lob — the streamer must never chase the track),
     // returns below
@@ -1011,20 +1024,30 @@ class Game {
       if (this.vista.mesh) this.vista.mesh.position.y = -3; // ducks under real chunks
       this.say('hop-crest');
     }
-    if (snap.alt <= swapAlt && F.hidTerrain && (snap.phase === 'descent' || snap.phase === 'landed')) {
+    if (snap.alt <= swapAlt && F.hidTerrain
+      && (snap.phase === 'descent' || snap.phase === 'settle' || snap.phase === 'landed')) {
       F.hidTerrain = false;
       this.terrain.setVisible(true);
       this.rocks.setVisible(true);
     }
-    // the camera: authored per phase — pulled back, slowly orbiting
-    const wantDist = snap.phase === 'ascent' ? 15 + snap.prog * 120
-      : snap.phase === 'arc' ? 26 : 18;
+    // the camera: authored per phase — in CLOSE for the hold-down (the
+    // fire building under a still craft is the shot), pulled back with
+    // altitude on the rise, back in tight for the settle
+    const wantDist = snap.phase === 'ignition' ? 9.5
+      : snap.phase === 'ascent' ? 13 + Math.min(120, snap.alt * 0.055)
+        : snap.phase === 'arc' ? 26
+          : snap.phase === 'settle' ? 13 : 18;
     this.camDist += (wantDist - this.camDist) * Math.min(1, dt * 1.2);
-    this.camPitch += ((snap.phase === 'arc' ? 0.5 : 0.34) - this.camPitch) * Math.min(1, dt * 0.8);
-    this.camYaw += dt * 0.045;
+    const wantPitch = snap.phase === 'ignition' ? 0.18
+      : snap.phase === 'arc' ? 0.5 : snap.phase === 'settle' ? 0.26 : 0.34;
+    this.camPitch += (wantPitch - this.camPitch) * Math.min(1, dt * 0.8);
+    this.camYaw += dt * (snap.phase === 'ignition' ? 0.1 : 0.045);
     if (snap.phase === 'landed') {
-      // touchdown: the world hands back
+      // touchdown: the world hands back — with a THUMP: the legs take
+      // the hit and spring back, the blast's dust hangs a moment
       this.hopFlight = null;
+      this._legSquash = 1;
+      this._scourPulse = 1;
       this.colonist.group.visible = true;
       this.pos.set(this.hopper.x + 3.2, 0, this.hopper.z + 2.4);
       this.pos.y = meshGroundHeight(this.pos.x, this.pos.z);
@@ -1257,6 +1280,13 @@ class Game {
         this.hopUI.open();
         return;
       }
+    }
+    // the craft is its own console — an open-ground landing must NEVER
+    // strand the ship: E beside the hopper opens the pad's brain anywhere
+    if (!this.inLander && !this.driving && this.hopperBuilt && !this.hopFlight
+      && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
+      this.hopUI.open();
+      return;
     }
     if (!this.inLander && !this.driving
       && (this.nearestMachine() || this.distToLander() < 6) && this.distToLadder() >= 3.6
@@ -2037,6 +2067,10 @@ class Game {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.hopperBuilt && !this.hopFlight
+      && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7
+      && !(this.nearestMachine() && this.nearestMachine().type === 'landing-pad')) {
+      this.hud.setPrompt('|*E| the hopper');
     } else if (this.nearestMachine()) {
       const m = this.nearestMachine();
       const bits = [];
@@ -2554,10 +2588,23 @@ class Game {
 
     // the hopper on its pad (flight frames pose it themselves)
     if (this.hopperBuilt && !this.hopFlight) {
-      this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z,
-        meshGroundHeight(this.hopper.x, this.hopper.z) + 0.1, this.hopperHeading || 0);
+      const hgy = meshGroundHeight(this.hopper.x, this.hopper.z);
+      this.hopperLayer.setPlaced(this.hopper.x, this.hopper.z, hgy + 0.1,
+        this.hopperHeading || 0);
       this.hopperLayer.setFuel(this.hopper.fuelKg);
       this.hopperLayer.setFlame(0, this.t);
+      // the touchdown's aftermath: legs spring back, the blast dust hangs
+      if (this._legSquash > 0.002) {
+        this._legSquash *= Math.exp(-dt * 3.2);
+        this.hopperLayer.setSquash(this._legSquash);
+      }
+      if (this._scourPulse > 0.02) {
+        this._scourPulse *= Math.exp(-dt * 0.75);
+        this.hopperLayer.setScour(this.hopper.x, hgy, this.hopper.z,
+          this._scourPulse * 0.8, this.t);
+      } else {
+        this.hopperLayer.setScour(this.hopper.x, hgy, this.hopper.z, 0, this.t);
+      }
     } else if (!this.hopperBuilt) {
       this.hopperLayer.hide();
     }
@@ -2637,6 +2684,7 @@ class Game {
       crown: this.crownPos,
       buggy: { x: this.buggy.x, z: this.buggy.z },
       rig: { x: this.rig.x, z: this.rig.z },
+      hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
       deposits: [...this.prospected].map(depositById).filter(Boolean),
     });
     this.wake.update(dt, this.buggy, this.buggyFlags, L.sunIntensity);

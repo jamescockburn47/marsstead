@@ -99,6 +99,9 @@ export class MiniMap {
     if (pois.crown) dot(pois.crown.x, pois.crown.z, '#e8c46a', true);
     if (pois.buggy) dot(pois.buggy.x, pois.buggy.z, '#8fb6d8');
     if (pois.rig) dot(pois.rig.x, pois.rig.z, '#c9974a');
+    // the hopper: teal, the colour of signal — a scattered landing must
+    // always be findable again
+    if (pois.hopper) dot(pois.hopper.x, pois.hopper.z, '#3fd0c9', true);
     for (const d of pois.deposits || []) {
       if (inRange(d.x, d.z)) dot(d.x, d.z, '#d1685a');
     }

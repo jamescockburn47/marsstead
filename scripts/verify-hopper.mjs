@@ -77,6 +77,8 @@ function check(name, ok, detail = '') {
 
   const phases = [];
   let last = null, maxAlt = 0, prog = -1, monotonic = true;
+  let ignMaxBurn = 0, ignMoved = false, arcBurn = 0, brakeSpike = 0;
+  let settleTop = 0, sane = true, prev = null, maxStep = 0;
   let guard = 0;
   while (guard++ < 100000) {
     const s = tickHop(h, 0.1);
@@ -86,15 +88,36 @@ function check(name, ok, detail = '') {
     maxAlt = Math.max(maxAlt, s.alt);
     if (s.prog < prog - 1e-9) monotonic = false;
     prog = s.prog;
+    // the drama channels: bounded, and shaped the way the shot demands
+    for (const c of [s.burn, s.shake, s.scour]) {
+      if (!Number.isFinite(c) || c < 0 || c > 1) sane = false;
+    }
+    if (s.phase === 'ignition') {
+      ignMaxBurn = Math.max(ignMaxBurn, s.burn);
+      if (s.alt !== 0 || s.prog !== 0) ignMoved = true; // hold-down HOLDS
+    }
+    if (s.phase === 'arc') arcBurn = Math.max(arcBurn, s.burn);
+    if (s.phase === 'descent') brakeSpike = Math.max(brakeSpike, s.burn);
+    if (s.phase === 'settle') settleTop = Math.max(settleTop, s.alt);
+    if (prev && prev.phase !== 'landed') maxStep = Math.max(maxStep, Math.abs(s.alt - prev.alt));
+    prev = s;
     if (s.phase === 'landed') break;
   }
-  check('the sequence walks ascent -> arc -> descent -> landed',
-    phases.join(',') === 'ascent,arc,descent,landed', phases.join(','));
+  check('the sequence walks ignition -> ascent -> arc -> descent -> settle -> landed',
+    phases.join(',') === 'ignition,ascent,arc,descent,settle,landed', phases.join(','));
   check('progress never reverses (no free flight)', monotonic);
   check('the crest nears the ballistic apex', maxAlt > 12000 * 0.2 && maxAlt <= 12000 * 0.25 + 1,
     `${Math.round(maxAlt)} m`);
   check('touchdown parks at the target', last.phase === 'landed'
     && h.state === 'parked' && h.x === 12000 && h.z === 0 && h.hop === null);
+  check('touchdown announces itself once', last.touchdown === true);
+  check('the drama channels stay in [0,1]', sane);
+  check('the hold-down builds fire but never lifts', ignMaxBurn > 0.9 && !ignMoved);
+  check('the arc is dead ballistic (the silence is the point)', arcBurn === 0);
+  check('the braking burn spikes on descent', brakeSpike > 0.9);
+  check('settle flies the last dozen metres', settleTop > 0 && settleTop <= 15);
+  check('no altitude pops between frames (seamless profile)',
+    maxStep < 12000 * 0.25 * 0.1, `${Math.round(maxStep)} m/tick`);
   const durs = hopDurations(12);
   check('the shot never outstays itself', durs.total < 70 && durs.ascent >= 6);
   check('a longer hop earns a longer arc', hopDurations(20).arc > hopDurations(4).arc);
