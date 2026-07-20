@@ -14,6 +14,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeEnvTexture } from './colonist.js';
 import { FBM_GLSL } from './glsl.js';
 import { MAX_TANKS, TANK_FUEL_KG } from './hopper.js';
+import { meshGroundHeight } from './marschunk.js';
 
 const SHELL = 0xe8e2d6;   // the suit family's warm white
 const RUST = 0xc45a2e;    // mission orange
@@ -242,18 +243,32 @@ export class HopperLayer {
           gl_FragColor = vec4(warm, dust * 0.85);
         }`,
     });
-    this.scour = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), this.scourMat);
-    this.scour.rotation.x = -Math.PI / 2;
+    // segmented so it can WEAR THE LAND: a flat ring on a hillside reads
+    // as a billboard (James's eye, 2026-07-20) — the blast follows the
+    // slope it is scouring
+    const scourGeo = new THREE.PlaneGeometry(30, 30, 22, 22);
+    scourGeo.rotateX(-Math.PI / 2);
+    this.scour = new THREE.Mesh(scourGeo, this.scourMat);
     this.scour.renderOrder = 2;
     this.scour.visible = false;
+    this._scourAt = null;
     scene.add(this.scour);
   }
 
-  // ground-effect at (x, groundY, z): k 0..1 blast strength
+  // ground-effect at (x, groundY, z): k 0..1 blast strength. The ring's
+  // vertices conform to the true ground (throttled: re-drape after 2.5 m)
   setScour(x, groundY, z, k, t) {
     this.scour.visible = k > 0.02;
     if (!this.scour.visible) return;
-    this.scour.position.set(x, groundY + 0.15, z);
+    if (!this._scourAt || Math.hypot(x - this._scourAt[0], z - this._scourAt[1]) > 2.5) {
+      this._scourAt = [x, z];
+      const pos = this.scour.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setY(i, meshGroundHeight(x + pos.getX(i), z + pos.getZ(i)) - groundY + 0.15);
+      }
+      pos.needsUpdate = true;
+    }
+    this.scour.position.set(x, groundY, z);
     this.scourMat.uniforms.uT.value = t;
     this.scourMat.uniforms.uK.value = Math.min(1, k);
   }

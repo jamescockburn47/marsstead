@@ -106,8 +106,12 @@ function check(name, ok, detail = '') {
   check('the sequence walks ignition -> ascent -> arc -> descent -> settle -> landed',
     phases.join(',') === 'ignition,ascent,arc,descent,settle,landed', phases.join(','));
   check('progress never reverses (no free flight)', monotonic);
-  check('the crest nears the ballistic apex', maxAlt > 12000 * 0.2 && maxAlt <= 12000 * 0.25 + 1,
-    `${Math.round(maxAlt)} m`);
+  const { APEX_VIEW } = await import('../src/hopper.js');
+  const drawnApex = 12000 * 0.25 * APEX_VIEW;
+  check('the crest nears the DRAWN apex (ballistic truth × the view law)',
+    maxAlt > drawnApex * 0.8 && maxAlt <= drawnApex + 1, `${Math.round(maxAlt)} m`);
+  check('the view law is a compression, not an inflation',
+    APEX_VIEW > 0.3 && APEX_VIEW < 1);
   check('touchdown parks at the target', last.phase === 'landed'
     && h.state === 'parked' && h.x === 12000 && h.z === 0 && h.hop === null);
   check('touchdown announces itself once', last.touchdown === true);

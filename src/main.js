@@ -401,9 +401,19 @@ class Game {
       this.hopper.z = asm ? asm.z + 4 : this.pos.z;
       this.say('hopper-built');
     };
+    // every roof you own, for every chart: the way home must always be
+    // on the map (James, 2026-07-20)
+    this.homesFor = () => [
+      { x: this.crownPos.x, z: this.crownPos.z, label: 'BURROW', glyph: '⌂', colour: '#e8c46a' },
+      ...(this.steadOrigin
+        ? [{ x: this.steadOrigin.x, z: this.steadOrigin.z, label: 'HAB', glyph: '⌂', colour: '#e8c46a' }]
+        : []),
+      { x: this.landerPos.x, z: this.landerPos.z, label: 'LANDER', glyph: '▲', colour: '#cfc5b6' },
+    ];
     this.hopUI = new HopConsole({
       getHopper: () => this.hopper,
       getHome: () => this.crownPos,
+      homes: () => this.homesFor(),
       season: () => solarLongitude(this.simMillis),
       buggyNear: () => Math.hypot(this.buggy.x - this.hopper.x, this.buggy.z - this.hopper.z) < 12,
       tanksCarried: () => count(this.suit, 'methane-tank') + count(this.roverStore, 'methane-tank'),
@@ -2778,7 +2788,7 @@ class Game {
     this.planetHud.update(dt, {
       player: { x: this.pos.x, z: this.pos.z },
       hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
-      home: this.crownPos,
+      homes: this.homesFor(),
       sites: this.mystery.found
         .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
         .map((s) => siteXZ(s)),

@@ -159,7 +159,7 @@ export class HopConsole {
       const H = this.h.getHopper();
       const payload = this.cradle ? CRADLE_BUGGY_KG : 0;
       this.planet.tick(dt, {
-        home: this.h.getHome(),
+        homes: this.h.homes ? this.h.homes() : [],
         craft: { x: H.x, z: H.z },
         aim: this.aim ? { x: this.aim[0], z: this.aim[1] } : null,
         rangeKm: hopRangeKm(H.fuelKg, payload),
@@ -249,10 +249,12 @@ export class HopConsole {
       s += `<text x="${px(f.x)}" y="${pz(f.z)}" fill="rgba(246,237,226,.55)"
         font-size="10.5" letter-spacing="2" text-anchor="middle">${f.name.toUpperCase()}</text>`;
     }
-    // home (the crown) and the craft
-    if (home) {
-      s += `<text x="${px(home.x)}" y="${pz(home.z) + 4}" fill="#e8c46a" font-size="13"
-        text-anchor="middle">⌂</text>`;
+    // every roof you own — the way home is always on the chart
+    for (const hm of (this.h.homes ? this.h.homes() : (home ? [{ ...home, glyph: '⌂', label: '', colour: '#e8c46a' }] : []))) {
+      s += `<text x="${px(hm.x)}" y="${pz(hm.z) + 4}" fill="${hm.colour}" font-size="13"
+        text-anchor="middle">${hm.glyph}</text>
+        <text x="${px(hm.x)}" y="${pz(hm.z) + 15}" fill="${hm.colour}" font-size="8"
+        letter-spacing="1.5" opacity="0.75" text-anchor="middle">${hm.label}</text>`;
     }
     s += `<circle cx="${S / 2}" cy="${S / 2}" r="3.4" fill="#3fd0c9"/>`;
     // the aim: exact — the mark IS the landing

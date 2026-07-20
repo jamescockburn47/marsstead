@@ -69,7 +69,7 @@ const result = await page.evaluate(async () => {
     g.frame(last);
     const ph = g.hopper.hop ? g.hopper.state : 'landed';
     if (!out.phases.includes(ph)) out.phases.push(ph);
-    if (g.hopAlt > 1700) {
+    if (g.hopAlt > 1100) { // drawn apex rides APEX_VIEW now
       sawThin = Math.max(sawThin, g.L.thin || 0);
       sawStars = Math.max(sawStars, g.L.starVisibility || 0);
       sawVista = sawVista || (g.vista.mesh && g.vista.mesh.visible);

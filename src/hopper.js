@@ -64,6 +64,12 @@ export function fuelForKm(distKm, payloadKg = 0) {
 // ---- the plot -------------------------------------------------------------
 export const MIN_HOP_KM = 1.2;       // under this the buggy is the answer
 export const APEX_FRACTION = 0.25;   // 45° ballistic: apex = range / 4
+// the second sanctioned fun-over-truth override (WORLD_RANGE's sibling,
+// James's eye 2026-07-20: "we go too high"): the DRAWN apex is compressed
+// so the arc reads majestic instead of leaving the world a postage stamp.
+// The ballistic truth (range/4) stays in APEX_FRACTION; the shot flies
+// at just over half of it.
+export const APEX_VIEW = 0.55;
 
 // the landing (the pad system died 2026-07-20, James's call): every
 // landing is EXACT where you aim — the fuel circle is the only
@@ -131,7 +137,7 @@ export function beginHop(h, from, to, payloadKg = 0) {
     aim: [...to],                    // …the console's mark, kept for the map
     distKm: plan.distKm, payloadKg,
     t: 0, dur,
-    apexM: plan.distKm * 1000 * APEX_FRACTION,
+    apexM: plan.distKm * 1000 * APEX_FRACTION * APEX_VIEW,
   };
   return true;
 }

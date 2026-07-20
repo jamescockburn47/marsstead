@@ -13,6 +13,11 @@ import { latLonToWorld, HOME, M_PER_DEG } from './mars.js';
 import { FBM_GLSL, FROST_GLINT_GLSL } from './glsl.js';
 
 const N = 110;                 // verts per side — coarse is honest at altitude
+// the world's own globe radius (globelayer.GLOBE_R's number, kept local
+// to spare the import): the vista CURVES away at this radius, so from
+// altitude the horizon is ROUND and the far field sinks below it — no
+// square edge can ever show (James's eye, 2026-07-20)
+const CURVE_R = (360 * M_PER_DEG) / (2 * Math.PI);
 
 export class VistaLayer {
   // frostRig: the SAME uniform objects the terrain material holds
@@ -50,13 +55,18 @@ export class VistaLayer {
       for (let i = 0; i < N; i++) {
         const x = cx - spanX / 2 + i * stepX;
         const z = z0 + j * stepZ;
-        const h = meshGroundHeight(x, z);
+        // spherical drop about the track's midpoint: the arc's camera
+        // lives near the track, so the curve reads true for the shot.
+        // The PALETTE reads the true height — geology doesn't curve.
+        const dm = Math.hypot(x - cx, z - cz);
+        const hTrue = meshGroundHeight(x, z);
+        const h = hTrue - (dm * dm) / (2 * CURVE_R);
         const k = (j * N + i) * 3;
         pos[k] = x; pos[k + 1] = h; pos[k + 2] = z;
-        const hx = meshGroundHeight(x + stepX, z) - h;
-        const hz = meshGroundHeight(x, z + stepZ) - h;
+        const hx = meshGroundHeight(x + stepX, z) - hTrue;
+        const hz = meshGroundHeight(x, z + stepZ) - hTrue;
         const steep = Math.min(1, Math.hypot(hx, hz) / Math.max(stepX, 1) * 3);
-        const c = colourFor(h, x, z, steep);
+        const c = colourFor(hTrue, x, z, steep);
         col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2];
       }
     }

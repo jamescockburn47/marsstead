@@ -121,9 +121,10 @@ export class PlanetChart {
     };
     const named = [...FEATURES].sort((a, b) => b.diamKm - a.diamKm).slice(0, 30);
     for (const f of named) this.labels.push({ f, el: mk('pl-name', f.name.toUpperCase()) });
-    this.mHome = mk('pl-mark pl-home', '⌂');
     this.mCraft = mk('pl-mark pl-craft', '●');
     this.mAim = mk('pl-mark pl-aim', '✛');
+    this._mk = mk;
+    this.homeEls = new Map();   // label -> span, created as roofs appear
   }
 
   // one frame while the page is open: inertia, camera, labels, render
@@ -187,7 +188,19 @@ export class PlanetChart {
     };
     for (const { f: feat, el } of this.labels) place(el, feat.lat, feat.lonE);
     const wll = (m) => { const ll = worldToLatLon(m.x, m.z); return { lat: ll.lat, lonE: ll.lon }; };
-    if (marks.home) { const p = wll(marks.home); place(this.mHome, p.lat, p.lonE, 1.02); } else this.mHome.style.display = 'none';
+    // every roof you own, floated on the face
+    for (const hm of marks.homes || []) {
+      let el = this.homeEls.get(hm.label);
+      if (!el) {
+        el = this._mk('pl-mark pl-home', `${hm.glyph} ${hm.label}`);
+        el.style.color = hm.colour;
+        el.style.fontSize = '10px';
+        el.style.letterSpacing = '1.5px';
+        this.homeEls.set(hm.label, el);
+      }
+      const p = wll(hm);
+      place(el, p.lat, p.lonE, 1.02);
+    }
     if (marks.craft) { const p = wll(marks.craft); place(this.mCraft, p.lat, p.lonE, 1.02); } else this.mCraft.style.display = 'none';
     if (marks.aim) { const p = wll(marks.aim); place(this.mAim, p.lat, p.lonE, 1.02); } else this.mAim.style.display = 'none';
 
