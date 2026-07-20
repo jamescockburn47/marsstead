@@ -17,6 +17,11 @@ import { latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER } from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
 import { sunElevation, sunAzimuth, solClock, solarLongitude, season, ltst } from './marstime.js';
 import { frostLineLat, morningFrost } from './frost.js';
+import {
+  SITES, siteXZ, chainActive, signalStrength, sweepAt,
+  serializeMystery, deserializeMystery, ARRIVE_M, SWEEP_M,
+} from './marslegends.js';
+import { Journal } from './journal.js';
 import { lightState, surfaceTempC, dayFactor, altitudeLight } from './marslight.js';
 import {
   createHopper, loadTank as hopperLoadTank, beginHop, tickHop,
@@ -358,6 +363,13 @@ class Game {
     this.hopFlight = null;    // visual flight state: { cradle, hidTerrain }
     this._legSquash = 0;      // touchdown suspension impulse, decays parked
     this._scourPulse = 0;     // the landing blast's hanging dust, likewise
+
+    // ---- the signal chain (marslegends): the reason to fly
+    this.mystery = deserializeMystery(null);
+    this.journalUI = new Journal();
+    this.reading = null;      // { t, need } while reading the ground
+    this.sceneQueue = null;   // { lines, i, nextAt } — a beat's canon plays out
+    this._sweepDist = Infinity;
     // the hopper's birth (pads dead 2026-07-20): assembly lives at the
     // ASSEMBLER via the works console; these hooks are shared with it
     const HOP_COSTS = [['steel-panel', 6], ['machine-parts', 4], ['electronics', 2]];
@@ -674,6 +686,7 @@ class Game {
     this.regard = deserializeRegard(s.regard); // the pairing, as it stood
     this.hopper = deserializeHopper(s.hopper); // the craft, where it stood
     this.hopperBuilt = !!s.hopperBuilt;
+    this.mystery = deserializeMystery(s.mystery); // the chain, as far as it got
     if (s.inLander) this.enterLander(); // saved aboard, wake aboard
   }
 
@@ -721,6 +734,7 @@ class Game {
       regard: serializeRegard(this.regard),
       hopper: serializeHopper(this.hopper),
       hopperBuilt: !!this.hopperBuilt,
+      mystery: serializeMystery(this.mystery),
     })).catch(() => {});
   }
 
@@ -760,6 +774,7 @@ class Game {
     }
     if (e.code === 'KeyX' && this.buildMode) this.removeCursor();
     if (e.code === 'F9' && isWarden(this.wardenAuth)) this.wardenUI.toggle();
+    if (e.code === 'KeyJ') this.journalUI.toggle(this.mystery);
     if (e.code === 'KeyM') this.map.toggle();
     if (e.code === 'KeyO') this.orders.toggle();
     if (e.code === 'KeyH') this.toggleHitch();
@@ -1257,6 +1272,12 @@ class Game {
     if (this.burrowUI.visible) { this.burrowUI.close(); return; }
     if (this.worksUI.visible) { this.worksUI.close(); return; }
     if (this.hopUI.visible) { this.hopUI.close(); return; }
+    // the sweep's heart: reading the ground IS the act of the chain
+    if (!this.inLander && !this.driving && this.activeSignal
+      && this._sweepDist < SWEEP_M && !this.reading) {
+      this.reading = { t: 0, need: 4 };
+      return;
+    }
     // the craft is its own console — an open-ground landing must NEVER
     // strand the ship: E beside the hopper opens its brain anywhere
     if (!this.inLander && !this.driving && this.hopperBuilt && !this.hopFlight
@@ -2043,6 +2064,11 @@ class Game {
       const deck = massOf(this.roverStore) > 0 ? ` · |*G| take from deck` : '';
       const load = massOf(this.suit) > 0 ? ` · |*F| load deck` : '';
       this.hud.setPrompt(`|*E| drive${load}${deck}`);
+    } else if (this.reading) {
+      const pct = Math.round((this.reading.t / this.reading.need) * 100);
+      this.hud.setPrompt(`reading the ground… ${pct}%`);
+    } else if (this.activeSignal && this._sweepDist < SWEEP_M && !this.driving) {
+      this.hud.setPrompt('|*E| read the ground');
     } else if (this.hopperBuilt && !this.hopFlight
       && Math.hypot(this.hopper.x - this.pos.x, this.hopper.z - this.pos.z) < 7) {
       this.hud.setPrompt('|*E| the hopper');
@@ -2357,6 +2383,55 @@ class Game {
     const sunAz = sunAzimuth(this.simMillis, lat, lon);
     this.sunAz = sunAz;
 
+    // ---- the signal chain: the band warms, the arrival speaks, the
+    // reading act gives up the relic, the scene plays as canon
+    if (!this.attract) {
+      const active = chainActive(this.mystery.found);
+      this.activeSignal = active;
+      if (active) {
+        const p = siteXZ(active);
+        const d = Math.hypot(p.x - this.pos.x, p.z - this.pos.z);
+        this._sweepDist = d;
+        this.hud.setSignal(
+          signalStrength(active, this.pos.x, this.pos.z),
+          sweepAt(active, this.pos.x, this.pos.z),
+        );
+        if (d < ARRIVE_M && !this.saidFirsts.has(`signal-close:${active.id}`)) {
+          this.saidFirsts.add(`signal-close:${active.id}`);
+          this.say('signal-close');
+        }
+        if (this.reading) {
+          // walked off the heart (or drove over it): the ground keeps its page
+          if (d > SWEEP_M * 1.6 || this.driving || this.hopFlight) {
+            this.reading = null;
+          } else {
+            this.reading.t += dt;
+            if (this.reading.t >= this.reading.need) {
+              this.reading = null;
+              this.mystery.found.push(active.id);
+              this.sceneQueue = { lines: [...active.scene], i: 0, nextAt: this.t + 0.8 };
+              this.say('signal-found'); // her live colour rides the tag
+              this.persist();
+            }
+          }
+        }
+      } else {
+        this._sweepDist = Infinity;
+        this.hud.setSignal(0, 0);
+      }
+      // a beat's canon plays out line by line, unhurried
+      if (this.sceneQueue && this.t >= this.sceneQueue.nextAt) {
+        const q = this.sceneQueue;
+        const line = q.lines[q.i++];
+        if (line) {
+          this.hud.say(line, this.t);
+          this.voice.speak(line, 'calm');
+          q.nextAt = this.t + Math.max(4.5, line.length * 0.075);
+        }
+        if (q.i >= q.lines.length) this.sceneQueue = null;
+      }
+    }
+
     // ---- the frost rig: frost.js dictates, the shaders obey (terrain and
     // vista share these uniform objects — one sword, two surfaces)
     {
@@ -2543,6 +2618,19 @@ class Game {
       }
     }
     if (this.map.visible) {
+      // the active signal's honest ring: site snapped to a coarse 4 km
+      // grid, radius wide enough to always contain it — orientation,
+      // never a pin (the band's warmth is the real instrument)
+      let signalRing = null;
+      if (this.activeSignal) {
+        const p = siteXZ(this.activeSignal);
+        const q = 4000;
+        signalRing = {
+          x: Math.floor(p.x / q) * q + q / 2,
+          z: Math.floor(p.z / q) * q + q / 2,
+          r: 3200,
+        };
+      }
       this.map.update(this.exploration, {
         player: { x: this.pos.x, z: this.pos.z, heading: this.driving ? this.buggy.heading : this.heading },
         lander: this.landerPos,
@@ -2552,6 +2640,11 @@ class Game {
         deposits: [...this.prospected].map(depositById).filter(Boolean),
         trail: this.trail.pts,
         crown: this.crownPos,
+        hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
+        foundSites: this.mystery.found
+          .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
+          .map((s) => ({ ...siteXZ(s), name: s.name })),
+        signalRing,
       });
     }
 

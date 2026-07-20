@@ -302,6 +302,8 @@ export function buildMessages(rawState, history, playerText, phase = DEFAULT_PHA
 // live brain speaks one unprompted sentence or two in character. Every
 // event not covered by the INSTRUMENT channel (vesper.js) belongs here.
 export const BARK_MOMENTS = {
+  'signal-close': 'the instruments have led the settler to the edge of an anomaly site — the signal band is nearly full, and something in the ground here is not ordinary',
+  'signal-found': 'the settler just read the ground at an anomaly site and recovered a record for the journal; a new, fainter signal has woken somewhere farther out',
   wake: 'the settler has just woken for the new sol',
   'first-steps': 'the settler just took their first steps on Mars — the first bootprints ever made here',
   'first-jump': 'the settler just made their first jump in the low gravity',

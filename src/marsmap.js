@@ -6,6 +6,7 @@
 // markers redraw every frame for free.
 
 import { EXPLORE_CELL, bounds } from './explore.js';
+import { featuresInBox } from './mars.js';
 
 const CSS = `
   #marsmap { position: fixed; inset: 0; display: none; align-items: center;
@@ -195,6 +196,36 @@ export class MarsMap {
     if (pois.crown) this.marker(ctx, pois.crown.x, pois.crown.z, '#e8c46a', 'BURROW');
     if (pois.stead) this.marker(ctx, pois.stead.x, pois.stead.z, '#e8c46a', 'HAB');
     if (pois.rig) this.marker(ctx, pois.rig.x, pois.rig.z, '#c9974a', 'RIG');
+    if (pois.hopper) this.marker(ctx, pois.hopper.x, pois.hopper.z, '#3fd0c9', 'HOPPER');
+
+    // the land's own names: quiet small caps, places not markers
+    const v2 = this.view;
+    ctx.font = '10px Georgia';
+    ctx.fillStyle = 'rgba(246,237,226,.45)';
+    for (const f of featuresInBox(v2.minX, v2.minZ, v2.minX + v2.span, v2.minZ + v2.span)) {
+      const [fu, fw] = this.toPx(f.x, f.z);
+      ctx.fillText(f.name.toUpperCase(), fu - f.name.length * 2.6, fw);
+    }
+
+    // walked chain sites are known ground now — named in signal teal
+    for (const s of pois.foundSites || []) {
+      this.marker(ctx, s.x, s.z, '#3fd0c9', s.name.toUpperCase());
+    }
+
+    // the live signal's honest ring: a vague circle on a coarse grid —
+    // the band's warmth is the real instrument; this only orients
+    if (pois.signalRing) {
+      const [cu, cw] = this.toPx(pois.signalRing.x, pois.signalRing.z);
+      const rr = pois.signalRing.r / v2.span * 512;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(63,208,201,.55)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([5, 6]);
+      ctx.beginPath();
+      ctx.arc(cu, cw, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
     const ORE = { 'iron-ore': ['#d1685a', 'IRON'], ice: ['#cfe0e8', 'ICE'], silica: ['#d8c9a8', 'SILICA'] };
     for (const d of pois.deposits || []) {
       const [colour, label] = ORE[d.type] || ['#d1685a', 'ORE'];

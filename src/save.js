@@ -16,6 +16,7 @@ import { EVENTS, cleanName } from './vesper.js';
 import { depositById, HOPPER_CAP } from './mine.js';
 import { RECIPES, QUEUE_CAP } from './refine.js';
 import { MACHINE_TYPES, MACHINE_QUEUE_CAP } from './machines.js';
+import { serializeMystery, deserializeMystery } from './marslegends.js';
 
 const clamp01 = (v, dflt) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : dflt);
 const fin = (v, dflt) => (Number.isFinite(v) ? v : dflt);
@@ -91,6 +92,8 @@ export function snapshotSave(state) {
     // Stage 3 (additive): the craft's fuel and stand, and whether it exists
     hopper: state.hopper && typeof state.hopper === 'object' ? state.hopper : null,
     hopperBuilt: !!state.hopperBuilt,
+    // the chain (additive): which beats the ground has given up
+    mystery: serializeMystery(state.mystery),
     savedAt: Date.now(),
   };
 }
@@ -246,6 +249,7 @@ export function acceptSave(meta) {
     regard: meta.regard && typeof meta.regard === 'object' ? meta.regard : null,
     hopper: meta.hopper && typeof meta.hopper === 'object' ? meta.hopper : null,
     hopperBuilt: !!meta.hopperBuilt,
+    mystery: deserializeMystery(meta.mystery),
     savedAt: meta.savedAt || 0,
   };
 }

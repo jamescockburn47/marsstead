@@ -15,6 +15,13 @@ const CSS = `
     background: rgba(246,237,226,.14); overflow: hidden; }
   #hud .bar i { display: block; height: 100%; border-radius: 2px;
     background: #e8c46a; transition: width .4s; }
+  #hud .signal { position: absolute; left: 20px; bottom: 226px; width: 150px;
+    font-size: 10px; letter-spacing: 3px; opacity: 0; transition: opacity .8s; }
+  #hud .signal.on { opacity: .92; }
+  #hud .signal .bar { margin: 4px 0 0; background: rgba(63,208,201,.12); }
+  #hud .signal .bar i { background: linear-gradient(90deg, #2c9b95, #3fd0c9 55%, #eafffd);
+    transition: width .5s; }
+  #hud .signal .sweep { color: #3fd0c9; }
   #hud .bar.cold i { background: #7fa8c9; }
   #hud .vesper { position: absolute; bottom: 40px; left: 0; width: 100%;
     text-align: center; font-size: 15px; font-style: italic; opacity: 0;
@@ -68,6 +75,12 @@ export class Hud {
     this.vesperLine = el(this.vesper, 'span');
     this.vesperUntil = 0;
 
+    // the SIGNAL band: warmth only — no bearing, no pin. The world leads.
+    this.signal = el(this.root, 'div', 'signal');
+    this.signalLabel = el(this.signal, 'div');
+    this.signalLabel.textContent = 'SIGNAL';
+    this.signalBar = el(el(this.signal, 'div', 'bar'), 'i');
+
     // push-to-talk indicator: lit while the mic is keyed (V held)
     this.ear = el(this.root, 'div', 'ear');
     this.ear.textContent = '● LISTENING';
@@ -93,6 +106,17 @@ export class Hud {
     this.airBar.style.width = `${Math.round(air01 * 100)}%`;
     this.warmBar.style.width = `${Math.round(warm01 * 100)}%`;
     this.tempLabel.textContent = `${Math.round(tempC)}°C`;
+  }
+
+  // the SIGNAL band: strength 0..1 warms the bar; inside the arrival
+  // ring the label goes sweep-teal — the instrument's whole vocabulary
+  setSignal(strength, sweep) {
+    const on = strength > 0.02;
+    this.signal.classList.toggle('on', on);
+    if (!on) return;
+    this.signalBar.style.width = `${Math.round(Math.min(1, strength) * 100)}%`;
+    this.signalLabel.textContent = sweep > 0 ? 'SIGNAL · SWEEP' : 'SIGNAL';
+    this.signalLabel.classList.toggle('sweep', sweep > 0);
   }
 
   // the interaction prompt, bottom-centre; html-free (innerHTML never)

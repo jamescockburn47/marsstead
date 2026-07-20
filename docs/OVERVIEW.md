@@ -125,13 +125,19 @@ draws only where you have walked.
 ## 5. The road ahead (STRUCTURE.md)
 
 A suborbital **hopper** with the buggy slung beneath it — plotted,
-semi-cinematic hops opening hundreds of kilometres of real terrain, with
-pads and depots as the network; walkable **caves** entered through genuine
-catalogued skylights (the horror theatre); and the centrepiece — **the
-Seed**, a staged nanotech terraforming machine designed by Halcyon, the
-Founders' near-threshold design system, rising on the horizon as the
-visible progress bar of the whole enterprise, with its own engineering
-console that later becomes the war room.
+semi-cinematic hops over the WHOLE real planet (global MOLA baked, the
+USGS gazetteer naming the country), landing exactly where you aim — no
+pads, no scatter: the fuel circle is the only law. **The signal chain**
+(marslegends) is the reason to fly: five beats at real places, one live
+signal at a time, the band warming as you close, the ground read on
+foot, relics landing in THE RECORD — the surface on-ramp of the hidden
+game below. Ahead: walkable **caves** entered through genuine
+catalogued skylights (the horror theatre — the chain's fourth and fifth
+beats stand at their doors); and the centrepiece — **the Seed**, a
+staged nanotech terraforming machine designed by Halcyon, the Founders'
+near-threshold design system, rising on the horizon as the visible
+progress bar of the whole enterprise, with its own engineering console
+that later becomes the war room.
 
 ---
 

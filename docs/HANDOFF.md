@@ -56,6 +56,21 @@ fleet as equipment, minimap + permanent trails, VESPER complete
 from constants, text + voice, first-sol briefing with offline fallback,
 LANDFALL ORDERS sheet, chatter discipline).
 
+## 2026-07-20 — the release push (v0.0.53+)
+
+Shipped this pass: the WARDEN (hashed key, F9 bench — the fast test
+path; key with James, hash in warden.js), hopper flight drama
+(ignition hold-down, settle, fractal scour, shake channel), the pad
+system KILLED (assemble at the assembler, every landing exact), the
+GLOBAL planet (MOLA 4ppd whole + USGS gazetteer, ~97 named features on
+the charts), the stratigraphy palette, THE FROST GLINT centrepiece
+(sword-of-the-sun corridor on ground frost — dawn blazes, noon quiets,
+caps shimmer from altitude; frost.js is the pure model), and THE
+SIGNAL CHAIN (marslegends: five beats at real places, band + sweep +
+reading act + THE RECORD journal + VESPER moments; mystery rides the
+save). The five beats' relics carry the tone ladder and never a plot
+word — her ignorance stays real.
+
 ## The build queue
 
 1. ~~Bake the agreed canon~~ DONE 2026-07-19 (see OVERVIEW §7's note):

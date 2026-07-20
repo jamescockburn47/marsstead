@@ -29,6 +29,7 @@ export const EVENTS = [
   'brief-wake', 'brief-power', 'brief-dig', 'brief-works',
   'pairing-review',
   'hopper-built', 'hop-ignition', 'hop-crest', 'hop-landed',
+  'signal-close', 'signal-found',
 ];
 
 // the first-sol briefing's deterministic floor: if the relay is down, the
