@@ -104,6 +104,7 @@ import {
 import { suitSay, cleanName, briefFallback } from './vesper.js';
 import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
+import { visitBody, playBody, pingBody, insiderBody, duePing } from './marsdiag.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
 import {
   CELL, PART_TYPES, faceKey, parseFaceKey, faceCentre, createStead,
@@ -1920,8 +1921,25 @@ class Game {
     this.frameWorld(dt);
     this.touch.tick();
     this.watchFrame(dt);
+    if (!this.attract) this.maybePing();
     this.renderFrame(dt);
     requestAnimationFrame((n) => this.frame(n));
+  }
+
+  // the ledger heartbeat — one ping ~every 60s of a real life (never the reel),
+  // carrying the settler's sol / air / VESPER-turns so the Board shows who is on
+  // Mars now. Fire-and-forget; the ledger down never touches the frame.
+  maybePing() {
+    const nx = duePing(this.t, this._pingAt);
+    if (nx == null) return;
+    this._pingAt = nx;
+    const sol = Math.max(1, Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
+    const loc = this.inLander ? 'lander' : this.insidePressurised ? 'inside'
+      : this.driving ? 'rover' : 'surface';
+    mbeacon('/dash/ping', pingBody(marssteadPid(), {
+      name: this.settlerName, sol, o2: Math.round(this.air * 100),
+      depth: 0, vesperTurns: this.talks || 0, loc,
+    }));
   }
 
   // ---- the graphics rig (gfx.js decides; this merely applies) ------------
@@ -3076,27 +3094,40 @@ class Game {
   }
 }
 
-// the muster book: one visitor beacon per load to the harbourmaster's
-// ledger (vercel rewrites /dash/* to the family's EVO door). Fire-and-
-// forget — if the ledger is unreachable the game never notices.
-(function musterBook() {
+// the muster book: fire-and-forget beacons to Marsstead's own ledger (vercel
+// rewrites /dash/* to the EVO door). A visit on every load; play + ping ride a
+// real life (below). If the ledger is unreachable the game never notices — the
+// muster book only ever undercounts.
+function marssteadPid() {
   try {
-    let pid;
-    try {
-      pid = localStorage.getItem('marsstead-pid');
-      if (!pid) {
-        pid = crypto.randomUUID ? crypto.randomUUID()
-          : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        localStorage.setItem('marsstead-pid', pid);
-      }
-    } catch { pid = ''; }
-    fetch('/dash/visit', {
+    let pid = localStorage.getItem('marsstead-pid');
+    if (!pid) {
+      pid = crypto.randomUUID ? crypto.randomUUID()
+        : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem('marsstead-pid', pid);
+    }
+    return pid;
+  } catch { return ''; }
+}
+function mbeacon(path, body) {
+  try {
+    fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site: 'marsstead', kind: 'visit', pid }),
+      body: JSON.stringify(body),
       keepalive: true,
     }).catch(() => {});
   } catch { /* the muster book only ever undercounts */ }
+}
+(function musterBook() {
+  const pid = marssteadPid();
+  mbeacon('/dash/visit', visitBody(pid));
+  // "mark this device as mine" — ?insider=<secret> drops James's browser out of
+  // the real-audience count everywhere (the ledger flips its class to house).
+  try {
+    const ins = new URLSearchParams(location.search).get('insider');
+    if (ins) mbeacon('/dash/insider', insiderBody(pid, ins));
+  } catch { /* fine */ }
 })();
 
 // boot: the title fronts the save — CONTINUE carries it, NEW LANDING
@@ -3119,6 +3150,9 @@ loadGame().catch(() => null).then((save) => {
     start(save ? 'continue' : 'new');
   } else if (pending && (pending.choice === 'continue' || pending.choice === 'new')) {
     start(pending.choice, pending.name || '');
+    // a real life begins — one play beacon (the attract reel and the ?play dev
+    // path never reach here, so neither is ever counted as a player)
+    mbeacon('/dash/play', playBody(marssteadPid(), pending.choice));
   } else {
     window.marssteadAttract = new Game(null, '', true);
     new TitleScreen(save, (choice, name = '') => {
