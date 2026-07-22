@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/dash/:path*",
-      "destination": "https://saltstead.sovren.xyz/dash/:path*"
+      "destination": "https://marsstead.sovren.xyz/dash/:path*"
     },
     {
       "source": "/brain/:path*",
