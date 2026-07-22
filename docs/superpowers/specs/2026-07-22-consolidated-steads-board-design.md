@@ -213,15 +213,19 @@ tailnet, exactly the warden design's loose-bridge seam.
   keep talking." The relay authorizes codes via a loopback call to the Mars
   ledger (`marsstead-dash`), which owns `codes/accounts/tokens`; it caches
   validity briefly to stay at radio speed.
-- **Global spend ceiling:** a configurable daily cap (request-count or
-  £-estimate) in the relay; on breach, all conversational calls fall to the
-  floor and the Board raises an alert. TTS metered alongside chat.
-- **Knowing the cost (no MiniMax diagnostics API needed).** The relay is the
-  single chokepoint, so it measures everything itself: it parses the `usage`
-  block MiniMax returns on each chat call (currently ignored) × a hardcoded M3
-  price table for a running **local estimate** (an estimate, not MiniMax's
-  invoice; TTS measured by character/audio length). There is no confirmed public
-  MiniMax balance/usage endpoint — usage lives in their console dashboard only.
+- **Quota-window guard (not a £ cap — James is on the flat £20/mo Token Plan).**
+  A flat subscription has **no runaway bill**; the real limit is the plan's
+  **5-hour-rolling + weekly quota windows**, a pool **shared across the whole
+  MiniMax account** (VESPER *and* Clint's M3 auto-coder *and* Clawd's MiniMax
+  tier). So the guard **paces** VESPER's share — a configurable budget per
+  rolling window that **reserves headroom for James's own agent/coding use** —
+  degrading conversational VESPER to the canned floor before a burst of strangers
+  can drain the window. TTS paced alongside chat.
+- **Cost/usage is informational on this plan.** The relay still parses MiniMax's
+  per-call `usage` × an M3 price table, but on a flat subscription it reads as
+  *quota drawn* ("~X% of today's window"), not a bill. No confirmed public
+  MiniMax balance/usage endpoint exists — usage lives in their console — so the
+  relay's own count is the number the Board shows.
 - **Detecting MiniMax's *own* caps (distinct from ours).** The relay classifies
   MiniMax error codes — **`1002` rate limit**, **`2056` quota/credit exhausted**
   (Plus plan: 5-hour-rolling + weekly windows) — treating either as an immediate
@@ -310,7 +314,7 @@ text)` → WhatsApp DM). This revives + globalises the warden design's Phase 1
 - **Only real events.** Events are drawn from the **clean-filtered** stream
   (insider + bot excluded), so a ping means a genuine stranger — never James or a
   crawler. **Notable = immediate** (first real visitor of the day, a new player,
-  a bug/error, a service down, VESPER hitting its spend ceiling); **routine =
+  a bug/error, a service down, VESPER hitting its quota ceiling); **routine =
   digest** ("today: N strangers across the steads, M played, VESPER spend £X").
 - **Board surface:** a Clint card — WhatsApp-connected status, relay/brain
   status, the last N notifications, and a **mute + verbosity dial**

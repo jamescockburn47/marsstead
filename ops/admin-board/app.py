@@ -663,7 +663,7 @@ function renderSalt(D) {
   // the muster book's working pages: last 14 days, raw hits alongside uniques
   const V = S.visits || {};
   let vh = '';
-  for (const [site, cls] of [['saltstead', 'salt-ink'], ['marsstead', 'mars-ink']]) {
+  for (const [site, cls] of [['saltstead', 'salt-ink']]) {  // marsstead lives on its own tab now
     const rd = (V[site] || {}).recentDays || [];
     vh += '<div class="muted" style="margin-top:6px"><b class="' + cls + '">' + site.toUpperCase() + '</b></div>';
     if (!rd.length) { vh += '<div class="muted">no beacons yet</div>'; continue; }
