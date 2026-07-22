@@ -15,6 +15,7 @@ import {
   moodFor, moodForEvent, ttsPlan, splitPairingTag,
   CHAT_PARAMS, LIMITS, MOODS, VOICE_ID, cleanStr,
 } from '../src/vesperbrain.js';
+import { decide, yieldFor, isCapSignal, capReason, METER_DEFAULTS } from '../src/vespermeter.js';
 
 const KEY = process.env.MINIMAX_API_KEY;
 if (!KEY) {
@@ -28,6 +29,58 @@ const BASE = process.env.MINIMAX_BASE || 'https://api.minimax.io';
 const THINKING = process.env.MINIMAX_THINKING || 'disabled';
 
 const ORIGIN_OK = /^(https:\/\/(www\.)?marsstead\.app|http:\/\/(localhost|127\.0\.0\.1):\d+)$/;
+
+// ---------------------------------------------- VESPER metering + telemetry
+// Meter the voice, not the game (src/vespermeter.js is the tested decision
+// logic). Barks face only the global quota guards; player text also faces the
+// per-device free tier. A MiniMax cap (1002/2056) parks VESPER on the floor so
+// James's own Clawd/coding work keeps the shared £20 quota window.
+const LEDGER_URL = process.env.LEDGER_URL || 'http://127.0.0.1:8098';
+const METER = {
+  freeTier: Number(process.env.VESPER_FREE_TIER) || METER_DEFAULTS.freeTier,
+  windowBudget: Number(process.env.VESPER_WINDOW_BUDGET) || METER_DEFAULTS.windowBudget,
+  windowSecs: METER_DEFAULTS.windowSecs,
+  yieldCooldownSecs: METER_DEFAULTS.yieldCooldownSecs,
+};
+const YIELD_ENABLED = String(process.env.VESPER_YIELD_ON_CAP || 'true') !== 'false';
+const meter = { windowUsed: 0, windowStart: Date.now() / 1000, yieldUntil: 0, device: new Map(), coded: new Map() };
+const stats = {
+  chat: 0, tts: 0, chatErr: 0, ttsErr: 0, rate429: 0, cacheHit: 0, cacheMiss: 0,
+  metered: 0, ceiling: 0, yielded: 0, capEvents: 0, lastCap: '', chatMs: [], tokensIn: 0, tokensOut: 0,
+};
+const nowSec = () => Date.now() / 1000;
+const utcDayNum = () => Math.floor(nowSec() / 86400);
+function deviceRec(pid) {
+  const day = utcDayNum();
+  let r = meter.device.get(pid);
+  if (!r || r.day !== day) { r = { day, n: 0 }; if (pid) meter.device.set(pid, r); }
+  return r;
+}
+function markCap(code) {
+  if (!YIELD_ENABLED) return;
+  meter.yieldUntil = yieldFor(nowSec(), METER);
+  stats.capEvents += 1;
+  stats.lastCap = capReason(code);
+}
+function windowReset() {
+  const n = nowSec();
+  if (n - meter.windowStart > METER.windowSecs) { meter.windowStart = n; meter.windowUsed = 0; }
+}
+async function isCoded(pid) {
+  if (!pid) return false;
+  const c = meter.coded.get(pid);
+  if (c && nowSec() - c.at < 60) return c.coded;
+  try {
+    const r = await fetch(LEDGER_URL + '/api/coded', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pid }), signal: AbortSignal.timeout(800),
+    });
+    const d = r.ok ? await r.json() : null;
+    const coded = !!(d && d.coded);
+    meter.coded.set(pid, { coded, at: nowSec() });
+    return coded;
+  } catch { return false; } // ledger unreachable → free tier applies, never block
+}
 
 // ------------------------------------------------------------ rate limits
 // token buckets per client ip (behind Caddy/cloudflared: first XFF hop)
@@ -112,6 +165,25 @@ async function handleChat(req, res, ip) {
   const bark = typeof body.bark === 'string' && BARK_MOMENTS[body.bark] ? body.bark : '';
   if (!text && !bark) return send(res, 400, { ok: false, why: 'nothing heard' });
 
+  // the meter — conversational only (the deterministic safety channel never
+  // reaches the relay). A bark bypasses the per-device free tier (deviceCoded)
+  // but still faces the global window budget + yield; player text faces both.
+  windowReset();
+  const isBark = !!bark;
+  const pid = typeof body.pid === 'string' ? body.pid.slice(0, 40).toLowerCase() : '';
+  const coded = isBark ? true : await isCoded(pid);
+  const dev = isBark ? { n: 0 } : deviceRec(pid);
+  const gate = decide(
+    { deviceUsedToday: dev.n, deviceCoded: coded, windowUsed: meter.windowUsed, yieldUntil: meter.yieldUntil },
+    METER, nowSec(),
+  );
+  if (!gate.allow) {
+    if (gate.reason === 'metered') stats.metered += 1;
+    else if (gate.reason === 'ceiling') stats.ceiling += 1;
+    else if (gate.reason === 'yield') stats.yielded += 1;
+    return send(res, 429, { ok: false, why: gate.reason });
+  }
+
   const payload = {
     ...CHAT_PARAMS,
     messages: bark
@@ -122,6 +194,7 @@ async function handleChat(req, res, ip) {
   if (THINKING === 'disabled') payload.thinking = { type: 'disabled' };
 
   inflightChat += 1;
+  const t0 = Date.now();
   try {
     const r = await fetch(`${BASE}/v1/chat/completions`, {
       method: 'POST',
@@ -129,8 +202,9 @@ async function handleChat(req, res, ip) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(25000),
     });
-    if (!r.ok) throw new Error(`minimax ${r.status}`);
+    if (!r.ok) { if (r.status === 429) { stats.rate429 += 1; markCap(1002); } throw new Error(`minimax ${r.status}`); }
     const data = await r.json();
+    if (isCapSignal(data?.base_resp?.status_code)) { markCap(data.base_resp.status_code); throw new Error(`minimax cap ${data.base_resp.status_code}`); }
     const raw = data?.choices?.[0]?.message?.content;
     // the pairing tag rides the RAW text (clampLine strips brackets):
     // pull it first, ship it beside the line — chat only, barks grade
@@ -140,11 +214,19 @@ async function handleChat(req, res, ip) {
       : splitPairingTag(raw);
     const line = clampLine(untagged);
     if (!line) throw new Error('empty completion');
+    // served — count it toward the quota window (and the device free tier)
+    if (gate.count) { meter.windowUsed += 1; if (!isBark && pid) dev.n += 1; }
+    stats.chat += 1;
+    const u = data?.usage;
+    if (u) { stats.tokensIn += u.prompt_tokens || 0; stats.tokensOut += u.completion_tokens || 0; }
+    stats.chatMs.push(Date.now() - t0);
+    if (stats.chatMs.length > 100) stats.chatMs.shift();
     send(res, 200, {
       ok: true, line, tag,
       mood: bark ? moodForEvent(bark, state) : moodFor(state),
     });
   } catch (err) {
+    stats.chatErr += 1;
     console.error('chat:', err.message);
     send(res, 502, { ok: false });
   } finally {
@@ -166,12 +248,14 @@ async function handleTts(req, res, ip) {
   const hit = ttsCache.get(key);
   if (hit) {
     cachePut(key, hit); // refresh recency
+    stats.cacheHit += 1;
     res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': hit.length, 'X-Vesper-Cache': 'hit' });
     return res.end(hit);
   }
 
   if (inflightTts >= 4) return send(res, 503, { ok: false, why: 'busy' });
   const plan = ttsPlan(mood);
+  stats.cacheMiss += 1;
   inflightTts += 1;
   try {
     const r = await fetch(`${BASE}/v1/t2a_v2`, {
@@ -188,16 +272,19 @@ async function handleTts(req, res, ip) {
       }),
       signal: AbortSignal.timeout(25000),
     });
-    if (!r.ok) throw new Error(`minimax ${r.status}`);
+    if (!r.ok) { if (r.status === 429) { stats.rate429 += 1; markCap(1002); } throw new Error(`minimax ${r.status}`); }
     const data = await r.json();
+    if (isCapSignal(data?.base_resp?.status_code)) { markCap(data.base_resp.status_code); throw new Error(`t2a cap ${data.base_resp.status_code}`); }
     if (data?.base_resp?.status_code !== 0 || !data?.data?.audio) {
       throw new Error(`t2a ${data?.base_resp?.status_code}: ${data?.base_resp?.status_msg}`);
     }
     const buf = Buffer.from(data.data.audio, 'hex');
     cachePut(key, buf);
+    stats.tts += 1;
     res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'X-Vesper-Cache': 'miss' });
     res.end(buf);
   } catch (err) {
+    stats.ttsErr += 1;
     console.error('tts:', err.message);
     send(res, 502, { ok: false });
   } finally {
@@ -217,6 +304,26 @@ createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, model: CHAT_PARAMS.model, voice: VOICE_ID,
         cache: ttsCache.size, uptime: Math.round(process.uptime()),
+      });
+    }
+    if (req.method === 'GET' && path === '/brain/stats') {
+      // loopback only (never in the Caddy allowlist) — the ledger reads this
+      windowReset();
+      const ms = [...stats.chatMs].sort((a, b) => a - b);
+      const pct = (p) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : 0);
+      const now = nowSec();
+      return send(res, 200, {
+        ok: true, model: CHAT_PARAMS.model, uptime: Math.round(process.uptime()),
+        chat: stats.chat, tts: stats.tts, chatErr: stats.chatErr, ttsErr: stats.ttsErr, rate429: stats.rate429,
+        cacheHit: stats.cacheHit, cacheMiss: stats.cacheMiss,
+        cacheRate: (stats.cacheHit + stats.cacheMiss) ? +(stats.cacheHit / (stats.cacheHit + stats.cacheMiss)).toFixed(2) : 0,
+        metered: stats.metered, ceiling: stats.ceiling, yielded: stats.yielded,
+        capEvents: stats.capEvents, lastCap: stats.lastCap, yieldActive: now < meter.yieldUntil,
+        window: { used: meter.windowUsed, budget: METER.windowBudget, resetInSec: Math.max(0, Math.round(METER.windowSecs - (now - meter.windowStart))) },
+        freeTier: METER.freeTier, devices: meter.device.size,
+        p50ms: pct(0.5), p95ms: pct(0.95),
+        tokensIn: stats.tokensIn, tokensOut: stats.tokensOut,
+        estGbp: +(((stats.tokensIn + stats.tokensOut) / 1000) * (Number(process.env.VESPER_GBP_PER_1K) || 0)).toFixed(3),
       });
     }
     if (req.method === 'POST' && path === '/brain/chat') return await handleChat(req, res, ip);

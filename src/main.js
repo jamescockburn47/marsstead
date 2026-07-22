@@ -1778,6 +1778,7 @@ class Game {
         state: sanitizeState(this.brainState()),
         history: this.vesperHistory.slice(-4),
         bark: event,
+        pid: marssteadPid(),
       }),
       signal: AbortSignal.timeout(14000),
     })
@@ -1866,6 +1867,7 @@ class Game {
       state: sanitizeState(this.brainState()),
       history: this.vesperHistory.slice(-6),
       text,
+      pid: marssteadPid(),
     });
     fetch('/brain/chat', {
       method: 'POST',
