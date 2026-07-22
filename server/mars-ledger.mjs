@@ -12,7 +12,7 @@
 // VESPER relay does).
 
 import { createServer } from 'node:http';
-import { createHash, randomUUID, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomUUID, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -28,6 +28,27 @@ const VERSION = process.env.MARS_VERSION || '';
 const LIVE_WINDOW = 180;   // a session is "on Mars now" if pinged within this many seconds
 const SESSIONS_KEEP = 4000;
 mkdirSync(DIR, { recursive: true });
+
+// Clint: tell Clawd (the WhatsApp agent) when a real stranger shows up, files a
+// bug, etc. Fire-and-forget, HMAC-signed with the shared STEADS_WEBHOOK_SECRET;
+// if Clawd is down the ledger never notices. A visit pings at most once per
+// browser per hour so a page-refresh can't spam.
+const CLAWD_URL = process.env.CLAWD_URL || 'http://127.0.0.1:3000';
+const STEADS_SECRET = process.env.STEADS_WEBHOOK_SECRET || '';
+const VISIT_PING_WINDOW = 3600;
+const pinged = new Map(); // uid -> last visit-ping ts
+function emitClint(type, extra = {}) {
+  if (!STEADS_SECRET) return;
+  try {
+    const body = JSON.stringify({ game: 'marsstead', type, ts: Date.now() / 1000, ...extra });
+    const sig = createHmac('sha256', STEADS_SECRET).update(body).digest('hex');
+    fetch(CLAWD_URL + '/api/steads-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-steads-signature': sig },
+      body, signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
+  } catch { /* fire-and-forget */ }
+}
 
 const PID_RE = /^[a-z0-9-]{4,40}$/;
 const CODE_RE = /^[a-z]+-[a-z]+-\d{2}$/;
@@ -127,6 +148,14 @@ async function onVisit(req, res, kind) {
   const site = store.marsstead || (store.marsstead = {});
   recordVisit(site, kind, uid, cls, utcDay());
   save('visits.json', store);
+  // Clint pings only for real strangers (you + bots are filtered by class)
+  if (cls === 'pub') {
+    if (kind === 'play') emitClint('play');
+    else {
+      const t = Date.now() / 1000;
+      if (t - (pinged.get(uid) || 0) > VISIT_PING_WINDOW) { pinged.set(uid, t); emitClint('visit'); }
+    }
+  }
   return json(res, 200, { ok: true });
 }
 
@@ -194,6 +223,7 @@ async function onFeedback(req, res) {
   const log = load('feedback.json', []);
   log.push(entry);
   save('feedback.json', log.slice(-1000));
+  emitClint(entry.kind === 'bug' ? 'bug' : 'feedback', { name: entry.name, message: entry.message });
   return json(res, 200, { ok: true, msg: 'Logged to the ledger — thank you.' });
 }
 
