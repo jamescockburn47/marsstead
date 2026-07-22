@@ -39,7 +39,23 @@ player. Fire-and-forget — Clawd being down never affects the ledger.
 - **C10 WhatsApp admin** — `steads_status` / `steads_mint` / `steads_revoke`
   (+ `_confirm`) / `steads_mute`, owner-only, DM-only, revoke confirm-gated.
 
-## Still to wire (follow-ons)
-- Moorstead/Saltstead event emission (Moorstead already has its own pipeline).
-- The Board **Clint card** (Clawd reachable + last notifications + mute dial).
-- Moorstead/Saltstead **partition** (to light up the Board's muster toggle).
+## Follow-ons — done (2026-07-22 evening)
+- **Saltstead**: real/house/bot partition in `/api/visits` + Clint emission
+  (visit/play once per browser per UTC day; bug/feedback immediate). Live edit
+  at `~/saltstead/dash/app.py` (`.bak-*-prepartition`); secret via systemd
+  drop-in `saltstead-dash.service.d/steads.conf`.
+- **Moorstead**: read-only partition — `stats.real/house/bot` in
+  `/api/overview` from lastIp + `insiders.json` (write path untouched). Live
+  edit at `~/moorstead/dash/app.py` (`.bak-*-prepartition`). Result: 602
+  browsers → **23 real / 572 house / 7 bot**; 40 played → **8 real**.
+- **Board**: muster toggle now reads all three partitions; CLINT card
+  (clawdbot up/down + last notifications from `data/steads/events-*.jsonl` +
+  WhatsApp cheat-sheet); `clawdbot` in service health.
+- **Clint knows the steads**: prompt section added (`prompt.js.bak-*-steads`) —
+  Marsstead/Saltstead are never "typos" again; `moorstead_status` repointed at
+  the dash `/api/overview` (the relay never had `/admin/*` — `moorstead_broadcast`
+  / `moorstead_kick` still target those dead routes, pre-existing, unfixed).
+
+**Caveat:** the salt/moor ledger edits are live-only (their canonical copies
+belong to the Saltstead/Moorstead repos — sync `tools/dash-app.py` there when
+next in those repos).

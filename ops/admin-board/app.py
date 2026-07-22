@@ -79,7 +79,7 @@ def _services():
     names = ["moorstead-brain", "moorstead-world", "moorstead-dash",
              "saltstead-dash", "saltstead-brain",
              "marsstead-brain", "marsstead-dash",
-             "evo-admin", "caddy", "sovren-cloudflared"]
+             "clawdbot", "evo-admin", "caddy", "sovren-cloudflared"]
     try:
         r = subprocess.run(["systemctl", "list-units", "llama-server*", "--no-legend", "--all"],
                            capture_output=True, text=True, timeout=4)
@@ -108,6 +108,24 @@ async def _get(client, url):
     except Exception:
         pass
     return None
+
+
+def _clint_events():
+    """Last few Steads notifications, read from Clawd's JSONL event log."""
+    out = []
+    try:
+        base = Path("/home/james/clawdbot/data/steads")
+        lines = []
+        for f in sorted(base.glob("events-*.jsonl"))[-2:]:
+            lines += f.read_text().strip().splitlines()
+        for ln in lines[-10:]:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return list(reversed(out))
 
 
 # ---------------- the aggregate the page reads ----------------
@@ -141,6 +159,7 @@ async def board():
             "summary": mars_sum or {},
             "codes": (mars_codes or {}).get("codes", []),
         },
+        "clint": {"events": _clint_events()},
     }
 
 
@@ -572,20 +591,18 @@ function musterBook(D) {
     '<div style="margin:8px 0">' + tog + '</div>';
   h += '<table><tr><th></th><th>Visitors today</th><th>7 days</th><th>Ever</th>' +
     '<th>Played today</th><th>7 days</th><th>Ever</th></tr>';
-  const real = musterView === 'real';
-  h += row('MOORSTEAD', 'moor-ink', real
-    ? [st.today, st.week, st.total, st.playedToday, st.playedWeek, st.playedEver]
-    : [null, null, null, null, null, null]);
-  h += row('SALTSTEAD', 'salt-ink', real
-    ? [(s.today || {}).uniques, (s.week || {}).uniques, (s.ever || {}).browsers,
-       (s.today || {}).playUniques, (s.week || {}).playUniques, (s.ever || {}).players]
-    : [null, null, null, null, null, null]);
+  // all three ledgers now carry the real/house/bot partition
+  const mst = st[musterView] || {};
+  h += row('MOORSTEAD', 'moor-ink', [
+    mst.today, mst.week, mst.total, mst.playedToday, mst.playedWeek, mst.playedEver]);
+  const sp = classPick;
+  h += row('SALTSTEAD', 'salt-ink', [
+    sp(s.today).uniques, sp(s.week).uniques, sp(s.ever).browsers,
+    sp(s.today).playUniques, sp(s.week).playUniques, sp(s.ever).players]);
   const mt = classPick(RM.today), mw = classPick(RM.week), me = classPick(RM.ever);
   h += row('MARSSTEAD', 'mars-ink', [
     mt.uniques, mw.uniques, me.browsers, mt.playUniques, mw.playUniques, me.players]);
   h += '</table>';
-  if (!real) h += '<div class="muted" style="font-size:11px">Moorstead + Saltstead show — for ' +
-    MUSTER_LABEL[musterView] + ' until their ledgers gain the partition; Marsstead is fully split.</div>';
   if (!(D.salt || {}).up) h += '<div class="down">salt ledger down</div>';
   return h + '</div>';
 }
@@ -617,6 +634,27 @@ function renderOverview(D) {
   h += '</div></div>';
 
   h += musterBook(D);
+
+  // CLINT — the WhatsApp watchman
+  const clUp = (D.services || {}).clawdbot === 'active';
+  const clEvents = (D.clint || {}).events || [];
+  const GAME_INK = { moorstead: 'moor-ink', saltstead: 'salt-ink', marsstead: 'mars-ink' };
+  let clH = '<div class="desk"><h3>CLINT</h3>' +
+    '<div class="tag">the WhatsApp watchman — pings your phone when a real stranger lands</div>' +
+    '<div style="margin:8px 0" class="' + (clUp ? 'ok' : 'bad') + '">' +
+    (clUp ? '● connected' : '● clawdbot down — no notifications') + '</div>';
+  if (clEvents.length) {
+    clH += '<table><tr><th>When</th><th>Game</th><th>Event</th></tr>';
+    for (const e of clEvents.slice(0, 6)) {
+      clH += '<tr><td class="muted" style="white-space:nowrap">' + ago(D.now, (e.ts || 0) / 1000) + '</td>' +
+        '<td><b class="' + (GAME_INK[e.game] || '') + '">' + esc(e.game || '?') + '</b></td>' +
+        '<td>' + esc(e.type) + (e.name ? ' — ' + esc(e.name) : '') +
+        (e.message ? ' <span class="muted">' + esc(String(e.message).slice(0, 60)) + '</span>' : '') + '</td></tr>';
+    }
+    clH += '</table>';
+  } else clH += '<div class="muted">No notifications yet.</div>';
+  clH += '<div class="muted">From WhatsApp: “steads status” · “mint a marsstead code” · “mute clint” / “unmute clint”. Daily digest 20:00.</div></div>';
+  h += clH;
 
   // live-site links + Marsstead version
   const marsV = ((D.mars || {}).summary || {}).version || '';
