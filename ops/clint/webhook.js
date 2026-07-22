@@ -7,6 +7,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import logger from '../logger.js';
 import store from './store.js';
+import { isMuted } from './state.js';
 import { isNotable, formatEvent } from './curate.js';
 
 export function verifySteadsSignature(rawBody, signature, secret) {
@@ -33,7 +34,7 @@ export async function handleSteadsEvent({ rawBody, signature, sendProactiveMessa
 
   store.recordEvent(evt);
 
-  if (isNotable(evt) && typeof sendProactiveMessage === 'function') {
+  if (isNotable(evt) && !isMuted() && typeof sendProactiveMessage === 'function') {
     const jid = (config.steadsJid || config.ownerJid || '').trim();
     if (jid) {
       try {
