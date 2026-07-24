@@ -17,8 +17,16 @@ const CSS = `
     background: radial-gradient(ellipse at center,
       rgba(23,10,6,.10) 0%, rgba(23,10,6,.42) 62%, rgba(23,10,6,.78) 100%);
     text-shadow: 0 1px 4px rgba(20,8,4,.9), 0 0 22px rgba(20,8,4,.75); }
-  #title h1 { margin: 0 0 28px; font-size: 46px; letter-spacing: 10px;
+  #title h1 { margin: 0; font-size: 46px; letter-spacing: 10px;
     font-weight: normal; }
+  #title .tagline { font-style: italic; font-size: 14px; letter-spacing: 2px;
+    opacity: .78; margin: 6px 0 10px; }
+  #title .summary { font-size: 13px; line-height: 1.65; max-width: 480px;
+    opacity: .82; margin: 0 18px 18px; }
+  #title .strip { position: fixed; bottom: 44px; left: 0; width: 100%;
+    font-size: 11px; letter-spacing: 2px; opacity: .65; }
+  #title .strip a { color: #e8c46a; text-decoration: none; }
+  #title .strip a:hover { text-decoration: underline; }
   #title button { display: block; width: 300px; margin: 7px 0; padding: 12px 26px;
     font-family: inherit; font-size: 14px; letter-spacing: 5px; cursor: pointer;
     color: #e8c46a; background: rgba(232,196,106,.08);
@@ -50,7 +58,19 @@ export class TitleScreen {
     this.root.id = 'title';
     const h1 = document.createElement('h1');
     h1.textContent = 'MARSSTEAD';
-    this.root.append(h1);   // no tagline: the reel behind it speaks for itself
+    // the family landing pattern (Saltstead's): tagline, a concise summary,
+    // then the doors — the reel still plays underneath every word
+    const tagline = document.createElement('div');
+    tagline.className = 'tagline';
+    tagline.textContent = 'the sand kept its secrets for four billion years';
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.textContent = 'A survival homestead on the real Mars — true NASA '
+      + 'terrain, thin air, killing cold. Build your stead, mine the regolith, '
+      + 'and go down after what’s waiting. VESPER, a live AI companion, is '
+      + 'the only other voice out here. Drawn entirely by code — free, no '
+      + 'downloads, no ads.';
+    this.root.append(h1, tagline, summary);
 
     // the settler's name: VESPER uses it, the save keeps it. Prefilled
     // from the save; laundered (cleanName) before it goes anywhere.
@@ -92,6 +112,23 @@ export class TitleScreen {
       choose('new');
     };
     this.root.appendChild(fresh);
+
+    // the sibling strip — one homestead, three worlds
+    const strip = document.createElement('div');
+    strip.className = 'strip';
+    strip.append('part of THE STEADS — ');
+    const links = [
+      ['moorstead.app', 'https://www.moorstead.app'],
+      ['saltstead.app', 'https://www.saltstead.app'],
+      ['steadgames.com', 'https://www.steadgames.com'],
+    ];
+    links.forEach(([label, href], i) => {
+      if (i) strip.append(' · ');
+      const a = document.createElement('a');
+      a.href = href; a.textContent = label;
+      strip.appendChild(a);
+    });
+    this.root.appendChild(strip);
 
     const keys = document.createElement('div');
     keys.className = 'keys';
