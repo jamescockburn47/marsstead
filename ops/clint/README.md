@@ -56,6 +56,14 @@ player. Fire-and-forget — Clawd being down never affects the ledger.
   the dash `/api/overview` (the relay never had `/admin/*` — `moorstead_broadcast`
   / `moorstead_kick` still target those dead routes, pre-existing, unfixed).
 
+## Moorstead emission — done (2026-07-24)
+The gap James hit ("no Moorstead notifications"): moor's ledger had the
+partition but no Clint emission. Now wired (`.bak-*-preemit`): `_record_visit`
+→ visit ping, first heartbeat of the day → play ping, feedback → bug ping —
+real strangers only, once per browser per UTC day per kind. Secret via systemd
+drop-in `moorstead-dash.service.d/steads.conf`. E2E-verified (spoofed-IP visit
+→ WhatsApp DM). His Warden pids are insider-tagged in moor `insiders.json`.
+
 **Caveat:** the salt/moor ledger edits are live-only (their canonical copies
 belong to the Saltstead/Moorstead repos — sync `tools/dash-app.py` there when
 next in those repos).
