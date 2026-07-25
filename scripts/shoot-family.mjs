@@ -60,11 +60,11 @@ if (want('marsstead')) {
   });
 }
 
-// Saltstead: hoist colours, launch, then clear every overlay — pure sea
+// Saltstead: the landing diorama itself — the battle lines on the open sea.
+// No clicks: the title scene IS the shot; just lift the login chrome.
 if (want('saltstead')) {
   await shoot('saltstead', 'https://www.saltstead.app/', {
-    clicks: ['text=/board as a guest/i', 'text=/THE BLACK FLAG/i', 'text=/new voyage/i'],
-    settleMs: 18000,
+    settleMs: 13000,
     hideAllDom: true,
   });
 }
