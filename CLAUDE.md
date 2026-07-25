@@ -19,7 +19,26 @@ browser-first, deterministic, verify-gated**. Public client:
   `scripts/verify-*.mjs` check.
 - `src/marsdata.js` is **generated** by `scripts/build-marsdata.mjs` from public
   NASA/USGS data (MOLA global topography + the USGS Gazetteer of Planetary
-  Nomenclature) — never edit by hand. No binary asset files at runtime, ever.
+  Nomenclature) — never edit by hand. Enforced: a PreToolUse hook
+  (`.claude/settings.json` → `scripts/hook-guard-marsdata.mjs`) denies Edit/Write
+  to it and shell writes at it (redirects, `sed -i`, `tee`, `cp`/`mv` onto it,
+  `rm`, `Set-Content`…); reads and regeneration pass. No binary asset files at
+  runtime, ever.
+
+## Working discipline
+
+- **Guarantees are instruments, not prose.** A rule that must never fail belongs in a
+  verify script, a hook, or the deploy gate — a CLAUDE.md sentence has a nonzero
+  failure rate. Before adding a "never/always" rule here, ask whether it should be a
+  check. (The marsdata guard hook and the instrument-channel/live-speech split are
+  both this principle: safety is never live-only.)
+- **Big sweeps get delegated.** Multi-module audits/reviews: per-file subagent passes,
+  then one cross-file integration pass — one context over dozens of files dilutes
+  attention. Trivial single-file changes: just do them, no ceremony.
+- **Review is a fresh pair of eyes.** The session that wrote a change is a poor
+  reviewer of it; use an independent subagent or /code-review before deploy-worthy work.
+- **Long explorations persist findings as they go** — write phase summaries to a
+  scratchpad/doc before moving on, not after context is already thin.
 
 ## The two USPs (don't let a feature erode them)
 

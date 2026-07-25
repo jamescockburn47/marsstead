@@ -6,7 +6,8 @@ tools/*.lbl
 tools/*.csv
 tools/*.nc
 .vercel/
-.claude/
+.claude/*
+!.claude/settings.json
 
 # build-time source data (public NASA/USGS downloads) — never in git
 tools/
