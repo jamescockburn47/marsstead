@@ -5,7 +5,8 @@
 - **Decision owner:** James Cockburn
 - **Assurance tier:** Tier B — durable user-facing product
 - **Target:** ambitious two-week playable alpha, followed by evidence-led expansion
-- **Runtime:** browser-first, procedural-only, zero shipped binary assets
+- **Runtime:** browser-first and procedural-first; zero shipped binary assets except
+  the explicitly allowlisted Spire V2 player-avatar GLBs
 
 ## 1. Executive decision
 
@@ -30,6 +31,14 @@ natural thresholds without becoming disconnected levels. The initial hero set is
 - Pithara waterfalls;
 - Chora's Lower Castle and Tourlitis lighthouse;
 - one fully playable archaeological excavation and reconstruction.
+
+The player is visible by default through a Spire-style third-person camera. The alpha
+ports the proven Spire V2 rigged-avatar roster and animation clips as the one approved
+binary-runtime exception. Camera, locomotion pacing and pose ideas are extracted into
+small Andros modules rather than copying Spire's 1,191-line avatar coordinator. The
+authoritative character controller remains independent from presentation, so the
+initial low-poly body can be improved or replaced without changing movement, saves or
+world collision.
 
 The existing Stead games are sources, not templates. Androsstead will retain the best
 proven pure-core boundaries, deterministic generation, terrain streaming, water-wave
@@ -87,6 +96,9 @@ The alpha succeeds when:
 - verified roads and walking routes form navigable connected networks after deliberate
   simplification;
 - a full circuit can combine car, foot and boat travel without a loading-screen menu;
+- the player is visibly and smoothly represented in third person while walking,
+  running, jumping, swimming and occupying vehicles, with an accessible first-person
+  option;
 - coastal driving includes physical cliff danger and a mild, non-fatal recovery;
 - live Andros weather, wind and light work, with visibly labelled cached and
   deterministic climate fallbacks;
@@ -97,14 +109,14 @@ The alpha succeeds when:
 - cicada sound varies smoothly and plausibly with habitat, weather and location;
 - the Fine profile sustains a measured 60 fps target on its calibrated hardware class;
 - a Plain profile retains all roads, trails, collision, discoveries and archaeology;
-- generation, licensing, save compatibility and the zero-binary rule are enforced by
-  the canonical verification command.
+- generation, licensing, save compatibility and the binary-asset allowlist are enforced
+  by the canonical verification command.
 
 ### 2.4 Non-goals for the alpha
 
 - a one-to-one island with real travel times;
-- photogrammetry, scanned models, shipped textures, recorded ambience or other binary
-  runtime media;
+- photogrammetry, scanned models, shipped textures, recorded ambience or binary runtime
+  media beyond the approved Spire V2 avatar GLBs and their embedded clips/materials;
 - a complete interior for every building;
 - a fully simulated individual animal for every visible distant animal;
 - destructive archaeology, antiquities trading, human injury or character death;
@@ -236,6 +248,9 @@ The intended source boundaries are:
 - `src/geo/`: projection, cartogram and coordinate parity;
 - `src/world/`: terrain/coast height truth, networks, buildings and hero anchors;
 - `src/sim/`: character, car, sailboat, speedboat, swimming, collision and recovery;
+- `src/avatar/`: Spire V2 loading, locomotion state, clip pacing, procedural pose/IK,
+  wardrobe and rendering presentation;
+- `src/camera/`: third-person boom/chase rigs, obstruction solving and view preference;
 - `src/ecology/`: habitats, species grammars, populations and behaviour;
 - `src/weather/`: live/cached/climate state and derived physical fields;
 - `src/water/`: sea state, wave providers, coast field, clipmap, optics and bounded
@@ -263,11 +278,30 @@ results for an evicted cell are discarded. Core correctness does not depend on
 
 ### 6.1 Runtime asset contract
 
-The shipped game contains no binary textures, models, heightmaps, audio recordings,
-photos, video, WASM or tile archives. Offline tools may read lawful source rasters and
-vectors. They emit deterministic generated JavaScript/Base64 numeric tables and compact
-metadata. Runtime textures, impostors, noise fields and audio buffers are generated in
-the browser from source code and seeds.
+The shipped game contains no binary textures, heightmaps, audio recordings, photos,
+video, WASM or tile archives. Offline tools may read lawful source rasters and vectors.
+They emit deterministic generated JavaScript/Base64 numeric tables and compact metadata.
+Runtime textures, impostors, noise fields and audio buffers are generated in the browser
+from source code and seeds.
+
+The sole approved exception is the complete five-model **Spire V2 avatar roster** from
+Moot/Spire commit `74af41b4e7242a649d832190b20714d56a224267`. These Quaternius models
+are CC0/public domain and contain their own skinned geometry, embedded materials and
+animation clips. The allowlist is exact:
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `casual_m.glb` | 503,988 | `48536b0e0ea375f0831dbf5154b4c2eafda8b6c9c19ba0996dd298f2fcc9164c` |
+| `dress_w.glb` | 481,600 | `53db49ba84193beb60173e94396764c86f7805752582a81dfdfd7f0889a10783` |
+| `smart_m.glb` | 498,160 | `40c62848350df6d13cc6eed20f30c3406a7761542236d8a9f6c3a4060d005e97` |
+| `smart_w.glb` | 586,108 | `99c4df0aaabd19022809facc68f5fb5f564d35df3a9893c273a31fdaacf68e96` |
+| `suit_m.glb` | 583,416 | `31ff1539e7a9a209d4eb1107e696d798fedc7e35d84a58bbabfdc0f1b8b73763` |
+
+This is an allowlist, not a new general asset policy. The binary gate rejects any other
+tracked runtime binary and rejects any digest change. `GLTFLoader` is admitted only in
+`src/avatar/` and only for these paths. New avatar models, textures or motion files need
+a separate owner decision, licence/provenance review and allowlist amendment. Embedding
+or Base64-wrapping a binary does not make it procedural and cannot evade the gate.
 
 Generated sources are separated by responsibility so ordinary changes do not rewrite a
 monolith:
@@ -369,7 +403,11 @@ a WASM/web delivery boundary and weakens direct reuse.
 | `BatchedMesh` | Adopt | Heterogeneous generated meshes sharing a material with per-object culling |
 | `BufferGeometryUtils` | Adopt | Merge, tangent and geometry processing where measured useful |
 | `SimplifyModifier` | Adopt selectively | Offline/session LOD production with silhouette validation |
-| `SkinnedMesh`/`Skeleton` | Adopt | New articulated hero fauna and animation |
+| `SkinnedMesh`/`Skeleton` | Adopt | Spire V2 player presentation plus new articulated hero fauna |
+| `AnimationMixer`/`AnimationClip` | Adopt | Crossfaded player locomotion and code-authored missing poses without root-motion authority |
+| `SkeletonUtils` | Adapt official addon | Safe skinned roster cloning and later retargeting; pin r185 behaviour |
+| `CCDIKSolver` | Adapt official addon | Bounded foot/hand placement after clip evaluation; CPU bone solve works across both renderer backends |
+| `GLTFLoader` | Narrow exception | Load only the five digest-pinned Spire V2 avatar files; no general model pipeline |
 | `MeshSurfaceSampler` | Limited | Injected deterministic sampling on bounded meshes, never habitat truth |
 | `SkyMesh`/sky-node basis | Adapt | Preetham daylight basis driven by real sun/weather inputs |
 | `PMREMGenerator` | Adopt | Low-cadence procedural sky radiance for PBR materials |
@@ -901,14 +939,70 @@ independent, so lowering decoration never makes a visible solid wall non-physica
 
 ## 15. Traversal, danger and recovery
 
-### 15.1 Walking and swimming
+### 15.1 Third-person player and camera
+
+Third person is the default on-foot view and the player body is a real rendered,
+shadow-casting figure rather than a capsule or detached pair of hands. First person
+remains a stored accessibility/user preference; it never changes movement physics or
+discovery reach. Car, sailboat and speedboat use separate third-person chase rigs with
+the seated player visible. Each can also offer a first-person view, but entering a seat
+does not silently force it.
+
+The starting on-foot calibration ports Spire's proven 3.2 m boom, 1.0 m rise, 0.4 m
+minimum length and 0.25 m camera clearance radius. These are initial measured constants,
+not a reason to ignore Andros terrain. A swept clearance volume tests terrain, cave
+walls, buildings, ruins, solid tree trunks and large rocks through the static collision
+BVHs. Leaves, grass and thin visual foliage do not obstruct the camera. Obstruction
+pull-in is prompt; release is slower and critically damped so narrow paths and cave
+turns do not make the view pulse. At minimum length, a view-specific fade hides only the
+player's head/upper torso needed to prevent camera intersection; the body continues to
+cast shadows and appear in eligible water reflection passes.
+
+Camera orientation and character facing are separate. Free-look can orbit a stationary
+or moving player; movement direction blends the body toward travel without snapping the
+camera. Reduced-camera-motion mode lowers rotational lag, acceleration response and
+vehicle chase elasticity. A first-use browser journey covers open trail, village lane,
+cliff road edge, Foros restriction and underwater Pithara transition.
+
+### 15.2 Character movement and animation
+
+The pure character controller owns position, velocity, contact, capsule collision,
+water state and recovery. It emits a renderer-neutral motion sample containing planar
+velocity, facing, acceleration, ground normal, water depth, vertical velocity, contact
+state and vehicle seat. The avatar presenter consumes that sample; animation never
+drives the capsule and root motion is not authoritative.
+
+The five Spire V2 figures initially supply skinned bodies and their embedded idle, walk,
+run, sitting, standing and jump clips. `AnimationMixer` performs phase-aware crossfades.
+Spire's useful gait principle is retained but widened for an outdoor game: each body's
+walk/run contact speed is measured from its actual clips, and playback rate follows
+ground speed and body height within bounded ranges. Hysteresis prevents idle/walk/run
+flicker. Punch, death and other unsuitable bundled clips are never bound to gameplay.
+
+After mixer evaluation, bounded procedural pose layers add:
+
+- slope-aware ankle/leg placement and foot locking through the r185 `CCDIKSolver`
+  approach where it improves contact rather than fighting a fast gait;
+- spine lean, head/look interest and turn-in-place correction;
+- hand placement on steering wheel, helm and speedboat controls;
+- code-authored `AnimationClip` tracks for wading, surface swimming, diving, treading
+  water, low mantles and cave crouch where V2 has no suitable clip;
+- entry/exit blends that preserve phase and do not pop between land, water and seats.
 
 Walking supports trail grades, steps, rock, shallow water and cave surfaces without
 camera bob that obscures observation. Swimming includes surface movement, entry/exit,
 bounded diving and water acoustics. Pithara's main pool supports swimming and safe
-low-rock jumping.
+low-rock jumping. Animation LOD reduces IK and secondary pose frequency before removing
+the visible player, and gameplay remains identical across graphics profiles.
 
-### 15.2 Driving
+The V2 figures are an alpha baseline, not a claim that their low-poly silhouettes meet
+the final realism target. The presenter boundary is `motion sample -> pose -> render`.
+A later smooth replacement must implement that interface, preserve dimensions/contact
+markers and pass the same movement/camera tests; it cannot require a physics or save
+migration. Procedurally generated clothing/accessories are allowed. Any new binary body,
+texture or motion remains outside the approved exception until separately reviewed.
+
+### 15.3 Driving
 
 The car has Earth gravity, suspension, tyre grip, braking and weight transfer tuned for
 Andros roads. The Mars buggy's pure/injected-terrain split is a useful pattern, but its
@@ -1207,7 +1301,10 @@ It includes:
 - source/provenance schema and licence/attribution completeness;
 - deterministic regeneration-and-diff for every committed generated table;
 - guard tests proving generated tables cannot be edited directly;
-- no tracked binary/runtime asset extensions and no runtime model/texture/audio loaders;
+- an exact binary allowlist: only the five approved avatar GLBs, at the recorded paths,
+  byte lengths and SHA-256 digests; all other binary/runtime asset extensions fail;
+- source-boundary checks proving `GLTFLoader` appears only in `src/avatar/` and cannot
+  load a path outside that allowlist; no runtime texture/audio loader is admitted;
 - no shared-world `Math.random()` use;
 - hand-written source line cap with explicit exceptions;
 - pure-core check preventing Three/DOM imports;
@@ -1222,6 +1319,13 @@ It includes:
   clearance;
 - road mesh/physics height parity and cliff-edge absence of invisible barriers;
 - car, sail, speedboat, swimming and mild recovery invariants;
+- controller/presenter separation: animation cannot alter authoritative position,
+  collision, water state or recovery;
+- third-person boom geometry, obstruction clearance, pull-in/release hysteresis,
+  preference persistence and first-person parity;
+- clip vocabulary, crossfade and idle/walk/run hysteresis plus measured per-body
+  foot-contact pacing at the supported height/speed range;
+- finite pose/IK results on slopes, steps, water transitions and every vehicle seat;
 - weather wind→sea→sail and wetness→road coupling.
 
 ### Visual, ecology and audio
@@ -1243,7 +1347,9 @@ It includes:
 - flora geometry, silhouette, LOD, habitat and budget gates from section 11;
 - fauna anatomy, animation, behaviour, population and budget gates from section 12;
 - cicada spectral, temporal, spatial and CPU tests from section 13;
-- stable shadow camera and node-post graph ordering tests.
+- stable shadow camera and node-post graph ordering tests;
+- avatar skinning, node-material, shadow and reflection visibility under native WebGPU
+  and forced WebGL2, with IK/secondary-pose LOD budget tests.
 
 ### Progression and runtime
 
@@ -1254,7 +1360,8 @@ It includes:
   context loss;
 - no mechanic removed across quality profiles;
 - production build and live first-use journeys under native WebGPU and forced WebGL2:
-  clear-beach wade/swim/reflected-coast, sail/speedboat wave-wake agreement, Pithara
+  third-person open trail/cave obstruction/first-person toggle, clear-beach
+  wade/swim/reflected-coast, visible seated sail/speedboat operation, Pithara
   jump/dive/surface/exit, quality demotion, context restoration and save/reload.
 
 Every categorical gate includes a counterexample fixture proving it fails. Fixed-seed
@@ -1269,6 +1376,10 @@ change and one review-fix-rereview cycle addresses material Tier B findings.
 The repository records code and data separately. The initial notice set includes:
 
 - Three.js and adapted official addon algorithms — MIT;
+- Quaternius Animated Men/Women Pack Spire V2 avatar models — CC0/public domain, with
+  model-by-model source links, exact Spire commit, file digests and retained credits;
+- Spire V2 camera, gait and pose work — internal sibling source file and commit
+  provenance, ported selectively rather than copying its avatar coordinator wholesale;
 - Saltstead wave/glitter/shore code — internal sibling source file and commit provenance;
 - Spiri0 `Threejs-WebGPU-IFFT-Ocean` — MIT notice, exact commit and file-level notes if
   any code is adapted; the alpha may study it but does not adopt its FFT system;
@@ -1303,7 +1414,8 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 ### Phase 0 — foundation and lawful data (day 1)
 
 - create Androsstead repository and exact tool/dependency pins;
-- install canonical verify, file-cap, zero-binary, generated-data and licence gates;
+- install canonical verify, file-cap, avatar-only binary allowlist, generated-data and
+  licence gates;
 - implement projection/cartogram contracts and reproducible data manifest;
 - adapt capability preflight/governor and boot diagnostics, initialise the pinned
   WebGPU/TSL stack and prove forced-WebGL node-material compilation.
@@ -1312,7 +1424,9 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 
 - bake terrain, coast, anchor set and simplified road/trail graphs;
 - stream smooth heightfield and surface-material prototype;
-- deliver walking and one physically convincing car loop with cliff recovery;
+- port the Spire V2 roster behind the new avatar presenter; deliver third-person camera,
+  measured idle/walk/run pacing, first-person option and one physically convincing car
+  loop with visible driver and cliff recovery;
 - populate road/path/village/blocking geometry sufficiently for full navigation.
 
 ### Phase 2 — sea, weather and light (days 4–5)
@@ -1381,6 +1495,8 @@ without rewrites.
 | WebGPU/backend gap appears on supported hardware | Entry or key water feature fails | Conservative calibration, bounded feature fallbacks, forced-WebGL live journey and demote-only verdict | Native or fallback journey fails |
 | InstancedMesh2 adds WebGPU/TSL incompatibility | Ecology pipeline fragility | Targeted benchmark and native fallback | Alpha/shadow/context tests fail |
 | Full FFT ambition expands the alpha | Water work displaces island/heroes | Salt analytic `WaveProvider` is locked for alpha; future provider has a separate design gate | Approved alpha journeys pass and profiling demonstrates a material spectral need |
+| Spire V2's low-poly/business silhouettes weaken realism | The always-visible player makes the whole world look cheaper | Treat V2 as an alpha baseline, default to casual bodies, add only generated Andros-appropriate presentation and preserve a body-replacement seam | Reference review says the player dominates or contradicts the island scene |
+| Third-person camera fights cliffs, foliage or caves | Jitter, occlusion or hidden hazards undermine traversal | Swept obstruction volume, collision-layer exclusions, asymmetric smoothing, near-body fade and stored first-person option | Foros/cliff/trail live journeys show clipping, pulsing or missed danger |
 
 Decisions intentionally deferred behind evidence are:
 
@@ -1388,6 +1504,8 @@ Decisions intentionally deferred behind evidence are:
 - InstancedMesh2 becoming core versus native Three batching;
 - LightProbe use by location/profile;
 - TSL compute flock simulation for distant spectacle;
+- a smooth replacement player body and any new motion assets after V2 establishes the
+  controller/presenter contract;
 - bounded SSR use at a later hero location;
 - JONSWAP/IFFT becoming a future `WaveProvider` after the alpha;
 - any Water Pro purchase/integration after a separate licence, source, asset-contract and
@@ -1417,12 +1535,26 @@ checksums, licences and source pinpoints.
 - [Three.js InstancedMesh](https://threejs.org/docs/pages/InstancedMesh.html)
 - [Three.js BatchedMesh](https://threejs.org/docs/pages/BatchedMesh.html)
 - [Three.js SkinnedMesh](https://threejs.org/docs/pages/SkinnedMesh.html)
+- [Three.js AnimationMixer](https://threejs.org/docs/pages/AnimationMixer.html)
+- [Three.js r185 WebGPU skinning example](https://github.com/mrdoob/three.js/blob/r185/examples/webgpu_skinning.html)
+- [Three.js r185 WebGPU animation retargeting example](https://github.com/mrdoob/three.js/blob/r185/examples/webgpu_animation_retargeting.html)
+- [Three.js r185 SkeletonUtils source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/utils/SkeletonUtils.js)
+- [Three.js r185 CCDIKSolver source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/animation/CCDIKSolver.js)
 - [Three.js r185 SkyMesh source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/objects/SkyMesh.js)
 - [Three.js PMREMGenerator](https://threejs.org/docs/pages/PMREMGenerator.html)
 - [Three.js LightProbeGenerator](https://threejs.org/docs/pages/LightProbeGenerator.html)
 - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh)
 - [InstancedMesh2](https://github.com/agargaro/instanced-mesh)
 - [psrdnoise](https://github.com/stegu/psrdnoise)
+
+### Player avatar provenance
+
+- [Quaternius asset/licence FAQ](https://quaternius.com/faq.html)
+- [Spire V2 `suit_m` source](https://poly.pizza/m/mQnGoME1ez)
+- [Spire V2 `smart_m` source](https://poly.pizza/m/fjHyMd5Wxw)
+- [Spire V2 `casual_m` source](https://poly.pizza/m/DLptRuewTn)
+- [Spire V2 `dress_w` source](https://poly.pizza/m/zMyPlQXBzq)
+- [Spire V2 `smart_w` source](https://poly.pizza/m/jpKRgGDxhk)
 
 ### Geography, weather and light
 
