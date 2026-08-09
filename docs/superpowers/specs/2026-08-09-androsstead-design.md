@@ -223,7 +223,7 @@ flowchart TD
     E --> F
     D --> G["Traversal and collision simulation"]
     E --> H["Procedural audio and behaviour simulation"]
-    F --> I["Three.js WebGL renderer"]
+    F --> I["Three.js WebGPU/TSL renderer with WebGL2 backend"]
     G --> I
     H --> I
     I --> J["Capability governor and diagnostics"]
@@ -238,10 +238,12 @@ The intended source boundaries are:
 - `src/sim/`: character, car, sailboat, speedboat, swimming, collision and recovery;
 - `src/ecology/`: habitats, species grammars, populations and behaviour;
 - `src/weather/`: live/cached/climate state and derived physical fields;
+- `src/water/`: sea state, wave providers, coast field, clipmap, optics and bounded
+  surface memory;
 - `src/audio/`: procedural sources, mixing, habitat chorus and acoustics;
 - `src/archaeology/`: survey, stratigraphy, finds, interpretation and reconstruction;
 - `src/fieldbook/`: discoveries, educational provenance and collection progress;
-- `src/render/`: Three.js materials, batching, LOD, lighting, water and post;
+- `src/render/`: shared Three.js materials, batching, LOD, lighting and node post;
 - `src/heroes/`: bounded Foros, Pithara, Chora and reconstruction packages;
 - `src/platform/`: capability probe, governor, storage, updates and diagnostics.
 
@@ -325,34 +327,43 @@ NetworkX in a reproducible environment. The build performs:
 
 ### 7.1 Engine decision
 
-Androsstead uses **exactly pinned `three@0.185.1` with `WebGLRenderer` and GLSL** for
-the alpha. The choice is not inertia: Three.js matches the existing Stead pure/render
-boundaries, permits procedural BufferGeometry and source-level shaders, provides the
-required official addons, and preserves proven water, shadow and post-processing work.
+Androsstead uses **exactly pinned `three@0.185.1` with `WebGPURenderer`, node materials
+and TSL** for the alpha. WebGPU is the preferred backend; Three's WebGL2 backend is the
+supported fallback through the same renderer and material graph. There is no parallel
+classic `WebGLRenderer` implementation. Production imports use `three/webgpu` and
+`three/tsl`, and the fallback is exercised explicitly with `forceWebGL`.
 
-Saltstead and Moorstead target the older r166 shader/addon interfaces. Their pure maths
-and architectural seams can be extracted, but `onBeforeCompile` replacements, shader
-chunks, render targets, composer passes and material hooks are ported deliberately into
-r185 and covered by compile/parity tests. No version-sensitive source block is copied
-and assumed compatible.
+This reverses the original WebGL-first decision because transparent Greek shallows,
+depth-aware refraction, generated caustics and persistent wakes are central rather than
+decorative. Three r185 now supplies the required reflector node, shared viewport colour
+and depth nodes, MRT/node post-processing and storage-buffer compute primitives. It
+also retains the existing Stead advantages: procedural `BufferGeometry`, direct scene
+control and a pure-core/render-layer split.
 
-Three's `WebGPURenderer` is not the alpha renderer. It remains experimental for this
-codebase and does not preserve `ShaderMaterial`, `onBeforeCompile` and the classic
-`EffectComposer` paths on which the sibling work depends. A later TSL parity spike is a
-separate decision, not a dual renderer hidden in the alpha.
+Saltstead and Moorstead target older r166 WebGL shader/addon interfaces. Their pure
+maths, tuned constants and lifecycle decisions are extracted, but their
+`onBeforeCompile`, raw GLSL, classic render-target and `EffectComposer` code is not
+copied. The renderer-facing work is re-expressed as bounded TSL/node modules and covered
+by native-WebGPU and forced-WebGL compile/live tests. No version-sensitive source block
+is assumed compatible.
+
+`WebGPURenderer` remains described as experimental by Three. The control is an exact
+version pin, a deliberately limited feature surface, conservative boot calibration,
+tested fallback and no mid-alpha Three upgrade. Raw WebGPU/WGSL is rejected: compute
+and materials stay within Three's TSL abstraction unless a separately approved design
+proves that TSL cannot express a required operation.
 
 Babylon.js and PlayCanvas are capable but a migration would discard valuable Stead
-work without solving the GIS compression or zero-asset ecology problems. Cesium and
-MapLibre are tile/map architectures rather than the required compressed game world.
-Godot adds a WASM/web delivery boundary and weakens direct reuse. Raw WebGPU carries too
-much compatibility risk for the two-week alpha.
+domain work without solving GIS compression or zero-asset ecology. Cesium and MapLibre
+are tile/map architectures rather than the required compressed game world. Godot adds
+a WASM/web delivery boundary and weakens direct reuse.
 
 ### 7.2 Library selection matrix
 
 | Component | Decision | Exact role |
 |---|---|---|
-| Three.js r185 `WebGLRenderer` | Adopt/pin | Renderer, scene graph, generated geometry and shaders |
-| Three `TreeGenerator` algorithm | Adapt under Three MIT | Branch skeleton, taper, pipe radii, frames, phototropism, flare and procedural variation; use Andros GLSL material |
+| Three.js r185 `WebGPURenderer` + TSL | Adopt/pin | WebGPU-first renderer, WebGL2 backend, node materials, compute and post-processing |
+| Three `TreeGenerator` algorithm | Adapt under Three MIT | Branch skeleton, taper, pipe radii, frames, phototropism, flare and procedural variation; use Andros TSL material |
 | Three `ForestGenerator` | Do not use its geometry | Study/adapt only density, clearing and stochastic culling concepts; its blob canopy is rejected |
 | `InstancedMesh` | Adopt | Same-geometry vegetation, stones and repeated built details |
 | `BatchedMesh` | Adopt | Heterogeneous generated meshes sharing a material with per-object culling |
@@ -360,36 +371,35 @@ much compatibility risk for the two-week alpha.
 | `SimplifyModifier` | Adopt selectively | Offline/session LOD production with silhouette validation |
 | `SkinnedMesh`/`Skeleton` | Adopt | New articulated hero fauna and animation |
 | `MeshSurfaceSampler` | Limited | Injected deterministic sampling on bounded meshes, never habitat truth |
-| `Sky` | Adopt | Preetham daylight basis driven by real sun/weather inputs |
+| `SkyMesh`/sky-node basis | Adapt | Preetham daylight basis driven by real sun/weather inputs |
 | `PMREMGenerator` | Adopt | Low-cadence procedural sky radiance for PBR materials |
 | `LightProbeGenerator` | Conditional | Diffuse spherical-harmonic fill if benchmarked benefit exceeds cost |
-| `Reflector` plumbing | Adapt | Budgeted planar sea reflection architecture, not the stock material |
-| `Refractor`/`WaterRefractionShader` | Adapt selectively | Bounded WebGL underwater and pool refraction path with an explicit render-target budget |
-| WebGL `CSM` | Benchmark only | Compare two-cascade reach/quality with Moor's stable snapped single-sun shadow rig; never run both |
-| Moor composer/grade lifecycle | Adapt | Render, bloom, output, AA and restrained grade with corrected ordering |
-| Salt wave/glitter maths | Extract/adapt | Wave height/gradient parity, Cox–Munk glitter, Fresnel and shoreline seam |
+| TSL `reflector()`/`WaterMesh` reference | Adapt | Budgeted planar sea reflection architecture, not the stock final material |
+| `viewportSharedTexture` and depth nodes | Adopt | Depth-rejected refraction, transmission and underwater transition without a second scene render |
+| `CSMShadowNode` | Benchmark only | Compare two-cascade reach/quality with Moor's stable snapped single-sun shadow rig; never run both |
+| Three node post stack + Moor lifecycle | Adapt | MRT render, bloom, output, AA and restrained grade with corrected ownership/order |
+| Salt wave/glitter/shore maths | Extract/adapt | CPU/TSL height-gradient parity, Cox–Munk glitter, Fresnel and shoreline coupling |
+| Three TSL compute/storage APIs | Adopt selectively | Bounded persistent foam, boat wakes, pool disturbances and waterfall impacts |
 | `three-mesh-bvh@0.9.14` | Adopt/pin | Static caves, ruins, buildings, picking and capsule collision; not terrain height truth |
 | `flatbush@4.6.2` | Adopt/pin | Static spatial index for cells, routes and discoveries |
 | `fflate@0.8.3` | Adopt/pin | Generated-data decode where compression pays |
 | `earcut@3.2.3` | Adopt/pin | Polygon and footprint triangulation |
-| `stegu/psrdnoise` selected GLSL | Vendor/pin under MIT | World-space differentiable noise for non-repeating surface fields |
+| `stegu/psrdnoise` selected algorithm | Port/pin under MIT | TSL world-space differentiable noise for non-repeating surface fields; no raw GLSL runtime path |
 | `@three.ez/instanced-mesh@0.3.16` | Benchmark, provisional | Per-instance BVH/culling/LOD/shadow LOD and optional skinning; native fallback required |
-| `pmndrs/postprocessing` | Benchmark only | Compare merged-effect cost with the proven Moor composer; no automatic migration |
 | `three-pathfinding@1.3.0` | Conditional | Bounded hero/local navmeshes only |
 | `cannon-es@0.20.0` | Spike only | Compare vehicle/boat contact behaviour against a retuned deterministic core |
-| `GPUComputationRenderer` | Experiment only | Distant non-interactive flock/particle motion, never core animal state |
+| TSL compute for distant spectacle | Experiment only | Distant non-interactive flock/particle motion, never core animal state |
 
 The official r185 `TreeGenerator` is materially better than the siblings' tree
-geometry, but its current example implementation uses a TSL/WebGPU-facing material
-path and creates branches rather than an Andros-ready tree. We adapt the deterministic
-geometry algorithm under the Three MIT licence, keep it renderer-neutral, and supply
-new species-specific foliage and WebGL materials. `ForestGenerator` is explicitly not
+geometry, but it creates branches rather than an Andros-ready tree. We adapt the
+deterministic geometry algorithm under the Three MIT licence, keep it renderer-neutral,
+and supply new species-specific foliage and TSL materials. `ForestGenerator` is explicitly not
 a shortcut: its intentionally low-face teardrop trees reproduce the unwanted generic
 look.
 
 `@three.ez/instanced-mesh` earns a targeted compatibility benchmark because it offers
 per-instance culling, LOD, sorting, uniforms, shadow LOD and skinning. It becomes a core
-dependency only if custom procedural GLSL, alpha foliage, shadow behaviour, context
+dependency only if custom procedural TSL, alpha foliage, shadow behaviour, context
 recovery and r185 compatibility all pass. Native `InstancedMesh` and cell-level
 `BatchedMesh` remain the supported fallback.
 
@@ -397,12 +407,15 @@ The following are rejected for the alpha:
 
 - `@dgreenheck/ez-tree` as a dependency: large, texture-oriented and unnecessary when
   the official branch algorithm plus bespoke foliage is leaner;
-- Three's `ForestGenerator` mesh and stock Water/Water2 as the final visual material;
-- r185 `WaterMesh`/`Water2Mesh`, which are TSL/WebGPU paths and expect normal-map
-  textures rather than the alpha's WebGL procedural wave contract;
-- `SSRPass`/`ReflectorForSSRPass` for the open sea: screen-space reflection loses
-  off-screen cliffs/sky, breaks at the horizon and costs more unpredictably than the
-  bounded planar reflection;
+- Three's `ForestGenerator` mesh and stock Water/Water2/WaterMesh/Water2Mesh as the
+  final visual material; their TSL reflection/refraction plumbing is reference code,
+  while Andros uses generated normals and the Salt wave/shore contract;
+- classic `WebGLRenderer`, `ShaderMaterial`, `onBeforeCompile`, `EffectComposer`,
+  `Refractor`, `WaterRefractionShader`, `GPUComputationRenderer` and WebGL `CSM` paths;
+- `SSRNode` as the open-sea reflection contract: screen-space reflection loses
+  off-screen cliffs and sky and breaks at the horizon; it remains a later bounded
+  experiment rather than a hidden alpha dependency;
+- `pmndrs/postprocessing`, because the alpha uses Three's WebGPU/node post stack;
 - `GroundedSkybox` and `RoomEnvironment` as outdoor lighting: both solve environment-map
   presentation rather than a real procedural Andros atmosphere;
 - `three-custom-shader-material`: another shader-patch boundary conflicts with the
@@ -412,6 +425,11 @@ The following are rejected for the alpha:
 - Rapier, Recast, Ammo and Jolt browser builds because WASM violates the strict runtime
   asset contract;
 - a generic MarchingCubes look for terrain, caves or animals.
+
+Water Pro is not purchased or included. It is a visual capability benchmark only. No
+package, source, bundled foam texture or reverse-engineered implementation enters the
+repository. A later commercial-library decision requires a separate licence, source,
+asset-contract and private-repository review.
 
 ## 8. Terrain, coast, roads and surface truth
 
@@ -492,33 +510,106 @@ it is supported by tests that catch obvious mathematical repetition.
 
 ## 9. Sea, inland water and boats
 
-### 9.1 Sea renderer
+### 9.1 Water-system boundaries
 
-There is no existing sibling implementation of true reflection/refraction to relabel as
-such. Saltstead supplies excellent procedural wave height/gradient parity, ocean noise,
-Cox–Munk sun glitter, Fresnel response and shoreline coupling. Androsstead combines
-those with new official `Reflector`-style render-target plumbing for a budgeted planar
-reflection of sky, cliffs, boats and coastal structures.
+There is no sibling implementation of true scene reflection/refraction to relabel as
+such. Saltstead supplies the proven behavioural foundation: deterministic wave
+height/gradient parity, ocean noise, Cox–Munk glitter, Fresnel response, breaking cues
+and shoreline coupling. Its monolithic WebGL `ocean.js` is not ported. The alpha
+extracts the pure mathematics and builds six bounded systems under `src/water/`:
 
-The sea system has:
+- `SeaState` converts live/cached/climate wind, direction, Aegean fetch class and weather
+  into deterministic swell and chop inputs;
+- `WaveProvider` exposes height, gradient, breaking and band queries to render,
+  buoyancy, swimming and audio; the alpha implementation is Salt's analytic spectrum;
+- `CoastField` supplies signed shore distance, water depth and seabed class from the
+  compressed geography;
+- `OceanClipmap` draws smooth camera-centred near/mid/far rings, dense near the player
+  and progressively cheaper offshore, with continuous displacement and no voxel or
+  visible patch boundary;
+- `WaterOptics` owns TSL reflection, refraction, absorption, scattering, glitter,
+  caustics and the underwater transition;
+- `SurfaceMemory` owns bounded WebGPU compute fields for persistent foam, wakes and
+  impacts; the WebGL2 profile uses analytic foam and procedural wake stamps.
 
-- an Aegean-tuned spectrum driven by real wind speed/direction and fetch class;
-- one mathematical wave definition shared by shader normals, buoyancy and wakes;
-- coast/bathymetry shoaling and shore-break cues;
-- reflected sky and sun radiance rather than a painted reflection gradient;
-- foam, wake and spray generated procedurally from derivatives and hull state;
-- underwater colour/attenuation and a new bounded refraction path for swimming;
-- reflection resolution and cadence as early quality-governor levers;
-- a Plain fallback retaining waves, Fresnel and navigation without planar reflection.
+The authoritative flow is:
 
-Official stock Water/Water2 is reference code, not the final material; it cannot by
-itself provide Saltstead's wave/shore parity or the required Aegean behaviour.
-Three's WebGL `Refractor` and `WaterRefractionShader` are the starting render-target and
-oblique-clipping references for the bounded underwater/pool path. The r185 `WaterMesh`
-is not silently substituted because it is a WebGPU/TSL implementation using supplied
-normal maps. SSR is reserved for a later bounded experiment, not the open ocean.
+```mermaid
+flowchart LR
+    A["Real or fallback weather"] --> B["SeaState"]
+    B --> C["WaveProvider"]
+    D["Coast and bathymetry"] --> E["CoastField"]
+    C --> F["Ocean displacement and normals"]
+    C --> G["Boat and swimming simulation"]
+    C --> H["Foam, wakes and sound"]
+    E --> F
+    E --> G
+    E --> H
+    F --> I["WaterOptics"]
+    E --> I
+```
 
-### 9.2 Sailing and speedboat
+There is one water truth: a boat cannot float on a different wave from the visible
+surface. Rendering quality may change presentation but never `WaveProvider`, pool depth,
+buoyancy or collision outputs. A future JONSWAP/IFFT provider may implement the same
+interface, but spectral FFT, spray interaction and rain-on-water simulation are outside
+the alpha and cannot expand it implicitly.
+
+### 9.2 Aegean sea geometry and optics
+
+The sea colour arises from the actual seabed and optical path rather than a transparent
+blue material:
+
+- scene colour is refracted through the displaced surface using shared viewport colour
+  and depth; depth rejection prevents foreground boats, plants or cliffs from being
+  sampled beneath the water;
+- Beer–Lambert absorption uses estimated travel distance through water: pale sand and
+  stones remain visible in coves, then red and green attenuate progressively into deep
+  Aegean blue;
+- Fresnel balances transmission and reflection, clear when looking down and strongly
+  reflective at grazing angles;
+- Ultra/Fine combine the procedural Mediterranean sky and sun with budgeted planar
+  reflection of terrain, buildings and boats; lower tiers reduce its cadence/resolution
+  or omit reflected scene geometry while retaining sky, sun path and Salt glitter;
+- wave focusing projects bounded caustics onto the actual seabed and submerged rock,
+  fading with depth, cloud and rough water instead of repeating as a pasted texture;
+- smaller capillary normals, wind streaks, glitter and foam breakup use rotated,
+  incommensurate world-space procedural fields so no scrolling tile is exposed;
+- signed coast distance and bathymetry drive shoaling, breaking, wet-sand run-up and
+  retreat; there is no uniform white ring at the shoreline.
+
+Clear beaches therefore require procedural seabed substance: sand, rounded stones,
+rock shelves, sea grass and discoveries use real geometry/material variation visible
+through the water. Crossing the sampled surface uses hysteresis to avoid flicker and
+transitions continuously to underwater absorption, refraction, suspended light,
+acoustics and the Snell window. It is not a separate level.
+
+Official r185 `WaterMesh`, `Water2Mesh`, backdrop-depth water, compute-water and
+refraction examples are MIT reference implementations for node plumbing. They are not
+the final Andros material and their supplied normal maps are replaced by deterministic
+generated fields. SSR is not the open-sea contract.
+
+### 9.3 Persistent surface and bounded freshwater
+
+On native WebGPU, `SurfaceMemory` maintains camera/local-body compute fields for foam,
+hull wakes and impact disturbances. Fields have explicit world bounds, update budgets,
+deterministic seeds and clean disposal/reconstruction. They do not become the
+authoritative physical wave sampler. Forced WebGL uses the same analytic waves and
+interaction events with cheaper non-persistent presentation.
+
+Pithara reuses `WaterOptics` but not ocean swell. Its authored local depth field and a
+bounded ripple/flow provider govern the main pool and cascades. Waterfall impacts,
+current, player entry, swimming strokes and thrown objects inject disturbances. Clear
+freshwater coefficients, rather than the sea palette, reveal rock, rounded stones,
+submerged ledges, leaves and observations. The same gradients project caustics across
+the pool floor and wet rock.
+
+Procedural cascade ribbons, splash sheets, droplets, foam, bubbles and mist share
+flow direction and impact points. A jump into a verified deep zone produces a surface
+impulse, splash crown, bubbles and temporarily disturbed reflection. Pool bathymetry is
+shared by visibility, swimming, bounded diving, jump safety and collision.
+
+### 9.4 Sailing and speedboat
 
 Sailing models apparent wind, sail trim, heel, leeway, tacking and jibing in an
 accessible but genuine system. Speedboats plane, turn against chop and generate wakes.
@@ -529,7 +620,7 @@ Boat routes are not hard rails. The entire coast is navigable where depth permit
 sea caves and beaches can be approached naturally. GEBCO-scale bathymetry is treated as
 approximate game geometry and never represented as navigation advice.
 
-### 9.3 Pithara water invariant
+### 9.5 Pithara water invariant
 
 Pithara's main pool and cascades retain dependable water throughout the playable
 calendar, including midsummer. This is an owner observation and explicit product
@@ -561,8 +652,9 @@ grade labelled Mediterranean.
 
 1. Solar azimuth and elevation use real Andros latitude/longitude, date and time through
    a pure solar-position core verified against NOAA reference equations.
-2. Three's `Sky` addon supplies a Preetham daylight basis. Weather-derived visibility,
-   humidity and cloud state drive bounded turbidity, Rayleigh/Mie and horizon haze.
+2. Three's `SkyMesh`/sky-node basis supplies Preetham daylight. Weather-derived
+   visibility, humidity and cloud state drive bounded turbidity, Rayleigh/Mie and
+   horizon haze.
 3. Open-Meteo direct normal irradiance, diffuse radiation and shortwave radiation drive
    the directional sun/sky-fill energy ratio. Cached/climate modes provide the same
    variables, not a separate visual cheat.
@@ -581,18 +673,17 @@ white villages. Aerosol or dust warmth is used only when current weather/visibil
 pinned climatology supports it.
 
 Moorstead's stable moving-camera shadow framing, bias tuning, light direction quanta,
-composer lifecycle and resolution ownership are adapted. Saltstead's geodetic
+post lifecycle and resolution ownership are adapted. Saltstead's geodetic
 sun/season maths and exposure/glitter coupling are retained where tests prove parity.
 The order is one owner for antialiasing and one owner for exposure; sibling systems are
 not stacked blindly.
 
-The default post order is linear `RenderPass → Bloom → restrained Grade → FXAA →
-OutputPass` when FXAA is needed, or `RenderPass → Bloom → restrained Grade → OutputPass`
-when multisample antialiasing owns the edge treatment. `OutputPass` remains last so tone
-mapping and output colour conversion do not precede linear grading. MSAA and FXAA are
-not stacked by default.
+The default node graph is `scene MRT beauty/emissive → linear Bloom → restrained linear
+Grade → renderOutput tone/output transform → FXAA` when FXAA is needed. With multisample
+antialiasing, the graph ends at `renderOutput`. Tone mapping/output conversion therefore
+never precedes bloom or grading, and MSAA and FXAA are not stacked by default.
 
-Three's WebGL `CSM` addon is a real alternative for long outdoor shadow reach. It is
+Three's `CSMShadowNode` is a real alternative for long outdoor shadow reach. It is
 benchmarked as a two-cascade Fine/Ultra candidate against Moorstead's snapped single
 directional-light camera using the same Andros road, village and vegetation scene. It
 is adopted only if the added shadow maps materially reduce visible swimming/popping
@@ -668,8 +759,9 @@ Source evidence and procedural inference remain separate fields.
 Scenic mass uses `InstancedMesh`/`BatchedMesh`, cell-level culling and generated LODs.
 Near plants retain branch/leaf silhouettes; middle LODs cluster foliage while keeping
 major branches; far vegetation uses simplified batches or a session-generated impostor
-atlas rendered from the procedural plants into `WebGLRenderTarget`. The atlas is a
-runtime cache, not a shipped asset. Hero plants retain stable IDs and interaction.
+atlas rendered from the procedural plants into a renderer-neutral `RenderTarget`. The
+atlas is a runtime cache, not a shipped asset. Hero plants retain stable IDs and
+interaction.
 
 ### 11.5 Flora acceptance gates
 
@@ -892,7 +984,15 @@ The approach is found through increasing water sound, cooler/greener habitat,
 dragonflies, frogs, channels and waterworks. The nested ravine expands into a chain of
 cascades, clear dependable pools and dense riparian vegetation. “Neraidotopos” and
 fairy-place tradition are presented as attributed folklore. The pool, swimming and
-safe jumping remain available in midsummer as specified in section 9.3.
+safe jumping remain available in midsummer as specified in section 9.5.
+
+The main pool is a first-class demonstration of the water architecture, not a reduced
+inland variant. Its enlarged hero-world bathymetry controls optical depth, swimming,
+diving, entry/exit and verified deep jump zones. Clear freshwater refraction exposes
+submerged ledges, stones, leaves and discoveries; generated caustics move over the pool
+floor and ravine walls; reflections include vegetation, rock, sky and waterfall spray.
+Waterfall impacts, current and the player disturb the bounded surface field, and
+crossing it transitions continuously to underwater light and muffled acoustics.
 
 ### 16.4 Chora: two separate landmarks
 
@@ -980,16 +1080,17 @@ choosing a canonical supernatural explanation.
 
 ### 19.1 Boot sequence
 
-Androsstead adapts the proven Spire/Moot capability architecture, not Moot's WebGPU
-renderer:
+Androsstead adapts the proven Spire/Moot capability architecture and uses Three's
+WebGPU-first renderer:
 
-1. before importing Three, create a disposable WebGL2 context with
-   `failIfMajorPerformanceCaveat`;
-2. inspect software-renderer signals, GPU renderer hint, RAM/cores and relevant GL
-   limits/extensions;
-3. choose a conservative initial profile;
-4. run a short representative Andros calibration scene containing terrain, plant
-   alpha/shadows, water and buildings;
+1. inspect `navigator.gpu`, adapter/limit information, software-renderer signals,
+   RAM/cores and a disposable WebGL2 context with `failIfMajorPerformanceCaveat`;
+2. choose a conservative initial backend/profile from hints rather than a chipset
+   allowlist;
+3. initialise `WebGPURenderer`; if native WebGPU initialisation or representative
+   shader compilation fails before world entry, retry once with `forceWebGL`;
+4. run a short representative Andros calibration containing terrain, plant
+   alpha/shadows, reflection, refraction, caustics, compute water and buildings;
 5. let measured runtime frame behaviour become authoritative;
 6. store a versioned, demote-only verdict and support an explicit user override;
 7. recover deterministically from context loss and invalidate unsafe cached GPU state.
@@ -999,34 +1100,49 @@ machine after a code/version change. Static chipset names are hints, not truth.
 
 ### 19.2 Profiles
 
-- **Ultra:** high DPR cap, best shadow distance, planar sea reflection, fuller plant
-  foliage, hero probes and extended scenic density.
-- **Fine:** visual target and 60 fps target; full core effects at measured budgets.
-- **Plain:** complete 3D game with reduced DPR, reflection, post, shadow reach and
-  decorative density.
+- **Ultra:** high DPR cap, best shadow distance, full WebGPU surface memory, highest
+  water/hero-field density, budgeted scene reflection, fuller foliage, hero probes,
+  caustics, underwater optics and extended scenic/spray density.
+- **Fine:** visual and 60 fps target; all defining water optics remain with reduced
+  compute-field and reflection resolution/cadence at measured budgets.
+- **Plain:** complete 3D game through the WebGL2 backend where required. It retains
+  analytic waves, buoyancy, swimming, depth absorption, Fresnel, seabed visibility,
+  basic refraction, generated foam and interactive Pithara water while reducing or
+  removing persistent GPU foam, scene reflection and dense spray.
 - **Embers:** map/Field Book and warned optional 20 fps trial for software renderers or
   incapable devices; no automatic unusable 3D launch.
+
+The forced-WebGL backend is capped at Plain for the alpha; it is a complete gameplay
+profile, not an attempt to emulate storage-buffer compute. Native WebGPU may also select
+Plain when measured performance requires it.
 
 The governor is refresh-rate aware and uses hysteresis. It degrades in this order:
 
 1. planar reflection cadence/resolution;
-2. device pixel ratio;
-3. optional post effects and probe cadence;
-4. shadow reach/resolution and decorative shadow casters;
-5. distant foliage/animal/building decoration and LOD ranges.
+2. foam/wake compute resolution and update cadence;
+3. caustic resolution and update cadence;
+4. waterfall droplet/mist density;
+5. water tessellation outside the near field;
+6. device pixel ratio;
+7. optional post effects and probe cadence;
+8. shadow reach/resolution and decorative shadow casters;
+9. distant foliage/animal/building decoration and LOD ranges.
 
-It never removes roads, paths, collision, route truth, discoveries, archaeology,
-educational records or interaction geometry. Profiles carry separate continuous-island
-and hero-world budgets. Background tabs park rendering and suspend nonessential audio.
-Battery and Compute Pressure signals may demote when available but are never required.
+It never changes authoritative wave height, pool depth, boat buoyancy, swimming
+collision or safe jump zones, and never removes roads, paths, route truth, discoveries,
+archaeology, educational records or interaction geometry. Profiles carry separate
+continuous-island and hero-world budgets. Background tabs park rendering and suspend
+nonessential audio. Battery and Compute Pressure signals may demote when available but
+are never required.
 
 ### 19.3 Performance accounting
 
-The diagnostic surface `window.androsstead` exposes build/version, current quality,
-frame distribution, renderer/GPU hints, draw calls, triangles, active cells, streaming
-queues, audio-worklet load, reflection/probe cadence and context-loss count without
-personal data. A browser live script verifies actual entry, traversal, a hero transition
-and save/reload.
+The diagnostic surface `window.androsstead` exposes build/version, selected backend,
+adapter/renderer hints, relevant limits, current quality, frame distribution, draw
+calls, triangles, active cells, streaming queues, water-field/reflection/caustic cadence,
+audio-worklet load and context-loss count without personal data. Browser live scripts
+verify actual entry, traversal, water journeys, a hero transition and save/reload under
+native WebGPU and forced WebGL2.
 
 ## 20. State, saves and failure handling
 
@@ -1049,6 +1165,15 @@ A coordinate-transform change requires an explicit migration tested against gold
 saves. Network/weather failure falls back locally. Worker/shader/optional-effect failure
 degrades a bounded subsystem and reports diagnostics; it cannot silently remove
 collision or corrupt progression.
+
+A failed optional water pass installs a bounded node-material fallback that preserves
+the visible water body, analytic surface, Fresnel/depth colour and all interaction.
+Reflection, caustics or persistent foam may be lost; sea navigation and the Pithara pool
+may not. Context restoration recreates reflector targets, viewport-dependent nodes,
+compute fields and post resources from deterministic time/state. Backend fallback is
+chosen before world entry; if a native WebGPU context cannot be restored, the next
+explicit reload records a demote-only forced-WebGL verdict rather than attempting a
+mid-frame renderer swap.
 
 ## 21. Input, accessibility and safety
 
@@ -1101,14 +1226,24 @@ It includes:
 
 ### Visual, ecology and audio
 
-- shader compilation for every profile and fallback;
+- node-material and post-graph compilation for every profile under native WebGPU and
+  forced WebGL2;
 - surface-variation statistical and seam tests from section 8.3;
-- wave shader/buoyancy/shore parity and reflection resource disposal;
+- CPU/TSL wave height, gradient, breaking, buoyancy and shore parity at fixed samples;
+- Beer–Lambert transmission monotonicity with water-path length and Fresnel increase
+  toward grazing angles;
+- refraction depth rejection proving foreground objects cannot be sampled beneath water;
+- coast/clipmap height, normal, foam and caustic seam tests;
+- bounded caustic/glitter energy under extreme sun/wind and finite shader outputs;
+- underwater surface-hysteresis tests preventing enter/exit flicker;
+- profile-transition tests proving wave truth, buoyancy, pool depth, swimming collision
+  and jump zones are unchanged;
+- reflector, viewport, compute-field and post resource disposal/context reconstruction;
 - solar/weather/light tests from section 10;
 - flora geometry, silhouette, LOD, habitat and budget gates from section 11;
 - fauna anatomy, animation, behaviour, population and budget gates from section 12;
 - cicada spectral, temporal, spatial and CPU tests from section 13;
-- stable shadow camera and composer ordering tests.
+- stable shadow camera and node-post graph ordering tests.
 
 ### Progression and runtime
 
@@ -1118,18 +1253,25 @@ It includes:
 - capability probe fixtures including software renderer, weak GPU, high-refresh and
   context loss;
 - no mechanic removed across quality profiles;
-- production build and a live first-use browser journey.
+- production build and live first-use journeys under native WebGPU and forced WebGL2:
+  clear-beach wade/swim/reflected-coast, sail/speedboat wave-wake agreement, Pithara
+  jump/dive/surface/exit, quality demotion, context restoration and save/reload.
 
-Every categorical gate includes a counterexample fixture proving it fails. Browser
-visual baselines supplement but do not replace live eye-level review on representative
-hardware. Before a release, a fresh reviewer examines the multi-module change and one
-review-fix-rereview cycle addresses material Tier B findings.
+Every categorical gate includes a counterexample fixture proving it fails. Fixed-seed
+reference views cover midday shallows, grazing sunset, rough water, underwater and
+Pithara. Browser visual baselines supplement but do not replace live eye-level review
+against researched Andros references on representative hardware; pixel comparison
+cannot establish realism. Before a release, a fresh reviewer examines the multi-module
+change and one review-fix-rereview cycle addresses material Tier B findings.
 
 ## 23. Attribution and code provenance
 
 The repository records code and data separately. The initial notice set includes:
 
 - Three.js and adapted official addon algorithms — MIT;
+- Saltstead wave/glitter/shore code — internal sibling source file and commit provenance;
+- Spiri0 `Threejs-WebGPU-IFFT-Ocean` — MIT notice, exact commit and file-level notes if
+  any code is adapted; the alpha may study it but does not adopt its FFT system;
 - three-mesh-bvh — MIT;
 - `@three.ez/instanced-mesh` and its bvh.js provenance if adopted — MIT;
 - psrdnoise selected source — MIT with retained notice and exact upstream commit;
@@ -1140,6 +1282,11 @@ The repository records code and data separately. The initial notice set includes
 - GEBCO — required acknowledgement and “not for navigation” boundary;
 - all build-time Python/GIS dependencies and licences;
 - Open-Meteo attribution/terms current at the pinned integration date.
+
+Water Pro is recorded only as a visual capability benchmark. It is neither a dependency
+nor an implementation source, and none of its code, textures or package output appears
+in notices or runtime. This statement prevents a future contributor from misdescribing
+the open-source alpha as a Water Pro integration.
 
 If the Mars vehicle core or design is reused, the existing Dan/Dune Flip Arena “used
 with permission” credit is not assumed to cover Androsstead. Permission scope is
@@ -1158,7 +1305,8 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 - create Androsstead repository and exact tool/dependency pins;
 - install canonical verify, file-cap, zero-binary, generated-data and licence gates;
 - implement projection/cartogram contracts and reproducible data manifest;
-- adapt capability preflight/governor and boot diagnostics.
+- adapt capability preflight/governor and boot diagnostics, initialise the pinned
+  WebGPU/TSL stack and prove forced-WebGL node-material compilation.
 
 ### Phase 1 — island and land traversal (days 2–3)
 
@@ -1169,7 +1317,10 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 
 ### Phase 2 — sea, weather and light (days 4–5)
 
-- integrate Salt wave/glitter/shore parity with reflection plumbing;
+- extract Salt wave/glitter/shore pure cores behind `WaveProvider` and prove CPU/TSL
+  parity;
+- deliver clipmap sea, depth-rejected refraction, absorption, generated caustics,
+  reflection and profile-bounded foam/wakes;
 - deliver sailing, speedboat, swimming and coastal approach;
 - integrate LIVE/CACHED/CLIMATE weather, wind and radiation;
 - deliver Mediterranean sky, PMREM environment and stable shadows.
@@ -1182,7 +1333,8 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 - deliver two high-quality fauna exemplars in different movement classes, with the
   remaining species represented only where their quality bar is met;
 - deliver both cicada synthesis models and location/weather-driven chorus;
-- run InstancedMesh2 and post-processing benchmarks, retaining native fallbacks.
+- run the InstancedMesh2 benchmark and node-post budget calibration, retaining native
+  Three fallbacks.
 
 ### Phase 4 — archaeology and collectathon (days 9–10)
 
@@ -1193,7 +1345,8 @@ The alpha is ambitious by breadth but protects one vertical slice per pillar.
 ### Phase 5 — hero locations (days 11–12)
 
 - deliver Foros attested route plus labelled inferred extension, acoustics and fauna;
-- deliver hidden Pithara approach, dependable cascades, pool swimming/jump and ecology;
+- deliver hidden Pithara approach, dependable cascades, clear interactive pool,
+  waterfall-fed disturbances, swimming/jump/underwater transition and ecology;
 - deliver Chora Lower Castle/bridge and Tourlitis as distinct land/sea anchors.
 
 ### Phase 6 — integration and proof (days 13–14)
@@ -1219,23 +1372,26 @@ without rewrites.
 | New fauna looks like primitives or robots | Major visual failure | Continuous parametric meshes, skeletons, species behaviour and ratio/phase gates | Close fauna fails reference review |
 | Surface noise exposes patterns | Realism failure | Metric multiscale fields, autocorrelation tests and eye-level sweeps | Repetition visible on roads, slopes or walls |
 | Hero worlds feel disconnected | Exploration cohesion fails | Natural thresholds, shared state/audio/weather and horizon rings | Transition is noticed as a menu/teleport |
-| Water reflection consumes budget | Weak devices become unusable | First governor lever; Plain retains procedural waves/Fresnel | Fine misses frame target or reflection stutters |
+| Water optical/compute stack consumes budget | Weak devices become unusable | Reflection→surface memory→caustics→spray→far tessellation are first governor levers; Plain retains interaction and defining optics | Fine misses frame target or water passes stutter |
 | Live weather is missing or implausible | World/state mismatch | Validated cache and deterministic climatology, visible state label | Provider/API terms or reliability change |
 | Cicada chorus becomes a tiring loop | Soundscape failure | Long seeded synthesis, independent clusters, habitat mix and limiter | Loop/phase detected or listening fatigue review fails |
 | Historical certainty is overstated | Educational trust failure | Structured provenance and attested/inferred/speculative overlay | Source conflict or missing plan appears |
 | Two-week breadth dilutes every feature | No convincing vertical slice | One hero-quality example per pillar, explicit uneven depth | Integration slips past day 10 |
-| r185 shader/addon internals change | Upgrade breaks rendering | Exact pin, shader compile/parity gates and documented patch seams | Three upgrade is proposed |
-| InstancedMesh2 adds incompatibility | Ecology pipeline fragility | Targeted benchmark and native fallback | Alpha/shadow/context tests fail |
-| WebGL ceiling blocks later ambition | Long-term visual constraint | Isolate pure geometry/material inputs and schedule TSL parity spike | WebGPU support and addon parity become stable |
+| r185 TSL/addon internals change | Upgrade breaks rendering | Exact pin, node-graph compile/parity gates and documented adaptation seams | Three upgrade is proposed |
+| WebGPU/backend gap appears on supported hardware | Entry or key water feature fails | Conservative calibration, bounded feature fallbacks, forced-WebGL live journey and demote-only verdict | Native or fallback journey fails |
+| InstancedMesh2 adds WebGPU/TSL incompatibility | Ecology pipeline fragility | Targeted benchmark and native fallback | Alpha/shadow/context tests fail |
+| Full FFT ambition expands the alpha | Water work displaces island/heroes | Salt analytic `WaveProvider` is locked for alpha; future provider has a separate design gate | Approved alpha journeys pass and profiling demonstrates a material spectral need |
 
 Decisions intentionally deferred behind evidence are:
 
 - native deterministic vehicle core versus a bounded cannon-es integration;
 - InstancedMesh2 becoming core versus native Three batching;
-- Moor composer versus pmndrs merged post-processing;
 - LightProbe use by location/profile;
-- GPU flock simulation for distant spectacle;
-- a later WebGPU/TSL renderer after feature and shader parity, not before.
+- TSL compute flock simulation for distant spectacle;
+- bounded SSR use at a later hero location;
+- JONSWAP/IFFT becoming a future `WaveProvider` after the alpha;
+- any Water Pro purchase/integration after a separate licence, source, asset-contract and
+  repository-privacy decision.
 
 ## 26. Primary technical and factual references
 
@@ -1245,6 +1401,15 @@ checksums, licences and source pinpoints.
 ### Three.js and rendering
 
 - [Three.js documentation](https://threejs.org/docs/)
+- [Three.js WebGPURenderer guide](https://threejs.org/manual/en/webgpurenderer)
+- [Three.js WebGPURenderer documentation](https://threejs.org/docs/pages/WebGPURenderer.html)
+- [Three.js r185 WaterMesh source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/objects/WaterMesh.js)
+- [Three.js r185 Water2Mesh source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/objects/Water2Mesh.js)
+- [Three.js WebGPU backdrop/depth water](https://threejs.org/examples/webgpu_backdrop_water.html)
+- [Three.js WebGPU compute water](https://threejs.org/examples/webgpu_compute_water.html)
+- [Three.js WebGPU refraction](https://threejs.org/examples/webgpu_refraction.html)
+- [Three.js r185 CSMShadowNode source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/csm/CSMShadowNode.js)
+- [Spiri0 Threejs-WebGPU-IFFT-Ocean](https://github.com/Spiri0/Threejs-WebGPU-IFFT-Ocean)
 - [Three.js r185 TreeGenerator source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/generators/TreeGenerator.js)
 - [Three.js TreeGenerator documentation](https://threejs.org/docs/pages/TreeGenerator.html)
 - [Three.js r185 ForestGenerator source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/generators/ForestGenerator.js)
@@ -1252,12 +1417,9 @@ checksums, licences and source pinpoints.
 - [Three.js InstancedMesh](https://threejs.org/docs/pages/InstancedMesh.html)
 - [Three.js BatchedMesh](https://threejs.org/docs/pages/BatchedMesh.html)
 - [Three.js SkinnedMesh](https://threejs.org/docs/pages/SkinnedMesh.html)
-- [Three.js Sky](https://threejs.org/docs/pages/Sky.html)
+- [Three.js r185 SkyMesh source](https://github.com/mrdoob/three.js/blob/r185/examples/jsm/objects/SkyMesh.js)
 - [Three.js PMREMGenerator](https://threejs.org/docs/pages/PMREMGenerator.html)
 - [Three.js LightProbeGenerator](https://threejs.org/docs/pages/LightProbeGenerator.html)
-- [Three.js Reflector](https://threejs.org/docs/pages/Reflector.html)
-- [Three.js Refractor](https://threejs.org/docs/pages/Refractor.html)
-- [Three.js WebGL CSM](https://threejs.org/docs/pages/CSM.html)
 - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh)
 - [InstancedMesh2](https://github.com/agargaro/instanced-mesh)
 - [psrdnoise](https://github.com/stegu/psrdnoise)
