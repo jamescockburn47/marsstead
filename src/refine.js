@@ -37,8 +37,11 @@ export function fabTick(fab, dt) {
   fab.t += dt;
   if (fab.t < RECIPES[head].seconds) return null;
   fab.t = 0;
-  fab.queue.shift();
   const out = RECIPES[head].out;
+  // Only this named intermediate is automatic. Replace the occupied slot:
+  // the chain cannot overflow the queue or eat finished steel/glass/water.
+  if (head === 'regolith') { fab.queue[0] = 'iron-ore'; return null; }
+  fab.queue.shift();
   fab.out[out] = (fab.out[out] || 0) + 1;
   return out;
 }

@@ -11,3 +11,7 @@ tools/*.nc
 
 # build-time source data (public NASA/USGS downloads) — never in git
 tools/
+
+# Local design-session state and rejected exploratory prototypes
+.superpowers/
+prototypes/

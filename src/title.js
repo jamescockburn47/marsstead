@@ -6,7 +6,6 @@
 // choice reloads into a clean real start, so nothing of the reel leaks.
 // ?play in the query skips it (live checks and the dev loop want the game).
 
-import { marsSolDate } from './marstime.js';
 import { cleanName } from './vesper.js';
 
 const CSS = `
@@ -94,7 +93,7 @@ export class TitleScreen {
 
     if (save) {
       const cont = document.createElement('button');
-      cont.textContent = `CONTINUE — SOL ${Math.floor(marsSolDate(save.simMillis))}`;
+      cont.textContent = `CONTINUE — SOL ${Math.max(1, Math.floor((save.simMillis - (save.missionStart ?? save.simMillis)) / 88775244) + 1)}`;
       cont.onclick = () => choose('continue');
       this.root.appendChild(cont);
     }

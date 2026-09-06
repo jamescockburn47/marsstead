@@ -11,6 +11,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rocksInChunk } from './rocks.js';
 import { CHUNK } from './marschunk.js';
 import { hash2, valueNoise2 } from './noise.js';
+import { stoneMaterial } from './stone-finish.js';
 
 const RADIUS = 9;             // match the terrain's kept radius
 const BUILDS_PER_FRAME = 6;   // rocks are cheaper than ground
@@ -51,7 +52,7 @@ export class RockLayer {
   constructor(scene) {
     this.scene = scene;
     this.geos = Array.from({ length: VARIANTS }, (_, k) => rockGeometry(k));
-    this.mat = new THREE.MeshLambertMaterial();
+    this.mat = stoneMaterial();
     this.chunks = new Map();   // key -> { mesh, tier }
     this.queue = [];
     this.dummy = new THREE.Object3D();

@@ -222,6 +222,23 @@ check('whitelist is frozen-shaped', Object.values(STATE_FIELDS).every((s) => ['i
   const { sanitizeState } = await import('../src/vesperbrain.js');
   check('settlerName whitelisted + clamped',
     sanitizeState({ settlerName: 'A'.repeat(40) }).settlerName.length <= 16);
+  const helpLimits = { currentGoal: 240, nearbyActions: 300, cargo: 300,
+    sharedDiscovery: 240, helpContext: 500 };
+  for (const [field, max] of Object.entries(helpLimits)) {
+    check(`${field} whitelist clamp`, sanitizeState({ [field]: 'x'.repeat(max + 100) })[field].length === max);
+    const contextMessages = buildMessages({ [field]: 'specific-context-value' }, [], 'what next?');
+    check(`${field} reaches grounded help`, contextMessages.at(-1).content.includes('specific-context-value'));
+  }
+  check('quiet play retains warmth', /Quiet play, short commands/.test(VESPER_SYSTEM));
+  check('generated dialogue makes no moderation guarantee', /Do not claim that generated output has been moderated/.test(VESPER_SYSTEM));
+  check('ship starts flight-ready', corpus.includes('flight-ready with three tanks'));
+  check('rescue keeps cargo safe', corpus.includes('aboard the ship with cargo safe'));
+  check('old cargo-loss promise removed', !/cargo dropped|dropped cargo|planet takes a tithe/.test(corpus));
+  check('obsolete pad requirement removed', !/a landing pad \(four steel panels|pads land exact|pad console/.test(everything));
+  check('survey has a single precise reward', corpus.includes('exactly one 18 kg solar wing'));
+  const { digPrice, createBurrow } = await import('../src/burrow.js');
+  check('starter costs match gameplay', corpus.includes(`first corridor to ${digPrice(createBurrow(), 'corridor')}`)
+    && corpus.includes(`first bunk to ${digPrice(createBurrow(), 'bunk')}`));
 }
 
 if (failed) { console.error(`verify-vesperbrain: ${failed} failure(s)`); process.exit(1); }

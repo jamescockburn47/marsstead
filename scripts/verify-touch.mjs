@@ -98,8 +98,10 @@ for (const s of ['foot', 'driving', 'lander']) {
 }
 ok(byName('foot', 'do').code === 'KeyE' && byName('foot', 'jump').hold,
   'on foot: E is the doing key, jump is held');
-ok(MORE_ITEMS.every(([, code]) => /^Key[A-Z]$/.test(code)),
-  'every MORE item is a plain key dispatch (devKeys gates them)');
+ok(MORE_ITEMS.every(([, code]) => /^(Key[A-Z]|Escape|Enter)$/.test(code)),
+  'every MORE item uses the shared input boundary');
+ok(['KeyO', 'KeyJ', 'Enter', 'Escape'].every(code => MORE_ITEMS.some(row => row[1] === code)),
+  'touch reaches orders, record, typed chat and pause');
 
 // ---- source-level wiring: the adapter is constructed, ticked, and speaks
 // only through the keyboard's own door
@@ -113,8 +115,8 @@ ok(/this\.touch\.tick\(\)/.test(main), 'main.js ticks the adapter each frame');
 ok(/dispatchEvent\(new KeyboardEvent\(type, \{ code \}\)\)/.test(touch),
   'buttons go through synthetic KeyboardEvents (devKeys owns all context)');
 ok(!/import .*three/i.test(touch), 'touch.js imports no THREE (identity invariant 3)');
-ok(/viewport-fit=cover/.test(html) && /user-scalable=no/.test(html),
-  'index.html viewport is touch-ready (safe areas, no pinch-zoom of the page)');
+ok(/viewport-fit=cover/.test(html) && !/user-scalable=no|maximum-scale=1/.test(html),
+  'safe areas retained while browser zoom remains available');
 ok(/const ts = this\.touchStick/.test(main) && /steer: -ts\.x/.test(main),
   'driving prefers the analog stick when a thumb holds it');
 ok(/!flags\.airborne && Math\.abs\(this\.buggy\.u\) > 0\.5/.test(main),

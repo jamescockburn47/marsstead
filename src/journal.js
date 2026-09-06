@@ -70,6 +70,15 @@ export class Journal {
   render(mystery, heritage) {
     const main = this.root.querySelector('#rmain');
     const entries = [];
+    if (this.underworld?.().completed.length) entries.push('<div class="rentry"><h2>THE WORKINGS</h2>'
+      + '<div class="where">BENEATH THE SETTLEMENT</div>'
+      + 'The mechanical workers follow a repeating manufacturing pattern. '
+      + `${this.underworld().completed.length}/3 instruments recorded. `
+      + (this.underworld().returned ? 'The recovered coordination pattern now speeds excavation by 15%.' : 'Return with the full survey to apply the pattern.') + '</div>');
+    if (this.fieldwork?.().claimed) entries.push('<div class="rentry"><h2>FIRST LIGHT</h2>'
+      + '<div class="where">THE LANDING SURVEY STATION</div>'
+      + 'Three sensors aligned: the horizon, the sky and light reflected from the ground. '
+      + 'The recovered solar wing is the first gift this place gave our home.</div>');
     for (const s of SITES) {
       if (mystery.found.includes(s.id)) {
         entries.push(`<div class="rentry"><h2>${s.relic.name.toUpperCase()}</h2>

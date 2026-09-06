@@ -46,27 +46,16 @@ export function fallSeverity(impactSpeed) {
 // pull. Stride length stretches vs Earth by roughly the g-ratio's benefit
 // on the ballistic phase; the numbers below are the tuned feel Phase 0
 // gates on, expressed as pure data so the walker and the verify agree.
-export const WALK_SPEED = 2.6;    // m/s
+export const HABITAT_WALK_SPEED = 1.55; // precise movement around furnishings
+export const WALK_SPEED = 2.5;    // m/s — an easy outdoor lope
 export const LOPE_SPEED = 6.0;    // m/s — the bounding run
 export const JUMP_V0 = 2.3;       // m/s — an honest suited jump (apex ~0.71 m,
                                   // hang ~1.24 s). Mars is 0.38 g, NOT the
                                   // Moon's 0.17: the read is "springy", never
                                   // "floating". Tuned down from 3.2 after the
                                   // playtest read as exaggerated moon-jumping.
-export const LOPE_HOP_V0 = 1.15;  // m/s — the lope's per-stride hop: the
-                                  // running gait IS a chain of small ballistic
-                                  // bounds (apex ~0.18 m, flight ~0.62 s,
-                                  // ~3.7 m covered per bound at LOPE_SPEED)
-export const STRIDE_HZ_WALK = 1.4; // strides/s at walk
-export const STRIDE_HZ_LOPE = 1.1; // slower cadence, longer flight — the bound
-
-// vertical bob of the suit's centre of mass through the stride, metres.
-// The lope spends real time airborne — bob amplitude grows with speed and
-// the low g lets it hang; this is the number the pose maths reads.
-export function strideBob(speed) {
-  const t = Math.max(0, Math.min(1, (speed - WALK_SPEED) / (LOPE_SPEED - WALK_SPEED)));
-  return 0.05 + 0.13 * t;
-}
+export const LOPE_HOP_V0 = 1.03; // max travelling push; .143 m apex, .554 s flight
+export const EASY_HOP_V0 = .70;  // .066 m apex; alternating low travelling steps
 
 // --- integration ------------------------------------------------------------
 

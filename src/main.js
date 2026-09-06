@@ -13,11 +13,14 @@
 // from the buggy · T work the nearest bench · X pack up the rig.
 
 import * as THREE from 'three';
+import { VesperDialogue } from './vesper-dialogue.js';
+import { dynamicVesperContext } from './vesper-context.js';
+import { installWeather } from './weather-runtime.js';
 import {
   latLonToWorld, worldToLatLon, HOME, IS_PLACEHOLDER, nearestFeature,
 } from './mars.js';
 import { meshGroundHeight } from './marschunk.js';
-import { sunElevation, sunAzimuth, solClock, solarLongitude, season, ltst } from './marstime.js';
+import { sunElevation, sunAzimuth, solClock, missionClock, solarLongitude, season, ltst } from './marstime.js';
 import { frostLineLat, morningFrost } from './frost.js';
 import {
   SITES, siteXZ, chainActive, signalStrength, sweepAt,
@@ -62,10 +65,10 @@ import {
 } from './power.js';
 import { mtc } from './marstime.js';
 import {
-  G_MARS, WALK_SPEED, LOPE_SPEED, JUMP_V0, LOPE_HOP_V0,
-  fallStep, fallSeverity,
+  WALK_SPEED, HABITAT_WALK_SPEED, LOPE_SPEED, fallSeverity,
 } from './physics.js';
 import { TerrainLayer } from './terrain.js';
+import { strideState, stepTravel, movementEase, movementHeading } from './locomotion.js';
 import { RockLayer } from './rocklayer.js';
 import { collidersNear, bumpsNear, bumpHeightAt } from './rocks.js';
 import { resolveCircle, buggyDiscs } from './collide.js';
@@ -82,7 +85,7 @@ import {
 } from './burrow.js';
 import { BurrowConsole } from './burrowconsole.js';
 import {
-  createRegard, applySignal, noteTalk, decay as regardDecay, tone as regardTone,
+  createRegard, applySignal, decay as regardDecay, tone as regardTone,
   verdict as regardVerdict, serializeRegard, deserializeRegard,
 } from './regard.js';
 import { WorksConsole } from './worksconsole.js';
@@ -101,8 +104,8 @@ import {
   ITEMS, SUIT_CAPACITY, ROVER_CAPACITY, createStore, add, canAdd, count,
   remove, transfer, loadLabel, massOf,
 } from './inventory.js';
-import { suitSay, cleanName, briefFallback } from './vesper.js';
-import { moodForEvent, sanitizeState, shouldBark } from './vesperbrain.js';
+import { cleanName } from './vesper.js';
+import { sanitizeState } from './vesperbrain.js';
 import { VesperVoice } from './vespervoice.js';
 import { visitBody, playBody, pingBody, insiderBody, duePing } from './marsdiag.js';
 import { canSleep, wakeMillis, bedworthy } from './sleep.js';
@@ -142,6 +145,22 @@ import { MachineLayer } from './machinelayer.js';
 import { LanderConsole } from './console.js';
 import { installKiosk } from './kiosk.js';
 import { startUpdateCheck } from './update-check.js';
+import { acceptFieldwork, firstLightGoal } from './fieldwork.js';
+import { normaliseSettings } from './playsettings.js';
+import { acceptOpening, seedStarterHome } from './opening.js';
+import { CrewSession } from './crew-session.js';
+import { activeCrewCount } from './crew-control.js';
+import { PlayExperience } from './playexperience.js';
+import { UnderSession } from './under-session.js';
+import { HabitatSession } from './habitat-session.js';
+import { acceptHabitatActivities } from './habitat-activities.js';
+import { HabitatActivitySession } from './habitat-activity-session.js';
+import { acceptUnderworld } from './underworld.js';
+import { installGameInput } from './gameinput.js';
+import { VesperComms } from './vesper-comms.js';
+import { PlaytestFeedback } from './playtest-feedback.js';
+import { suitStep, freezeSimulation } from './survival.js';
+import { poolCount, payCosts, refundMachine, depositCosts } from './worksite.js';
 
 // Harden the page against stray browser gestures (two-finger swipe-back,
 // long-press menu, text drag) and take it fullscreen on first interaction —
@@ -168,6 +187,12 @@ class Game {
     // no input, no speech, no HUD, and persist() never fires (booted
     // stays false). The Play choice reloads into a clean real start.
     this.attract = attract;
+    this.expedition = acceptFieldwork(save?.expedition);
+    this.activities = acceptHabitatActivities(save?.activities);
+    this.opening = acceptOpening(save?.opening);
+    this.underworld = acceptUnderworld(save?.underworld);
+    this.settings = normaliseSettings(save?.settings);
+    this.paused = false;
     // the settler's name: fresh entry at the title door wins; otherwise
     // the save's (applySave); VESPER falls back to "settler" gracefully
     this.settlerName = cleanName(settlerName);
@@ -248,10 +273,10 @@ class Game {
     this.heading = 0;
     this.camYaw = 0.6; this.camPitch = 0.32; this.camDist = 7;
 
-    // the clock: start late afternoon at HOME so the first minutes of play
-    // walk into the blue hour (the demo IS the sunset)
+    // New arrivals have daylight to learn home and make their first rover trip.
+    // The attract sequence retains its sunset; saved clocks are restored below.
     this.simMillis = Date.now();
-    this.calibrateToLocalHour(16.4);
+    this.calibrateToLocalHour(this.attract ? 16.4 : 9.3);
     this.missionStart = this.simMillis; // sol 1 of THIS landing (save carries it)
 
     // sleep: null, or { t, wake, jumped } while the night is skipped
@@ -291,19 +316,25 @@ class Game {
     this.machineLayer = new MachineLayer(this.scene);
 
     // ---- the Burrow: the underground home (never walked — doctrine 1);
-    // the crown is its surface presence, the console is its interior
+    // The crown, planning diagram and walkable habitat share the built rooms.
     this.burrow = createBurrow();
     this.droneCount = 3; // VESPER's hands, deployed from the lander's cargo
     this.crownPos = { x: -4, z: -16 };
     this.crownLayer = new CrownLayer(this.scene, this.crownPos.x, this.crownPos.z, meshGroundHeight);
     this.burrowUI = new BurrowConsole({
+      onEnterHome: () => this.habitat?.active ? this.burrowUI.close() : this.habitat?.enter(),
+      onExplore: () => this.habitat?.active ? this.habitat.explore() : this.under?.requestEnter(),
+      onClose: () => this.focusWorld(),
       getBurrow: () => this.burrow,
+      getDiscovery: () => this.expedition.complete,
+      reducedMotion: () => this.settings.reducedMotion,
       getDroneCount: () => this.droneCount,
       // the ring is HEAVY: it rides the rover's deck, not the suit — the
       // console accepts it from either, with the rover parked at the crown
       ringCarried: () => count(this.suit, 'airlock-ring') > 0
         || (Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z) < 9
-          && count(this.roverStore, 'airlock-ring') > 0),
+          && count(this.roverStore, 'airlock-ring') > 0)
+        || this.landerRingAvailable(),
       onPlan: (piece, c, d) => {
         if (planBurrow(this.burrow, piece, c, d)) {
           this.sayOnce('dig-start');
@@ -317,10 +348,14 @@ class Game {
         const fromSuit = count(this.suit, 'airlock-ring') > 0;
         const fromDeck = count(this.roverStore, 'airlock-ring') > 0
           && Math.hypot(this.buggy.x - this.crownPos.x, this.buggy.z - this.crownPos.z) < 9;
-        if (!fromSuit && !fromDeck) return;
+        const fromLander = this.landerRingAvailable();
+        if (!fromSuit && !fromDeck && !fromLander) return;
         if (installRing(this.burrow)) {
-          remove(fromSuit ? this.suit : this.roverStore, 'airlock-ring', 1);
+          if (fromSuit || fromDeck) remove(fromSuit ? this.suit : this.roverStore, 'airlock-ring', 1);
+          else takeOne(this.lander, 'airlock-ring');
           this.say('ring-installed');
+          this.experience?.sound.play('build');
+          this.persist();
         }
       },
       droneCarried: () => count(this.suit, 'drone-frame') > 0,
@@ -574,59 +609,15 @@ class Game {
     this.pendingVesperQuestion = false;
     this.lastSeason = null;
     this.lastRegardSol = 0;
-    this.voice = new VesperVoice({ onTranscript: (t) => this.talkToVesper(t) });
+    this.voice = new VesperVoice({ onTranscript: t => this.talkToVesper(t), onCaption: text => this.comms?.record('vesper', text), onListening: () => this.dialogue?.cancel() });
+    this.dialogue = new VesperDialogue(this, marssteadPid);
 
-    // ---- the text channel: ENTER opens a line to VESPER, typed words ride
-    // the same road as spoken ones (talkToVesper — history, rapport, relay)
-    this.chatBar = document.createElement('input');
-    this.chatBar.id = 'vesperchat';
-    this.chatBar.maxLength = 240;
-    this.chatBar.placeholder = 'say something to VESPER — ENTER sends · ESC closes';
-    this.chatBar.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);'
-      + 'width:min(560px,80vw);padding:10px 14px;display:none;z-index:50;'
-      + 'font-family:Georgia,serif;font-size:14px;letter-spacing:1px;text-align:center;'
-      + 'color:#f6ede2;background:rgba(20,11,7,.92);outline:none;border-radius:4px;'
-      + 'border:1px solid rgba(232,196,106,.55);';
-    document.body.appendChild(this.chatBar);
-    this.chatBar.addEventListener('keydown', (e) => {
-      e.stopPropagation(); // typing is not piloting
-      if (e.key === 'Enter') {
-        const text = this.chatBar.value.trim();
-        this.chatBar.value = '';
-        this.chatBar.style.display = 'none';
-        this.chatBar.blur();
-        if (text) { this.hud.say(`(you) ${text}`, this.t, 4); this.talkToVesper(text); }
-      } else if (e.key === 'Escape') {
-        this.chatBar.value = '';
-        this.chatBar.style.display = 'none';
-        this.chatBar.blur();
-      }
-    });
+    this.comms = new VesperComms(this);
+    this.chatBar = this.comms.input;
+    this.feedback = new PlaytestFeedback(this);
 
     this.keys = {};
-    addEventListener('keydown', (e) => {
-      if (this.attract) return;      // the reel takes no requests
-      if (document.activeElement === this.chatBar) return; // words, not verbs
-      if (e.key === 'Enter' && !this.buildMode && !this.map.visible) {
-        this.chatBar.style.display = 'block';
-        this.chatBar.focus();
-        return;
-      }
-      this.keys[e.code] = true; this.voice.poke(); this.devKeys(e);
-    });
-    addEventListener('keyup', (e) => {
-      if (document.activeElement === this.chatBar) return;
-      this.keys[e.code] = false;
-      if (e.code === 'KeyV') { this.voice.stopListening(); this.hud?.setEar(false); }
-    });
-    let dragging = false;
-    addEventListener('mousedown', () => { if (!this.attract) dragging = true; });
-    addEventListener('mouseup', () => { dragging = false; });
-    addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      this.camYaw -= e.movementX * 0.005;
-      this.camPitch = Math.max(0.05, Math.min(1.2, this.camPitch + e.movementY * 0.004));
-    });
+    installGameInput(this);
     addEventListener('resize', () => {
       this.cam.aspect = innerWidth / innerHeight;
       this.cam.updateProjectionMatrix();
@@ -635,6 +626,12 @@ class Game {
     });
 
     if (save) this.applySave(save);
+    else if (!this.attract) {
+      seedStarterHome(this);
+      this.machineLayer.sync(this.machines, meshGroundHeight);
+      this.camYaw = Math.atan2(this.crownPos.x - this.pos.x, this.crownPos.z - this.pos.z);
+      this.camPitch = .16; this.heading = this.camYaw;
+    }
     // the name-as-key door (James, 2026-07-20): a settler named with the
     // warden key IS the warden — the mark rides the save itself, so it
     // survives any browser, any device, any cleared storage
@@ -648,7 +645,7 @@ class Game {
     this.lastPersist = 0;
     // best-effort parting save: the planet keeps what it was given
     addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.persist();
+      if (document.visibilityState === 'hidden') { this.dialogue?.cancel(); this.persist(); }
     });
     addEventListener('beforeunload', () => this.persist());
 
@@ -683,8 +680,15 @@ class Game {
     this.touch = new TouchControls(this);
     this.touch.sync();
 
-    this.say('wake');
     this.t = 0;
+    if (!this.attract) installWeather(this, save, meshGroundHeight);
+    if (!this.attract) this.crew = new CrewSession(this);
+    if (!this.attract) this.experience = new PlayExperience(this, meshGroundHeight);
+    if (!this.attract) this.under = new UnderSession(this);
+    if (!this.attract) this.habitat = new HabitatSession(this);
+    if (!this.attract) this.activityLoop = new HabitatActivitySession(this, meshGroundHeight);
+    if (!this.attract) this.dialogue.checkConnection();
+    this.say('wake');
     this.last = performance.now();
     this.ready = true;
     requestAnimationFrame((n) => this.frame(n));
@@ -692,6 +696,8 @@ class Game {
 
   // restore an accepted save: only authored facts — the world re-derives
   applySave(s) {
+    this.activities = acceptHabitatActivities(s.activities);
+    this.opening = acceptOpening(s.opening);
     this.simMillis = s.simMillis;
     this.heading = s.heading;
     this.air = s.air; this.warm = s.warm;
@@ -785,7 +791,7 @@ class Game {
     // slate; never write from a page that hasn't fully woken up
     if (!saveWorthy(this)) return; // a poisoned clock or walker must never
     // overwrite a good save — acceptSave would discard it all on boot
-    saveGame(snapshotSave({
+    return saveGame(snapshotSave({
       simMillis: this.simMillis,
       pos: this.pos, heading: this.heading,
       air: this.air, warm: this.warm,
@@ -810,6 +816,12 @@ class Game {
       prospected: this.prospected,
       fab: this.fab,
       machines: this.machines,
+      expedition: this.expedition,
+      underworld: this.underworld,
+      activities: this.activities,
+      opening: this.opening,
+      weather: this.weather, weatherEquipment: this.weatherEquipment,
+      settings: this.settings,
       trail: serializeTrail(this.trail),
       burrow: serializeBurrow(this.burrow),
       restedQ: this.restedQ || 0,
@@ -829,7 +841,11 @@ class Game {
         x: this.sled.x, z: this.sled.z, heading: this.sled.heading,
         slots: this.sled.store.slots,
       },
-    })).catch(() => {});
+    })).catch((error) => {
+      this.hud.say('Save could not be written. Keep this tab open and try again.', this.t, 12);
+      console.error('Save failed', { name: error?.name || 'StorageError' });
+      return false;
+    });
   }
 
   // wipe the slate and start the landing again (the live handle's lever)
@@ -847,6 +863,9 @@ class Game {
   }
 
   devKeys(e) {
+    if (this.habitat?.active) { this.habitat.key(e); return; }
+    if (this.under?.active) { this.under.key(e); return; }
+    if (['KeyM', 'KeyO', 'KeyJ'].includes(e.code)) this.clearInput();
     if (e.code === 'KeyL') {
       // cycle auto -> on -> off -> auto (auto is the default: dusk decides)
       this.lampMode = this.lampMode === 'auto' ? 'on' : this.lampMode === 'on' ? 'off' : 'auto';
@@ -860,6 +879,9 @@ class Game {
     if (e.code === 'KeyC' && this.inLander) this.console.toggleExpand();
     if (e.code === 'KeyB' && !this.driving && !this.sleepAnim) {
       this.buildMode = !this.buildMode;
+      if (this.buildMode && this.expedition.claimed && !this.expedition.complete) {
+        this.buildSel = [...Object.keys(PART_TYPES), ...Object.keys(MACHINE_TYPES)].indexOf('solar-array');
+      }
       if (!this.buildMode) {
         this.steadLayer.showGhost(null);
         this.steadLayer.clearLeaks();
@@ -895,6 +917,17 @@ class Game {
   distToLander() {
     return Math.hypot(this.pos.x - this.landerPos.x, this.pos.z - this.landerPos.z);
   }
+  landerRingAvailable() {
+    return (this.lander.stock['airlock-ring'] || 0) > 0
+      && Math.hypot(this.landerPos.x - this.crownPos.x, this.landerPos.z - this.crownPos.z) < 24;
+  }
+  workStores() {
+    const stores = [this.suit];
+    if (this.distToRover() < 9) stores.push(this.roverStore);
+    if (this.distToLander() < 9) stores.push(this.shipHold);
+    if (this.sled && Math.hypot(this.pos.x - this.sled.x, this.pos.z - this.sled.z) < 9) stores.push(this.sled.store);
+    return stores;
+  }
   // the hatch is up the ladder, on the lander's +z face
   distToLadder() {
     return Math.hypot(this.pos.x - this.landerPos.x,
@@ -927,24 +960,22 @@ class Game {
   consoleModel() {
     const missionSol = Math.max(1,
       Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
-    const phase = !this.sleptOnce ? 'shakedown — hull salvage locked'
-      : this.everPressurised ? 'the full ledger' : 'construction';
-    const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
+    const phase = this.expedition.complete ? 'first light — home growing' : 'first light — landfall';
+    const tau = this.currentTau?.() ?? tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
     const temp = surfaceTempC(this.sunEl ?? 0, tau);
-    const bedworthyBuilt = this.analysis.volumes
-      .some((v) => v.cells.length >= 6 && canPressurise(v, true));
+    const bedworthyBuilt = burrowBedworthy(this.burrow);
     return {
       sol: `${missionSol}`,
       clock: solClock(this.simMillis),
       season: season(this.simMillis),
       phase,
       objectives: [
-        ['rest a night aboard', this.sleptOnce],
-        ['prospect an ore body', this.prospected.size > 0],
-        ['seal a volume', this.saidFirsts.has('first-seal')],
-        ['pressurise the first hab', this.everPressurised],
+        ['plan your first shaft', this.burrow.cells.size > 0],
+        ['align the light sensors', this.expedition.claimed],
+        ['bring solar power home', this.expedition.complete],
+        ['fit the airlock ring', this.burrow.ringInstalled],
         ['cook steel from Mars', this.saidFirsts.has('fab-first-steel')],
-        ['raise a hab that beats the lander', bedworthyBuilt],
+        ['make a sheltered bunk', bedworthyBuilt],
       ],
       air: `${Math.round(this.air * 100)}`,
       warm: `${Math.round(this.warm * 100)}`,
@@ -954,7 +985,7 @@ class Game {
       shelter: this.sheltered() ? 'within reach' : 'none in reach',
       suit: loadLabel(this.suit),
       rover: loadLabel(this.roverStore),
-      hull: `${remainingTotal(this.lander)} parts${this.sleptOnce ? '' : ' (locked)'}`,
+      hull: `${remainingTotal(this.lander)} parts available`,
       fab: `${fabOutCount(this.fab)} ready · ${this.fab.queue.length} cooking`,
       machines: this.machines.length
         ? this.machines.map((m) => `${m.type}${m.queue.length ? '*' : ''}`).join(', ')
@@ -1028,6 +1059,8 @@ class Game {
     const r = this.rig;
     if (r.deployed) {
       const n = hopperCount(r);
+      if ((this.weatherEfficiency?.(this.weatherEquipment?.rig) ?? 1) <= 0)
+        return `Rig paused: ${this.weatherEquipment.rig.secured ? 'remove its cover' : 'clean storm dust'} in Weather${n ? ` · |*E| take ore ×${n}` : ''} · |*X| pack up`;
       const take = n > 0 ? `|*E| take ore ×${n} · ` : 'drilling… · ';
       return `${take}|*X| pack up`;
     }
@@ -1095,7 +1128,7 @@ class Game {
     // The shake channel trembles the whole shot — craft, camera, world —
     // by jittering the one position everything hangs from (deterministic:
     // sines of the sim clock, never Math.random)
-    const sh = (snap.shake || 0) * 0.14;
+    const sh = this.settings.reducedMotion ? 0 : (snap.shake || 0) * 0.14;
     const jx = sh * Math.sin(this.t * 23.7), jy = sh * 0.7 * Math.sin(this.t * 31.3);
     const jz = sh * Math.sin(this.t * 27.1 + 1.7);
     this.pos.set(snap.x + jx, groundY + snap.alt + jy, snap.z + jz);
@@ -1213,6 +1246,7 @@ class Game {
     // the buggy parks in the yard for the stead shot (the drive shot
     // re-seats it at the ridge each pass)
     this.buggy = createBuggy(A.x + 7, A.z + 15, 2.3);
+    this.buggy.y = this.wheelGround(this.buggy.x, this.buggy.z, this.buggy.heading).h;
     // the descent's vista, built ONCE and WORLD-WIDE (one full E-W wrap:
     // no square edge can show) — rebuilding a far-field every loop pass
     // is a visible stall; in attract it only ever toggles
@@ -1247,6 +1281,7 @@ class Game {
       if (shot.id === 'drive') {
         const D = this.attractDriveAt;
         this.buggy = createBuggy(D.x, D.z, 1.15);
+        this.buggy.y = this.wheelGround(D.x, D.z, this.buggy.heading).h;
       }
     }
     this.air = 1; this.warm = 1;                  // the reel never suffocates
@@ -1332,38 +1367,31 @@ class Game {
   // fabricator — clear the out-tray into the bags, then feed it raw
   workFab() {
     if (this.driving) return;
-    const roverClose = this.distToRover() < 9;
+    const stores = this.workStores();
     const m = this.nearestMachine();
     if (m) {
       for (const id of Object.keys(m.out)) {
-        while (m.out[id] && canAdd(this.suit, id, 1)) {
+        while (m.out[id] && depositCosts(stores, [[id, 1]])) {
           machineTake(m, id, 1);
-          add(this.suit, id, 1);
         }
       }
       for (const raw of Object.keys(MACHINE_TYPES[m.type].recipes)) {
-        remove(this.suit, raw, machineFeed(m, raw, count(this.suit, raw)));
-        if (roverClose) remove(this.roverStore, raw, machineFeed(m, raw, count(this.roverStore, raw)));
+        for (const store of stores) remove(store, raw, machineFeed(m, raw, count(store, raw)));
       }
       return;
     }
     if (this.distToLander() > 7) return;
     for (const id of Object.keys(this.fab.out)) {
-      while (this.fab.out[id] && canAdd(this.suit, id, 1)) {
+      while (this.fab.out[id] && depositCosts(stores, [[id, 1]])) {
         fabTake(this.fab, id, 1);
-        add(this.suit, id, 1);
       }
     }
     for (const raw of Object.keys(RECIPES)) {
       // fabFeed reports what the queue accepted; only THAT leaves the bag
-      remove(this.suit, raw, fabFeed(this.fab, raw, count(this.suit, raw)));
-      if (roverClose) {
-        remove(this.roverStore, raw, fabFeed(this.fab, raw, count(this.roverStore, raw)));
-      }
+      for (const store of stores) remove(store, raw, fabFeed(this.fab, raw, count(store, raw)));
     }
   }
   salvageTarget() {
-    if (!this.sleptOnce) return null; // shakedown: the hull isn't inventory yet
     const opts = available(this.lander);
     if (!opts.length) return null;
     return opts[((this.salvageSel % opts.length) + opts.length) % opts.length];
@@ -1371,10 +1399,18 @@ class Game {
 
   // E is THE doing key: the cabin door, the rover, the rig, the bolts
   interact() {
+    if (this.activityLoop?.interactSurface()) return;
+    if (this.distToCrown() >= 4 && this.crew?.interact()) return;
     if (this.hopFlight) return; // nothing to do but ride
+    if (this.experience?.interact()) return;
     if (this.burrowUI.visible) { this.burrowUI.close(); return; }
     if (this.worksUI.visible) { this.worksUI.close(); return; }
     if (this.hopUI.visible) { this.hopUI.close(); return; }
+    if (!this.inLander && !this.driving && this.distToCrown() < 4) {
+      this.burrowUI.open();
+      this.sayOnce('crown-first');
+      return;
+    }
     // the sweep's heart: reading the ground IS the act of the chain
     if (!this.inLander && !this.driving && this.activeSignal
       && this._sweepDist < SWEEP_M && !this.reading) {
@@ -1405,11 +1441,6 @@ class Game {
       && this.distToRover() >= 3.2 && this.distToCrown() >= 4
       && !(this.distToLander() < 6 && this.salvageTarget())) {
       this.worksUI.open();
-      return;
-    }
-    if (!this.inLander && !this.driving && this.distToCrown() < 4) {
-      this.burrowUI.open();
-      this.sayOnce('crown-first');
       return;
     }
     if (this.inLander) { this.exitLander(); return; }
@@ -1503,6 +1534,10 @@ class Game {
     } else {
       const d = Math.hypot(this.pos.x - this.buggy.x, this.pos.z - this.buggy.z);
       if (d < 3.2) {
+        if (this.weatherEquipment?.rover.secured) {
+          this.hud.say('Rover secured. Open Weather and remove its cover before boarding.', this.t, 6);
+          this.weatherSession.open(); return;
+        }
         this.driving = true;
         this.buggyLayer.group.add(this.colonist.group);
         this.colonist.group.position.set(0, -0.02, -0.12);
@@ -1522,9 +1557,8 @@ class Game {
   }
 
   sheltered() {
-    return this.distToLander() < 7
-      || (this.insidePressurised && bedworthy(this.insideVolume))
-      || (burrowBedworthy(this.burrow) && this.distToCrown() < 7);
+    if (this.habitat?.active) return !!this.burrow.ringInstalled && this.habitat.room?.piece === 'bunk';
+    return !!(this.inLander || (this.insidePressurised && bedworthy(this.insideVolume)));
   }
 
   // ---- building --------------------------------------------------------
@@ -1541,13 +1575,18 @@ class Game {
   // array): show and spend the payable list, falling back to the base
   costsOf(type) {
     if (this.isMachine(type)) {
-      return payableCosts(type, (id) => count(this.suit, id)) ?? MACHINE_TYPES[type].costs;
+      return payableCosts(type, (id) => poolCount(this.workStores(), id)) ?? MACHINE_TYPES[type].costs;
     }
     return PART_TYPES[type].costs;
   }
 
   canAfford(type) {
-    return this.costsOf(type).every(([id, n]) => count(this.suit, id) >= n);
+    return this.costsOf(type).every(([id, n]) => poolCount(this.workStores(), id) >= n);
+  }
+  machineCharge(type) {
+    // A recovered complete wing unfolds; manufacturing a new machine costs more.
+    return type === 'solar-array' && this.costsOf(type).some(([id]) => id === 'solar-wing')
+      ? 0.5 : BUILD_KWH.machine;
   }
 
   // slope of the drawn ground at (x, z), rise over run
@@ -1571,10 +1610,16 @@ class Game {
     if (!canPlaceMachine(type, this.slopeAt(x, z), this.machines, x, z)
       || !this.canAfford(type)) return;
     // the nanofab spends the bank: structure IS charge (the currency rule)
-    if (!spend(this.power, BUILD_KWH.machine)) { this.say('no-charge'); return; }
-    for (const [id, n] of this.costsOf(type)) remove(this.suit, id, n);
-    this.machines.push(createMachine(type, x, z, this.camYaw));
+    const paid = payCosts(this.workStores(), this.costsOf(type), this.power, this.machineCharge(type));
+    if (!paid) { this.say('no-charge'); return; }
+    this.machines.push(createMachine(type, x, z, this.camYaw, paid));
     this.machineLayer.sync(this.machines, meshGroundHeight);
+    if (type === 'solar-array' && this.expedition.claimed
+      && Math.hypot(x - this.crownPos.x, z - this.crownPos.z) < 35) {
+      this.expedition.complete = true;
+      this.hud.say('FIRST LIGHT — your survey now powers your home. The field record is on display in the Burrow.', this.t, 12);
+    }
+    this.experience?.sound.play('build'); this.persist();
     // a bench raised on the heels of a conversation: a plan shared
     if (this.t - this.lastTalk < 45) applySignal(this.regard, 'consulted');
   }
@@ -1587,15 +1632,10 @@ class Game {
     });
     if (best < 0) return;
     const m = this.machines[best];
-    const costs = MACHINE_TYPES[m.type].costs;
-    const refundKg = costs.reduce((kg, [id, n]) => kg + ITEMS[id].kg * n, 0);
-    let dest = null;
-    if (massOf(this.suit) + refundKg <= SUIT_CAPACITY) dest = this.suit;
-    else if (this.distToRover() < 9 && massOf(this.roverStore) + refundKg <= ROVER_CAPACITY) dest = this.roverStore;
-    if (!dest) { this.say('suit-full'); return; }
+    if (!refundMachine(m, this.workStores())) { this.say('suit-full'); return; }
     this.machines.splice(best, 1);
-    for (const [id, n] of costs) add(dest, id, n);
     this.machineLayer.sync(this.machines, meshGroundHeight);
+    this.persist();
   }
 
   // the grid anchor: fixed at first placement, previewed before it —
@@ -1628,13 +1668,14 @@ class Game {
     if (this.isMachine(type)) { this.placeMachine(type); return; }
     const key = this.buildCursor(false);
     if (!key || !this.placementOk(key, type)) return;
-    if (!spend(this.power, BUILD_KWH.steadPart)) { this.say('no-charge'); return; }
+    if (!payCosts(this.workStores(), PART_TYPES[type].costs, this.power, BUILD_KWH.steadPart)) {
+      this.say('no-charge'); return;
+    }
     if (this.steadBaseY === null) {
       this.steadBaseY = this.buildBaseY();
       this.steadLayer.setBase(this.steadBaseY);
       this.steadOrigin = { x: this.pos.x, z: this.pos.z };
     }
-    for (const [id, n] of PART_TYPES[type].costs) remove(this.suit, id, n);
     place(this.stead, key, type);
     this.steadLayer.sync(this.stead, meshGroundHeight);
     this.afterBuildChange();
@@ -1741,62 +1782,8 @@ class Game {
     this.machineLayer.showGhost(null);
   }
 
-  say(event) {
-    if (this.attract) return; // the reel is silent — no barks, no relay
-    // ambience yields to conversation (safety and feedback always land)
-    if (!shouldBark(event, this.t - this.lastTalk)) return;
-    const n = this.saidCounts[event] || 0;
-    this.saidCounts[event] = n + 1;
-    // the instrument channel: instant, deterministic, relay-proof — the
-    // events a player must hear NOW (safety, refusals, mechanics)
-    const instr = suitSay(event, n, this.settlerName);
-    if (instr) {
-      this.hud.say(instr, this.t);
-      this.voice.speak(instr, moodForEvent(event, sanitizeState(this.brainState())));
-      return;
-    }
-    // everything else is the MIND's to notice: one live line, in her own
-    // words, with your shared history in reach. A missed bark is silence,
-    // never noise — the rapport rule: canned personality is dead.
-    this.barkLive(event);
-  }
-
-  barkLive(event) {
-    // she speaks when there is SOMETHING TO SAY: firsts and milestones
-    // always; repeat scenery rarely (2.5 min global, 10 min per subject)
-    const gap = this.t - (this.lastBarkAt ?? -999);
-    const first = !this.saidFirsts.has(event);
-    this.lastBarkByEvent = this.lastBarkByEvent || {};
-    const sameGap = this.t - (this.lastBarkByEvent[event] ?? -9999);
-    if (!first && (gap < 150 || sameGap < 600)) return;
-    this.lastBarkAt = this.t;
-    this.lastBarkByEvent[event] = this.t;
-    fetch('/brain/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        state: sanitizeState(this.brainState()),
-        history: this.vesperHistory.slice(-4),
-        bark: event,
-        pid: marssteadPid(),
-      }),
-      signal: AbortSignal.timeout(14000),
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
-      .then(({ line, mood }) => {
-        if (!line) return;
-        this.vesperHistory.push({ who: 'vesper', text: line });
-        while (this.vesperHistory.length > 8) this.vesperHistory.shift();
-        this.hud.say(line, this.t, Math.max(7, line.length / 12));
-        this.voice.speak(line, mood || 'calm', { live: true });
-      })
-      .catch(() => {
-        // a missed scenery notice harms nothing — but the BRIEFING must
-        // land even relay-down: the deterministic floor teaches
-        const fb = briefFallback(event, this.settlerName);
-        if (fb) this.hud.say(fb, this.t, Math.max(7, fb.length / 12));
-      });
-  }
+  say(event) { return this.dialogue?.say(event); }
+  barkLive(event) { return this.dialogue?.bark(event); }
   sayOnce(event) {
     if (this.saidFirsts.has(event)) return;
     this.saidFirsts.add(event);
@@ -1809,21 +1796,29 @@ class Game {
   brainState() {
     const missionSol = Math.max(1,
       Math.floor((this.simMillis - this.missionStart) / 88775244) + 1);
-    const tau = tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
+    const tau = this.currentTau?.() ?? tauAt(mtc(this.simMillis), Math.floor(this.simMillis / 88775244));
     return {
+      currentGoal: this.habitat?.active ? 'Inhabit and improve the home you built' : this.under?.active ? 'Explore the machine workings and return safely' : firstLightGoal(this).title,
+      helpContext: (this.weatherNow ? `Weather: ${this.weatherNow.phase}; ${this.weatherNow.cold ? 'cold night' : 'daytime'}. Weather panel secures nearby equipment, recalls crew from home and cleans storm dust. Only sealed rooms or the cabin protect you. ` : '') + (this.habitat?.active ? `Inside your built ${this.habitat.room?.piece || 'room'}. Sealed rooms restore warmth and air. E rests in bunks after sunset; Q/F climb shaft levels; B plans rooms. Surface exit is always available.` : this.under?.active ? 'Underground. E uses instruments; F cycles Survey/Worklight/Beacon. Amber cable leads home. Workers never attack. Surface return always available.' : firstLightGoal(this).detail + (this.opening ? ` This arrival has a supplied sealed bunk, workshop, battery and prepaid lower passage. Current crew mode: ${this.opening.fleetMode}. Use the actual current goal; do not prescribe rebuilding supplied rooms.` : '')),
+      nearbyActions: this.habitat?.active ? this.activityLoop?.brief() : this.under?.active ? 'E use instrument. F change light mode. V hold to talk. Return to surface is always available.' : this.hud.prompt.textContent,
+      cargo: Object.keys(ITEMS).filter(id => poolCount(this.workStores(), id))
+        .map(id => `${poolCount(this.workStores(), id)} ${ITEMS[id].name}`).join(', '),
+      sharedDiscovery: this.underworld.completed.length ? `Underground instruments recorded: ${this.underworld.completed.join(', ')}. Returned: ${this.underworld.returned}. These are mechanical worker drones, not organic creatures.`
+        : this.expedition.complete ? 'We aligned the First Light station and installed its solar wing at home.'
+        : this.expedition.claimed ? 'We aligned three light sensors and recovered a solar wing; it still needs installing at home.' : '',
       settlerName: this.settlerName,
       talks: this.talks || 0,
       milestones: [...this.saidFirsts].slice(-8).join(', '),
       sol: missionSol,
-      clock: solClock(this.simMillis),
+      clock: missionClock(this.simMillis, this.missionStart, worldToLatLon(this.pos.x, this.pos.z).lon).split(' · ')[1],
       season: season(this.simMillis),
       sunEl: this.sunEl ?? 0,
       tempC: surfaceTempC(this.sunEl ?? 0, tau),
       tau,
       air: Math.round(this.air * 100),
       warm: Math.round(this.warm * 100),
-      sheltered: this.sheltered(),
-      inside: !!(this.inLander || this.insidePressurised),
+      sheltered: this.weatherSheltered?.() ?? !!this.inLander,
+      inside: !!(this.inLander || this.insidePressurised || (this.habitat?.active && this.burrow.ringInstalled)),
       driving: !!this.driving,
       lamp: !!this.lampLit,
       steadParts: this.stead.parts.size,
@@ -1834,64 +1829,19 @@ class Game {
       warrenShelter: Math.round(warrenReport(this.burrow).shelter * 100),
       warrenAir: Math.round(warrenReport(this.burrow).air * 100),
       drones: this.droneCount,
-      bankCharge: this.grid ? this.grid.charge : 0,
-      bankCap: this.grid ? this.grid.capacity : 0,
+      bankCharge: this.grid?.charge ?? null,
+      bankCap: this.grid?.capacity ?? null,
       gridShed: this.grid && this.grid.shed.length ? this.grid.shed.join(', ') : '',
       benches: [...new Set(this.machines.map((m) => m.type))].join(', '),
       lastLine: this.hud.vesperLine.textContent,
       pairing: regardTone(this.regard),
+      ...dynamicVesperContext(this),
     };
   }
 
   // the live brain: settler speech in, VESPER's reply out — async, off the
   // render path, and every failure lands on the canned floor (radio-static)
-  talkToVesper(raw) {
-    this.hud?.setEar(false);
-    const text = (raw || '').trim();
-    if (!text) return;
-    this.lastTalk = this.t;
-    this.talks = (this.talks || 0) + 1;
-    this.vesperHistory.push({ who: 'you', text });
-    while (this.vesperHistory.length > 8) this.vesperHistory.shift();
-    // the zero-token signals (regard.js): her question answered; company
-    // kept in the dark hours. The semantic ones ride the reply's tag.
-    noteTalk(this.regard, Math.floor(this.simMillis / 88775244));
-    if (this.pendingVesperQuestion) {
-      applySignal(this.regard, 'answered');
-      this.pendingVesperQuestion = false;
-    }
-    if ((this.sunEl ?? 0) < 0 && !this.inLander && !this.insidePressurised) {
-      applySignal(this.regard, 'company');
-    }
-    const body = JSON.stringify({
-      state: sanitizeState(this.brainState()),
-      history: this.vesperHistory.slice(-6),
-      text,
-      pid: marssteadPid(),
-    });
-    fetch('/brain/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: AbortSignal.timeout(20000),
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`relay ${r.status}`))))
-      .then(({ line, mood, tag }) => {
-        if (!line) throw new Error('empty reply');
-        this.lastTalk = this.t;
-        this.vesperHistory.push({ who: 'vesper', text: line });
-        this.hud.say(line, this.t, Math.max(7, line.length / 12));
-        this.voice.speak(line, mood || 'calm', { live: true });
-        // the ~5-token pairing tag: the model's judgement of the
-        // EXCHANGE's shape feeds the hidden score; her question, if she
-        // asked one, arms the answered signal for the next reply
-        if (tag === 'P' || tag === 'N' || tag === 'D') {
-          applySignal(this.regard, `tag-${tag}`);
-        }
-        this.pendingVesperQuestion = /\?\s*$/.test(line);
-      })
-      .catch(() => this.say('radio-static'));
-  }
+  talkToVesper(raw) { return this.dialogue?.talk(raw); }
 
   frame(now) {
     // a non-finite timestamp (a manual frame() call, a broken RAF) would
@@ -1902,8 +1852,29 @@ class Game {
     // a negative dt (anti-damped springs explode)
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
+    if (freezeSimulation(this)) {
+      this.activityLoop?.step(0);
+      this.refreshMap();
+      this.experience?.sound.setPaused(true);
+      this.experience?.update(0);
+      this.touch.tick(); this.renderFrame(0);
+      requestAnimationFrame((n) => this.frame(n)); return;
+    }
+    this.experience?.sound.setPaused(false);
     this.t += dt;
     this.simMillis += dt * 1000 * TIME_SCALE;
+    this.activityLoop?.step(dt);
+
+    if (this.habitat?.active) {
+      this.frameWorld(dt); this.habitat.step(dt); this.experience.update(0); this.touch.tick();
+      this.watchFrame(dt); this.renderFrame(dt); requestAnimationFrame(n => this.frame(n)); return;
+    }
+    if (this.under?.active) {
+      this.frameWorld(dt); // surface industry continues; proximity/vitals are isolated below
+      this.under.step(dt); this.experience.update(0); this.touch.tick();
+      this.watchFrame(dt);
+      this.renderFrame(dt); requestAnimationFrame(n => this.frame(n)); return;
+    }
 
     if (this.attract) {
       this.frameAttract(dt);      // the reel owns the frame behind the title
@@ -1921,6 +1892,7 @@ class Game {
 
     // ---- the light of Mars
     this.frameWorld(dt);
+    this.experience?.update(dt);
     this.touch.tick();
     this.watchFrame(dt);
     if (!this.attract) this.maybePing();
@@ -1989,6 +1961,8 @@ class Game {
   // Every drive is a deterministic function of light state already in hand —
   // no luminance readback, the family rule.
   renderFrame(dt) {
+    if (this.habitat?.active) { this.habitat.render(dt); return; }
+    if (this.under?.active) { this.under.render(dt); return; }
     // the visor mirrors the painted sky by day and goes quiet by night
     this.colonist.setDaylight(dayFactor(this.sunEl ?? 45));
     if (this.post && this.gfxQuality === 'fine') {
@@ -2030,21 +2004,19 @@ class Game {
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const wish = new THREE.Vector3();
     if (!this.cycling && !this.burrowUI.visible && !this.worksUI.visible
-      && !this.orders.visible) {
+      && !this.orders.visible && !this.crew?.visible && !this.weatherSession?.visible) {
       if (this.keys.KeyW) wish.add(fwd);
       if (this.keys.KeyS) wish.sub(fwd);
       if (this.keys.KeyA) wish.add(right);
       if (this.keys.KeyD) wish.sub(right);
     }
     const loping = this.keys.ShiftLeft || this.keys.ShiftRight;
-    const speed0 = this.vel.length();
     const target = wish.lengthSq() > 0
-      ? wish.normalize().multiplyScalar(loping ? LOPE_SPEED : WALK_SPEED)
+      ? wish.normalize().multiplyScalar(this.insidePressurised ? HABITAT_WALK_SPEED : loping ? LOPE_SPEED : WALK_SPEED)
       : new THREE.Vector3();
     // low-traction ease: momentum carries a little on the dusty regolith,
     // more while airborne (you can't steer off the ground)
-    const ease = this.airborne ? 0.4 : 6;
-    this.vel.lerp(target, Math.min(1, ease * dt));
+    this.vel.lerp(target, movementEase(dt, this.airborne, target.lengthSq() > 0));
     const px = this.pos.x, pz = this.pos.z;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
@@ -2061,8 +2033,10 @@ class Game {
       const res = resolveCircle(this.pos.x, this.pos.z, 0.35, solids);
       this.pos.x = res.x; this.pos.z = res.z;
     }
+    // Animation follows actual collision-resolved travel, not a wish into a wall.
+    if (dt > 0) { this.vel.x = (this.pos.x - px) / dt; this.vel.z = (this.pos.z - pz) / dt; }
     if (this.vel.lengthSq() > 0.05) {
-      this.heading = Math.atan2(this.vel.x, this.vel.z);
+      this.heading = movementHeading(this.heading, this.vel.x, this.vel.z, dt);
       this.sayOnce('first-steps');
       if (loping) this.sayOnce('lope');
       this.idleTimer = 0;
@@ -2073,26 +2047,20 @@ class Game {
     }
 
     const ground = this.groundAt(this.pos.x, this.pos.z);
-    if (!this.airborne && this.keys.Space && !this.cycling) {
-      this.vy = JUMP_V0; this.airborne = true;
+    const manualJump = !this.airborne && this.keys.Space && !this.cycling;
+    if (manualJump) {
+      this.keys.Space = false;
+      this.experience?.sound.play('jump');
       this.sayOnce('first-jump');
-    } else if (!this.airborne && loping && speed0 > 3.2) {
-      // the LOPE: running is a chain of small ballistic bounds — each
-      // stride leaves the ground for real (LOPE_HOP_V0's ~0.6 s flight)
-      this.vy = LOPE_HOP_V0; this.airborne = true;
     }
-    if (this.airborne) {
-      this.vy = fallStep(this.vy, dt, G_MARS);
-      this.pos.y += this.vy * dt;
-      if (this.pos.y <= ground) {
-        if (fallSeverity(this.vy) > 0.15) this.say('fall');
-        this.pos.y = ground; this.vy = 0; this.airborne = false;
-      }
-    } else {
-      this.pos.y = ground;
-      // walked off an edge?
-      if (this.pos.y - ground > 0.01) this.airborne = true;
-    }
+    this.boundStride ??= strideState();
+    const impact = this.vy;
+    const travel = stepTravel(this.boundStride, dt, { speed: this.vel.length(),
+      contact: this.colonist.rig.supportHint(this.pos.x, this.pos.z, this.heading),
+      moving: target.lengthSq() > 0 && !this.insidePressurised,
+      airborne: this.airborne, vy: this.vy, y: this.pos.y, ground, manualJump });
+    if (this.airborne && !travel.airborne && fallSeverity(impact) > .15) this.say('fall');
+    this.pos.y = travel.y; this.vy = travel.vy; this.airborne = travel.airborne;
 
     const speed = this.vel.length();
     this.colonist.group.position.copy(this.pos);
@@ -2100,6 +2068,7 @@ class Game {
       x: this.pos.x, z: this.pos.z, heading: this.heading,
       vx: this.vel.x, vz: this.vel.z, speed,
       airborne: this.airborne, vy: this.vy,
+      gait: travel.gait, y: this.pos.y,
       groundAt: (gx, gz) => this.groundAt(gx, gz),
       simT: this.simMillis / 1000,
     });
@@ -2134,7 +2103,7 @@ class Game {
           const toSuit = canAdd(this.suit, id, 1);
           const dest = toSuit ? this.suit
             : (this.distToRover() < 9 ? this.roverStore : null);
-          if (dest && takeOne(this.lander, id) && add(dest, id, 1)) {
+          if (dest && canAdd(dest, id, 1) && takeOne(this.lander, id) && add(dest, id, 1)) {
             this.sayOnce('salvage-first');
             if (id === 'airlock-ring') this.say('ring-taken');
           }
@@ -2208,12 +2177,12 @@ class Game {
     } else if (this.buildMode) {
       const type = this.buildablePart();
       const t = MACHINE_TYPES[type] ?? PART_TYPES[type];
-      const have = t.costs
-        .map(([id, n]) => `${count(this.suit, id)}/${n} ${ITEMS[id].name.toLowerCase()}`)
+      const have = this.costsOf(type)
+        .map(([id, n]) => `${poolCount(this.workStores(), id)}/${n} ${ITEMS[id].name.toLowerCase()}`)
         .join(' + ');
       const seal = this.insidePressurised ? ' · PRESSURISED'
         : this.leaks.length ? ' · leaking — follow the markers' : '';
-      const kwh = this.isMachine(type) ? BUILD_KWH.machine : BUILD_KWH.steadPart;
+      const kwh = this.isMachine(type) ? this.machineCharge(type) : BUILD_KWH.steadPart;
       this.hud.setPrompt(
         `|*E| place ${t.name.toLowerCase()} (${have} · ⚡${kwh} kWh) · |*X| remove`
         + ` · |*Q| part · |*V| ${this.buildSlot === 'wall' ? 'roof' : 'wall'} · |*B| done${seal}`,
@@ -2425,6 +2394,7 @@ class Game {
       steer: (this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0),
       handbrake: !!this.keys.Space,
     };
+    input.throttle *= Math.max(.4, this.weatherEfficiency?.(this.weatherEquipment?.rover) ?? 1);
     // fixed-substep integration: cover the WHOLE frame dt in 120 Hz slices,
     // and sample the ground FRESH each slice — at speed a frame-stale
     // terrain read lets the chassis clip into rising ground
@@ -2577,6 +2547,41 @@ class Game {
     this.hud.setBags(`rover ${loadLabel(this.roverStore)}`);
   }
 
+  refreshMap() {
+    if (this.map.visible) {
+      // the active signal's honest ring: site snapped to a coarse 4 km
+      // grid, radius wide enough to always contain it — orientation,
+      // never a pin (the band's warmth is the real instrument)
+      let signalRing = null;
+      if (this.activeSignal) {
+        const p = siteXZ(this.activeSignal);
+        const q = 4000;
+        signalRing = {
+          x: Math.floor(p.x / q) * q + q / 2,
+          z: Math.floor(p.z / q) * q + q / 2,
+          r: 3200,
+        };
+      }
+      this.map.update(this.exploration, {
+        player: { x: this.pos.x, z: this.pos.z, heading: this.driving ? this.buggy.heading : this.heading },
+        lander: this.landerPos,
+        buggy: { x: this.buggy.x, z: this.buggy.z },
+        stead: this.steadOrigin,
+        rig: { x: this.rig.x, z: this.rig.z },
+        deposits: [...this.prospected].map(depositById).filter(Boolean),
+        trail: this.trail.pts,
+        crown: this.crownPos,
+        hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
+        foundSites: this.mystery.found
+          .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
+          .map((s) => ({ ...siteXZ(s), name: s.name })),
+        heritage: this.heritageFor(),
+        signalRing,
+      });
+    }
+
+  }
+
   frameWorld(dt) {
     // ---- the light of Mars
     const { lat, lon } = worldToLatLon(this.pos.x, this.pos.z);
@@ -2716,9 +2721,10 @@ class Game {
       F.uCamPos.value.copy(this.cam.position);
       F.uGlintT.value = this.t;
     }
+    this.updateWeatherWorld?.();
     const sol = Math.floor(this.simMillis / 88775244);
     const tau = this.attract && this.attractTau != null
-      ? this.attractTau : tauAt(mtc(this.simMillis), sol);
+      ? this.attractTau : (this.currentTau?.() ?? tauAt(mtc(this.simMillis), sol));
     let L = lightState(sunEl, tau);
     // the altitude ladder: a hop in flight re-lights the whole world —
     // sky drying to black, stars at noon, fog dying, the limb waking
@@ -2762,19 +2768,20 @@ class Game {
 
     const seas = season(this.simMillis);
     if (this.lastSeason && seas !== this.lastSeason && this.booted) {
-      this.hud.say(`PAIRING REVIEW — WHITE HARBOUR: ${regardVerdict(this.regard)}. Filed with the charter record.`, this.t, 9);
+      this.hud.say('A new season on Mars. Your expedition record is saved.', this.t, 9);
       this.say('pairing-review');
     }
     this.lastSeason = seas;
 
     // ---- the grid: sources, bank, loads — and the shed ladder when the
     // arithmetic fails. Computed FIRST: everything below reads this truth.
-    const arrays = this.machines.filter((m) => m.type === 'solar-array').length;
+    const arrays = this.machines.filter(m => m.type === 'solar-array')
+      .reduce((n, m) => n + (this.weatherEfficiency?.(m.exposure) ?? 1), 0);
     const batteries = this.machines.filter((m) => m.type === 'battery').length;
     const cooking = {};
     if (this.fab.queue.length) cooking.fab = 1;
     for (const m of this.machines) {
-      if (m.queue.length) cooking[m.type] = (cooking[m.type] || 0) + 1;
+      if (m.queue.length && (this.weatherEfficiency?.(m.exposure) ?? 1) > 0) cooking[m.type] = (cooking[m.type] || 0) + 1;
     }
     const dugRooms = this.burrow.ringInstalled
       ? [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length : 0;
@@ -2782,7 +2789,7 @@ class Game {
       arrays, batteries, sunEl, tau, {
         // hands bill only while a FUNDED face is being cut: a queue
         // waiting on charge idles them, or the wait starves itself
-        drones: handsBusy(this.burrow) ? this.droneCount : 0,
+        drones: handsBusy(this.burrow) ? (this.weatherCrewAvailable?.() ?? activeCrewCount(this.opening, this.droneCount)) : 0,
         cooking,
         warrenRooms: dugRooms,
       });
@@ -2841,27 +2848,10 @@ class Game {
       this.lampLit = wantLit;
       if (wantLit && this.lampMode === 'auto') this.sayOnce('lights-on');
     }
-    this.colonist.setLamp(this.lampLit && !this.driving);
+    this.colonist.setLamp(this.lampLit && !this.driving && !this.under?.active && !this.habitat?.active);
     this.buggyLayer.setLamps(this.lampLit);
 
-    // the first-sol briefing: she re-places a settler who knows HER well
-    // but remembers nothing of the mechanics — staged over the first two
-    // minutes, live in her own voice, once ever (sayOnce rides the save)
-    if (this.freshLanding) {
-      // the written half: LANDFALL ORDERS open at the start of EVERY new
-      // life (2026-07-20: the browser flag hid them from returning
-      // settlers — the sheet IS the entry briefing, the mission and the
-      // keys; a new landing always deserves it). Reopen any time with O.
-      if (this.t > 4 && !this.ordersShown && !this.attract) {
-        this.ordersShown = true;
-        this.orders.open();
-      }
-      if (this.t > 8) this.sayOnce('brief-wake');
-      if (this.t > 32) this.sayOnce('brief-power');
-      if (this.t > 58) this.sayOnce('brief-dig');
-      if (this.t > 88) this.sayOnce('brief-works');
-    }
-
+    // First-light guidance follows completed actions in PlayExperience.
     // dusk / night / dawn beats
     if (sunEl < 6 && sunEl > -2 && this.lastSunEl > sunEl) this.sayOnce('sunset');
     if (sunEl < -8) this.sayOnce('night');
@@ -2880,40 +2870,10 @@ class Game {
         }
       }
     }
-    if (this.map.visible) {
-      // the active signal's honest ring: site snapped to a coarse 4 km
-      // grid, radius wide enough to always contain it — orientation,
-      // never a pin (the band's warmth is the real instrument)
-      let signalRing = null;
-      if (this.activeSignal) {
-        const p = siteXZ(this.activeSignal);
-        const q = 4000;
-        signalRing = {
-          x: Math.floor(p.x / q) * q + q / 2,
-          z: Math.floor(p.z / q) * q + q / 2,
-          r: 3200,
-        };
-      }
-      this.map.update(this.exploration, {
-        player: { x: this.pos.x, z: this.pos.z, heading: this.driving ? this.buggy.heading : this.heading },
-        lander: this.landerPos,
-        buggy: { x: this.buggy.x, z: this.buggy.z },
-        stead: this.steadOrigin,
-        rig: { x: this.rig.x, z: this.rig.z },
-        deposits: [...this.prospected].map(depositById).filter(Boolean),
-        trail: this.trail.pts,
-        crown: this.crownPos,
-        hopper: this.hopperBuilt ? { x: this.hopper.x, z: this.hopper.z } : null,
-        foundSites: this.mystery.found
-          .map((id) => SITES.find((s) => s.id === id)).filter(Boolean)
-          .map((s) => ({ ...siteXZ(s), name: s.name })),
-        heritage: this.heritageFor(),
-        signalRing,
-      });
-    }
+    this.refreshMap();
 
     // ---- the expedition's slow machines
-    if (drillTick(this.rig, dt)) this.sayOnce('drill-first-ore');
+    if (drillTick(this.rig, dt * (this.weatherEfficiency?.(this.weatherEquipment?.rig) ?? 1))) this.sayOnce('drill-first-ore');
     const hopperNow = hopperCount(this.rig);
     if (hopperNow >= HOPPER_CAP && this.prevHopper < HOPPER_CAP) this.say('hopper-full');
     this.prevHopper = hopperNow;
@@ -2921,8 +2881,8 @@ class Game {
     // its queue warm and waits (quiet, never broken)
     if (!shed.has('fab') && fabTick(this.fab, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
     for (const m of this.machines) {
-      if (shed.has(m.type)) continue;
-      if (machineTick(m, dt) === 'steel-panel') this.sayOnce('fab-first-steel');
+      if (shed.has(m.type) || (this.weatherEfficiency?.(m.exposure) ?? 1) <= 0) continue;
+      if (machineTick(m, dt * (this.weatherEfficiency?.(m.exposure) ?? 1)) === 'steel-panel') this.sayOnce('fab-first-steel');
     }
     this.machineLayer.update(this.machines, this.t);
     this.rigLayer.update(this.rig, meshGroundHeight(this.rig.x, this.rig.z));
@@ -2977,18 +2937,19 @@ class Game {
     const wasHome = burrowPressurised(this.burrow);
     const rep = warrenReport(this.burrow);
     const handsPowered = !shed.has('drone');
-    for (const e of burrowTick(this.burrow, dt,
-      handsPowered ? this.droneCount * (1 + rep.haul) : 0,
+    for (const e of burrowTick(this.burrow, dt * (this.underworld.returned ? 1.15 : 1),
+      handsPowered ? (this.weatherCrewAvailable?.() ?? activeCrewCount(this.opening, this.droneCount)) * (1 + rep.haul) : 0,
       (kwh) => spend(this.power, kwh))) {
       if (e.type === 'dug') this.sayOnce('burrow-room');
       if (e.type === 'waiting') this.say('no-charge'); // the queue waits on income
     }
-    if (rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7
+    if (!this.under?.active && !this.habitat?.active && rep.air > 0 && burrowPressurised(this.burrow) && this.distToCrown() < 7
       && !shed.has('warren')) {
       this.air = Math.min(1, this.air + dt * 0.03 * rep.air);
     }
     if (!wasHome && burrowPressurised(this.burrow)) this.sayOnce('burrow-home');
-    if (this.distToCrown() < 7
+    if (burrowPressurised(this.burrow)) this.everPressurised = true;
+    if (!this.under?.active && !this.habitat?.active && this.distToCrown() < 7
       && (this.burrow.spoil.ore > 0 || this.burrow.spoil.regolith > 0)) {
       // the house pays: banked spoil walks into the bags when you pass —
       // ore first (the richer sack), regolith to fill the rest for the
@@ -3018,9 +2979,14 @@ class Game {
       }
       if (moved) this.sayOnce('drill-first-ore');
     }
-    this.crownLayer.update(this.t, this.burrow.queue.length > 0,
+    this.crownLayer.update(this.t, handsPowered && (this.weatherCrewAvailable?.() ?? activeCrewCount(this.opening, this.droneCount)) > 0 && handsBusy(this.burrow),
       [...this.burrow.cells.values()].filter((c) => c.dug >= 1).length,
-      this.burrow.ringInstalled, (this.sunEl ?? 10) < 0);
+      this.burrow.ringInstalled, (this.sunEl ?? 10) < 0,
+      { burrow: this.burrow, droneCount: this.droneCount, discovery: this.expedition.complete,
+        opening: this.weatherCrewHeld?.() ? { version: 1, fleetMode: 'follow' } : this.opening,
+        player: this.weatherCrewHeld?.() || this.habitat?.active || this.under?.active || this.inLander || this.driving || this.hopFlight
+          ? null : { x: this.pos.x - this.crownPos.x, z: this.pos.z - this.crownPos.z, heading: this.heading },
+        reducedMotion: this.settings.reducedMotion });
     this.burrowUI.update(dt);
     this.worksUI.update(dt);
 
@@ -3068,18 +3034,14 @@ class Game {
       this.cam.position, meshGroundHeight(this.cam.position.x, this.cam.position.z));
     if (this.dust.nearestDevil < 220) this.sayOnce('devil-near');
 
-    // ---- the suit's slow arithmetic. The gentle start runs an 8h bottle
-    // and forgiving cold; once the first hab pressurises the full ledger
-    // switches on (PHASE2) — a 5h bottle and a colder night.
     const temp = surfaceTempC(sunEl, tau);
-    const bottleHours = this.everPressurised ? 5 : 8;
-    // rested (a good night in a good bunk): the body spends slower
     const rested = this.simMillis < (this.restedUntil || 0) ? (this.restedQ || 0) : 0;
-    this.air = Math.max(0, this.air
-      - (dt / (bottleHours * 3600 / TIME_SCALE)) * (1 - 0.25 * rested));
-    const chill = temp < -60
-      ? ((-60 - temp) / 40) * (this.everPressurised ? 1.5 : 1) * (1 - 0.35 * rested) : 0;
-    this.warm = Math.max(0, Math.min(1, this.warm + (0.05 - chill * 0.02) * dt));
+    const vitals = suitStep({ air: this.air, warm: this.warm, temp,
+      sheltered: this.weatherSheltered?.() ?? (this.inLander || this.insidePressurised),
+      storm: this.weatherNow?.intensity ?? 0,
+      mode: this.settings.survival, rested }, this.under?.active || this.habitat?.active ? 0 : dt);
+    this.air = vitals.air; this.warm = vitals.warm;
+    if (vitals.rescue && !this.attract) this.experience?.rescue();
     if (this.warm < 0.35) this.sayOnce('cold');
     if (this.air < 0.25) this.sayOnce('air-low');
     this.hud.setVitals(this.air, this.warm, temp);
@@ -3089,7 +3051,7 @@ class Game {
       this.persist();
     }
     this.hud.setClock(
-      solClock(this.simMillis),
+      missionClock(this.simMillis, this.missionStart, lon),
       `Ls ${solarLongitude(this.simMillis).toFixed(1)}° · ${season(this.simMillis)} · ${this.placeName()}`,
     );
     this.hud.update(this.t);

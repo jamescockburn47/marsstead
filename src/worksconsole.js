@@ -112,7 +112,7 @@ export class WorksConsole {
     const byType = (t) => machines.filter((m) => m.type === t);
 
     const stationHtml = (st) => {
-      let built, queue = 0, out = {};
+      let built, queue = 0, out = {}, weatherPaused = 0;
       let recipes;
       if (st.key === 'fab') {
         built = 1; queue = fab.queue.length; out = fab.out;
@@ -122,6 +122,7 @@ export class WorksConsole {
         built = ms.length;
         for (const m of ms) {
           queue += m.queue.length;
+          if (m.exposure?.secured || (m.exposure?.dust ?? 0) >= .6) weatherPaused++;
           for (const [id, n] of Object.entries(m.out)) out[id] = (out[id] || 0) + n;
         }
         recipes = Object.entries(MACHINE_TYPES[st.key].recipes);
@@ -145,13 +146,13 @@ export class WorksConsole {
         <h2>${st.name}</h2>
         <div class="built${built ? '' : ' none'}">${st.sub} · ${built ? `${built} standing` : 'NOT BUILT — B to place'}</div>
         <div class="wrec">${rec}</div>
-        <div class="wtray">${queue ? `cooking <b>${queue}</b> · ` : ''}${tray || 'tray empty'}</div>
+        <div class="wtray">${queue ? `queued <b>${queue}</b> · ` : ''}${tray || 'tray empty'}${weatherPaused ? `<br>${weatherPaused} paused by covers / dust · use Weather to restore` : ''}</div>
         ${hopRow}
       </div>`;
     };
 
     const cooking = (st) => (st.key === 'fab' ? fab.queue.length > 0
-      : byType(st.key).some((m) => m.queue.length > 0));
+      : byType(st.key).some((m) => m.queue.length > 0 && !m.exposure?.secured && (m.exposure?.dust ?? 0) < .6));
     let html = '';
     STATIONS.forEach((st, i) => {
       if (i) html += `<div class="wlink${cooking(STATIONS[i - 1]) || cooking(st) ? ' live' : ''}"></div>`;

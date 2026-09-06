@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { FBM_GLSL } from './glsl.js';
+import { finishSuit } from './colonist-finish.js';
 import { BONES, ColonistRig } from './colonistrig.js';
 
 const FABRIC = 0xe3dccd;  // dust-white soft goods
@@ -83,12 +84,19 @@ export function makeEnvTexture() {
 // a tapered soft-goods limb segment: cylinder + sphere caps, origin at
 // the TOP (the pivot), body hanging down -y. Smooth-shaded, no seams.
 function limbGeo(rTop, rBot, len) {
-  const cyl = new THREE.CylinderGeometry(rTop, rBot, len, 18, 1, true);
-  cyl.translate(0, -len / 2, 0);
-  const capT = new THREE.SphereGeometry(rTop, 18, 10);
-  const capB = new THREE.SphereGeometry(rBot, 18, 10);
-  capB.translate(0, -len, 0);
-  return mergeGeometries([cyl, capT, capB]);
+  const profile = [];
+  for (let i = 0; i <= 32; i++) {
+    const t = i / 32, radius = rTop + (rBot - rTop) * t;
+    const end = Math.sin(Math.PI * t);
+    const fold = Math.sin(t * 34 + .5) * .022 + Math.sin(t * 61) * .012;
+    profile.push(new THREE.Vector2(radius * (1 + end * (.075 + fold)), -len * t));
+  }
+  const geo = new THREE.LatheGeometry(profile.reverse(), 24);
+  const capT = new THREE.SphereGeometry(rTop, 18, 10); capT.scale(1, .32, 1);
+  const capB = new THREE.SphereGeometry(rBot, 18, 10); capB.scale(1, .32, 1); capB.translate(0, -len, 0);
+  const merged = mergeGeometries([geo, capT, capB]);
+  geo.dispose(); capT.dispose(); capB.dispose();
+  return merged;
 }
 
 export class Colonist {
@@ -104,7 +112,7 @@ export class Colonist {
     });
     const shell = new THREE.MeshPhysicalMaterial({
       color: SHELL, roughness: 0.42, metalness: 0,
-      clearcoat: 0.6, clearcoatRoughness: 0.3,
+      clearcoat: 0.15, clearcoatRoughness: 0.5,
     });
     const accent = new THREE.MeshPhysicalMaterial({
       color: RUST, roughness: 0.7, metalness: 0,
@@ -114,7 +122,7 @@ export class Colonist {
       color: METAL, roughness: 0.35, metalness: 1.0,
     });
     const visor = new THREE.MeshPhysicalMaterial({
-      color: VISOR, roughness: 0.08, metalness: 1.0,
+      color: 0x94613a, roughness: 0.14, metalness: 1.0,
     });
     const rubber = new THREE.MeshPhysicalMaterial({
       color: RUBBER, roughness: 0.9, metalness: 0,
@@ -154,17 +162,19 @@ export class Colonist {
     // ---- legs: hip -> thigh -> knee(bellows) -> shin -> ankle -> boot -----
     const mkLeg = (side) => {
       const hip = new THREE.Group();
+      hip.rotation.order = 'ZXY'; // lateral hip roll outside sagittal bend
       hip.position.set(side * BONES.FOOT_LAT, 0, 0);
       const hipRing = new THREE.Mesh(new THREE.TorusGeometry(0.128, 0.017, 8, 22), metal);
       hipRing.rotation.x = Math.PI / 2;
       const thigh = new THREE.Mesh(limbGeo(0.128, 0.108, BONES.THIGH), fabric);
       const pad = new THREE.Mesh(new RoundedBoxGeometry(0.13, 0.14, 0.08, 3, 0.03), accent);
-      pad.position.set(0, -BONES.THIGH + 0.02, 0.075);   // knee pad
+      pad.position.set(0, -BONES.THIGH + 0.02, 0.155);   // knee pad
       const knee = new THREE.Group();
       knee.position.y = -BONES.THIGH;
       const shinPivot = new THREE.Group();
       const shin = new THREE.Mesh(limbGeo(0.102, 0.086, BONES.SHIN), dusty);
       const ankle = new THREE.Group();
+      ankle.rotation.order = 'XZY'; // cancel leg pitch/roll before planted yaw
       ankle.position.y = -BONES.SHIN;
       // the boot: body, hard toe, lugged sole
       const boot = new THREE.Mesh(new RoundedBoxGeometry(0.17, 0.13, 0.29, 3, 0.05), dusty);
@@ -198,7 +208,8 @@ export class Colonist {
     // lathe profile (r, y) in pelvis space; z squashed 0.74 — the HUT is a
     // rounded wedge, wider at the shoulders, never a cylinder
     const prof = [
-      [0.001, -0.16], [0.15, -0.15], [0.205, -0.02], [0.195, 0.12],
+      [0.001, -0.075], [0.14, -0.075], [0.205, -0.02], [0.195, 0.04],
+      [0.2, 0.08], [0.186, 0.115], [0.197, 0.145], [0.2, 0.19],
       [0.225, 0.30], [0.25, 0.44], [0.245, 0.50], [0.20, 0.57],
       [0.135, 0.60], [0.001, 0.605],
     ].map(([r, y]) => new THREE.Vector2(r, y));
@@ -219,11 +230,15 @@ export class Colonist {
     const neckRing = new THREE.Mesh(new THREE.TorusGeometry(0.115, 0.02, 10, 24), metal);
     neckRing.rotation.x = Math.PI / 2; neckRing.position.y = -0.145;
     const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.16, 26, 18), shell);
+    bubble.scale.set(1.1, 1.1, 1);
     const vis = new THREE.Mesh(
       new THREE.SphereGeometry(0.168, 26, 14, 0, Math.PI * 2, 0, Math.PI * 0.36), visor);
+    vis.scale.set(1, 1, .83);
+    vis.position.z = .04;
     vis.rotation.x = Math.PI / 2 - 0.12;   // face forward, tipped a little down
     const frame = new THREE.Mesh(new THREE.TorusGeometry(0.152, 0.012, 8, 26), rubber);
-    frame.position.z = 0.075; frame.rotation.x = -0.12;
+    frame.scale.y = .84;
+    frame.position.z = 0.115; frame.rotation.x = -0.12;
     const brow = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.05, 0.12, 2, 0.02), accent);
     brow.position.set(0, 0.135, 0.06); brow.rotation.x = 0.35;
     helmet.add(neckRing, bubble, vis, frame, brow);
@@ -262,14 +277,14 @@ export class Colonist {
       shoulder.position.set(side * BONES.SHOULDER_X, BONES.SHOULDER_Y - 0.06, 0);
       const scye = new THREE.Mesh(new THREE.TorusGeometry(0.082, 0.016, 8, 20), metal);
       scye.rotation.z = Math.PI / 2 + side * 0.2;
-      const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 12), accent);
+      const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.103, 22, 14), fabric);
       pauldron.position.set(side * 0.01, 0.015, 0);
-      pauldron.scale.set(1, 0.85, 1);
+      pauldron.scale.set(1.03, 0.78, 1);
       const upper = new THREE.Mesh(limbGeo(0.08, 0.068, BONES.UPPER_ARM), fabric);
       const elbow = new THREE.Group();
       elbow.position.y = -BONES.UPPER_ARM;
       const forePivot = new THREE.Group();
-      const fore = new THREE.Mesh(limbGeo(0.066, 0.054, BONES.FOREARM), fabric);
+      const fore = new THREE.Mesh(limbGeo(0.073, 0.058, BONES.FOREARM), fabric);
       const wristRing = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.012, 8, 18), metal);
       wristRing.rotation.x = Math.PI / 2; wristRing.position.y = -BONES.FOREARM + 0.02;
       const glove = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.07, 6, 14), rubber);
@@ -306,6 +321,7 @@ export class Colonist {
       hoseL, hoseR, this.armL.shoulder, this.armR.shoulder,
       this.lamp, this.lampTarget);
 
+    finishSuit(this, { fabric, shell, accent, metal, rubber, helmet });
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     scene.add(this.group);
   }
@@ -347,8 +363,11 @@ export class Colonist {
     // legs (semantic -> THREE: forward swing is -x here)
     for (const [leg, out] of [[this.legL, p.legL], [this.legR, p.legR]]) {
       leg.hip.rotation.x = -out.hipPitch;
+      leg.hip.rotation.z = out.hipRoll || 0;
       leg.shinPivot.rotation.x = out.kneeFlex;
       leg.ankle.rotation.x = -out.anklePitch;
+      leg.ankle.rotation.z = out.ankleRoll || 0;
+      leg.ankle.rotation.y = out.ankleYaw || 0;
     }
 
     // arms. abduct swings each arm AWAY from the torso: left toward -x
@@ -366,7 +385,7 @@ export class Colonist {
       b.rings.forEach((ring, i) => {
         const f = (i + 1) / (b.rings.length + 1);
         ring.rotation.set(Math.PI / 2 + a * f, 0, 0);
-        ring.position.set(0, Math.sin(a * f) * 0.012, -Math.abs(Math.sin(a * f)) * 0.01);
+        ring.position.set(0, (i - 1) * .018 + Math.sin(a * f) * 0.012, -Math.abs(Math.sin(a * f)) * 0.01);
       });
     }
 
@@ -377,6 +396,7 @@ export class Colonist {
     // breathing: the chest swells, just barely
     const s = 1 + p.breath * 0.008;
     this.chest.scale.set(s, 1, 0.74 * s);
+    return p;
   }
 
   // in the buggy's saddle: thighs up, shins down, hands to the wheel
@@ -386,8 +406,11 @@ export class Colonist {
     this.pelvisRot.rotation.set(0.08, 0, 0);
     for (const leg of [this.legL, this.legR]) {
       leg.hip.rotation.x = -1.35;
+      leg.hip.rotation.z = 0;
       leg.shinPivot.rotation.x = 1.15;
       leg.ankle.rotation.x = 0.15;
+      leg.ankle.rotation.z = 0;
+      leg.ankle.rotation.y = 0;
     }
     for (const [arm, side] of [[this.armL, -1], [this.armR, 1]]) {
       arm.shoulder.rotation.x = -0.75;

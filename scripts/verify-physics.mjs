@@ -2,7 +2,7 @@
 
 import {
   G_MARS, G_EARTH, jumpApex, hangTime, hopRange, fallSpeed, fallSeverity,
-  fallStep, strideBob, JUMP_V0, LOPE_HOP_V0, WALK_SPEED, LOPE_SPEED,
+  fallStep, JUMP_V0, LOPE_HOP_V0, WALK_SPEED, LOPE_SPEED,
 } from '../src/physics.js';
 
 let failed = 0;
@@ -22,9 +22,9 @@ check('same jump on Earth ~0.27 m', Math.abs(jumpApex(JUMP_V0, G_EARTH) - 0.270)
 {
   const apex = jumpApex(LOPE_HOP_V0);
   const flight = hangTime(LOPE_HOP_V0);
-  check('lope bound apex ~0.18 m', Math.abs(apex - 0.178) < 0.01, `${apex.toFixed(3)}`);
-  check('lope bound flight ~0.62 s', Math.abs(flight - 0.618) < 0.01, `${flight.toFixed(3)}`);
-  check('lope covers ~3.7 m per bound', Math.abs(flight * 6.0 - 3.71) < 0.1);
+  check('lope bound apex ~0.14 m', Math.abs(apex - 0.143) < 0.01, `${apex.toFixed(3)}`);
+  check('lope bound flight ~0.55 s', Math.abs(flight - 0.554) < 0.01, `${flight.toFixed(3)}`);
+  check('lope covers ~3.32 m per flight', Math.abs(flight * 6.0 - 3.32) < 0.1);
 }
 check('Mars jump ~2.64x Earth jump', Math.abs(jumpApex(3, G_MARS) / jumpApex(3, G_EARTH) - G_EARTH / G_MARS) < 1e-9);
 check('hang time 2v0/g', Math.abs(hangTime(JUMP_V0) - (2 * JUMP_V0) / G_MARS) < 1e-12);
@@ -49,8 +49,6 @@ check('severity clamps at 1', fallSeverity(1000) === 1);
 
 // the gait table is ordered and the bob envelope bounded
 check('lope beats walk', LOPE_SPEED > WALK_SPEED);
-check('bob grows with speed', strideBob(LOPE_SPEED) > strideBob(WALK_SPEED));
-check('bob bounded', strideBob(999) <= 0.2 && strideBob(0) >= 0.03);
 
 if (failed) { console.error(`verify-physics: ${failed} FAILED`); process.exit(1); }
 console.log('verify-physics: all green');

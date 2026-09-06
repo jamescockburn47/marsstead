@@ -20,11 +20,11 @@ Every range is BUILT, not granted. Twenty-ish hours, mapped to the acts:
 
 ## Doctrines (James's rulings, binding)
 
-1. **The game lives above ground.** The player never walks the hab.
-   "Indoors" is a DISPLAY-BASED game — the consoles — entered at the
-   airlock: planning, engineering, logistics. The Sanctum grammar (palette
-   of pieces → glowing sockets → zoomable schematic → budget bar → commit
-   button → intel drawer) is the shared console language for everything.
+1. **Plan in 2D, inhabit in 3D (revised 5 September 2026).** The diagram is
+   the construction interface; the player enters the exact completed layout,
+   walks between rooms and uses the home for warmth, air, sleep and industry.
+   Both views derive from the same room state. This supersedes the former
+   console-only rule following James's explicit clarification.
 2. **The hab is underground.** Radiation and cold make surface housing a
    lie; the warren is dug behind the salvaged airlock ring (the one part
    we can't make twice — now the front door of the homestead). Surface
@@ -70,7 +70,7 @@ Every range is BUILT, not granted. Twenty-ish hours, mapped to the acts:
   free flight over streamed terrain — the one architectural stretch,
   deliberately avoided); the descent-ellipse choice lands while the
   destination streams in. Pads are free landings; depots are far camps.
-- **The Caves** (the wild underground, walkable — unlike the hab): real
+- **The Caves** (the wild underground, beyond the inhabited home): real
   MGC³ skylights, winch entry, lamp cones, the palette-break by depth.
   The horror theatre. The Moorstead second-frame pattern serves both
   this and any interior we ever do walk.

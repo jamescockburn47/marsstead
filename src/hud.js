@@ -61,9 +61,9 @@ export class Hud {
     this.clockSub = el(this.clock, 'div', 'sub');
 
     const vitals = el(this.root, 'div', 'vitals');
-    el(vitals, 'div').textContent = 'AIR';
+    this.airLabel = el(vitals, 'div');
     this.airBar = el(el(vitals, 'div', 'bar'), 'i');
-    el(vitals, 'div').textContent = 'WARMTH';
+    this.warmLabel = el(vitals, 'div');
     this.warmBar = el(el(vitals, 'div', 'bar cold'), 'i');
     this.tempLabel = el(vitals, 'div');
 
@@ -103,6 +103,8 @@ export class Hud {
   }
 
   setVitals(air01, warm01, tempC) {
+    this.airLabel.textContent = `AIR ${Math.round(air01 * 100)}%`;
+    this.warmLabel.textContent = `WARMTH ${Math.round(warm01 * 100)}%`;
     this.airBar.style.width = `${Math.round(air01 * 100)}%`;
     this.warmBar.style.width = `${Math.round(warm01 * 100)}%`;
     this.tempLabel.textContent = `${Math.round(tempC)}°C`;

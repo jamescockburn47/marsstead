@@ -1,5 +1,7 @@
 # Marsstead — founding design document
 
+> Direction update, 5 September 2026: [Cooperative Frontier](COOPERATIVE-FRONTIER.md) supersedes this document's solitary-player, single-home and mandatory Seed campaign assumptions. The following remains historical design context; the new direction is not yet fully implemented.
+
 *(Working title, and the live one: **www.marsstead.app** already stands, the
 blue-dusk dune shader already running. Third sibling to Moorstead and
 Saltstead — same identity, new world.)*

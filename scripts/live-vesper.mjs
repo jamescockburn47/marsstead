@@ -1,0 +1,95 @@
+// Default: offline browser regression. VESPER_RELAY_URL opts into a real isolated relay probe.
+import assert from 'node:assert/strict';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {chromium} from 'playwright-core';
+const relay=process.env.VESPER_RELAY_URL;
+const evidence=name=>`media/vesper-review/${relay?'':'offline-'}${name}`;
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const records=[],errors=[],audio=[];mkdirSync('media/vesper-review',{recursive:true});
+try{
+ const context=await browser.newContext({viewport:{width:1440,height:900}});
+ await context.addInitScript(()=>{window.SpeechRecognition=class {start(){window.testRecognizer=this;}stop(){}};});
+ await context.route('**/brain/health',async route=>{if(relay){const response=await context.request.get(`${relay}/brain/health`);return route.fulfill({response});}return route.fulfill({status:200,json:{ok:true,contract:'2026-09-06-context-voice-1'}});});
+ await context.routeWebSocket('**',s=>s.close());await context.route('**/dash/**',r=>r.fulfill({status:200,body:'{}'}));
+ let delayed=false, release;
+ await context.route('**/brain/chat',async route=>{
+  const body=route.request().postDataJSON();
+  console.log('brain request',body.bark||body.text);
+  if(body.bark)return route.fulfill({status:503,body:'Test suppresses opening notice'});
+  records.push({request:body});
+  if(delayed){await new Promise(resolve=>release=resolve);return route.fulfill({status:200,json:{line:'Late answer should never appear.',mood:'calm'}}).catch(()=>{});}
+  if(relay){const response=await context.request.post(`${relay}/brain/chat`,{data:body,timeout:35000});
+   const result=await response.json();records.at(-1).reply=result;console.log('brain response',result);assert.equal(response.status(),200,JSON.stringify(result));return route.fulfill({response});}
+  const line=body.state.weatherStatus?.includes('phase=storm')?'You are protected inside the sealed workshop. Wait here, then clean the mining rig.':'Your supplied home is sealed. Ask the crew to finish the planned passage.';
+  records.at(-1).reply={line};return route.fulfill({status:200,json:{line,mood:'calm'}});
+ });
+ await context.route('**/brain/tts',async route=>{
+  if(!relay)return route.fulfill({status:503,body:'Offline test'});
+  const response=await context.request.post(`${relay}/brain/tts`,{data:route.request().postDataJSON(),timeout:35000});
+  assert.equal(response.status(),200);const bytes=await response.body();assert.ok(bytes.length>200);
+  audio.push({bytes:bytes.length,mood:route.request().postDataJSON().mood});
+  if(audio.length===1)writeFileSync('media/vesper-review/voice-updated.mp3',bytes);
+  return route.fulfill({response});
+ });
+ const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+ await page.goto(`${process.env.FIRSTLIGHT_URL||'http://127.0.0.1:5207'}/?play`);
+ await page.waitForFunction(()=>window.marsstead?.dialogue&&window.marsstead?.crew,null,{timeout:60000});
+ await page.waitForTimeout(500);
+ const say=async text=>{await page.evaluate(()=>window.marsstead.experience.openChat());
+  await page.locator('#vesperchat').fill(text);await page.locator('#vesperchat').press('Enter');
+  await page.locator('[data-comms=close]').click();};
+ await say('What is already built at my home, and what should I do next?');
+ console.log('submitted',await page.evaluate(()=>({status:window.marsstead.dialogue.status,chat:window.marsstead.chatBar.style.display,errors:window.marsstead.hud.vesperLine.textContent,paused:window.marsstead.paused})),errors);
+ await page.waitForFunction(()=>window.marsstead.dialogue.status==='connected',null,{timeout:35000});
+ assert.ok(records[0].request.state.homeLayout.includes('bunk complete'));
+ assert.ok(records[0].request.state.homeLayout.includes('bay complete'));
+ assert.ok(records[0].request.state.crewStatus.includes('mode=park'));
+ assert.match(records[0].request.state.clock,/^\d{2}:\d{2} local$/,'local clock matches player HUD, without a truncated absolute Mars sol');
+ if(relay)await page.waitForFunction(()=>window.marsstead.voice.status==='speaking',null,{timeout:35000});
+ await page.screenshot({path:evidence('01-current-help.png')});
+ await page.evaluate(()=>{const g=window.marsstead;g.dialogue.cancel();const p=g.crew.nearest();
+  g.pos.set(p.x+1.8,g.groundAt(p.x+1.8,p.z),p.z);g.vel.set(0,0,0);g.vy=0;g.airborne=false;});
+ await page.waitForTimeout(500);const before=records.length;
+ await say('Vesper, ask the crew to follow me');
+ await page.waitForFunction(()=>window.marsstead.opening.fleetMode==='follow');
+ assert.equal(records.length,before,'commands execute through game rules without an LLM round trip');
+ await page.screenshot({path:evidence('02-crew-command.png')});
+ await page.evaluate(()=>{window.marsstead.dialogue.cancel();window.marsstead.focusWorld();});
+ await page.keyboard.down('KeyV');await page.keyboard.up('KeyV');
+ await page.evaluate(()=>{const rec=window.testRecognizer;if(!rec)throw Error('Mic did not start');rec.onresult({results:[{0:{transcript:'crew hold position'},isFinal:true}]});});
+ await page.waitForFunction(()=>window.marsstead.opening.fleetMode==='park');
+ assert.equal(await page.evaluate(()=>window.marsstead.voice.rec),null,'final transcript releases recognizer before acknowledgement');
+ if(relay)await page.waitForFunction(()=>window.marsstead.voice.status==='speaking',null,{timeout:20000});
+
+ await page.evaluate(()=>{const g=window.marsstead;g.dialogue.cancel();g.pos.set(g.crownPos.x+60,g.groundAt(g.crownPos.x+60,g.crownPos.z),g.crownPos.z);g.vel.set(0,0,0);g.airborne=false;});
+ await page.waitForTimeout(300);await say('crew resume excavation');
+ assert.equal(await page.evaluate(()=>window.marsstead.opening.fleetMode),'park','remote local-order rejected');
+ await page.evaluate(()=>{const g=window.marsstead;g.dialogue.cancel();g.pos.set(g.crownPos.x+2,g.groundAt(g.crownPos.x+2,g.crownPos.z),g.crownPos.z);g.vel.set(0,0,0);g.airborne=false;g.habitat.enter('-2,1');
+  g.weather.epochMillis=g.simMillis-1120*40000;g.weather.processedThrough=g.simMillis;g.weatherEquipment.rig.dust=.7;g.updateWeatherWorld();});
+ await page.waitForTimeout(400);await say('The rig has stopped in this storm. Am I safe here, and what should I do?');
+ await page.waitForFunction(()=>window.marsstead.dialogue.status==='connected',null,{timeout:35000});
+ const storm=records.at(-1).request.state;
+ assert.equal(storm.inside,true);assert.equal(storm.sheltered,true);
+ assert.ok(storm.weatherStatus.includes('phase=storm'));assert.ok(storm.equipmentStatus.includes('dustPercent=70'));
+ await page.locator('#habitat-tools').waitFor({state:'visible'});
+ const readable=await page.evaluate(()=>{const line=window.marsstead.hud.vesper.getBoundingClientRect(),panel=window.marsstead.habitat.ui.getBoundingClientRect();return line.bottom<=panel.top;});
+ assert.equal(readable,true,'spoken reply remains readable above the habitat controls');
+ await page.screenshot({path:evidence('03-sheltered-advice.png')});
+ await page.evaluate(()=>{const g=window.marsstead;g.settings.textScale=1.5;g.experience.applySettings();});
+ await page.waitForTimeout(100);
+ assert.equal(await page.evaluate(()=>window.marsstead.hud.vesper.getBoundingClientRect().bottom<=window.marsstead.habitat.ui.getBoundingClientRect().top),true,'subtitles clear controls at 150% text');
+ await page.evaluate(()=>{const g=window.marsstead;g.settings.textScale=1;g.experience.applySettings();});
+ await page.evaluate(()=>window.marsstead.dialogue.cancel());
+ delayed=true;await say('Wait for this answer');await page.waitForTimeout(150);
+ await page.evaluate(()=>window.marsstead.experience.pause(true));release?.();await page.waitForTimeout(500);
+ assert.ok(!(await page.evaluate(()=>window.marsstead.hud.vesperLine.textContent)).includes('Late answer'));
+ assert.equal(await page.evaluate(()=>window.marsstead.voice.speakingNow),false,'pause stops pending and active speech');
+ await page.locator('[data-setting=muted]').check();
+ assert.equal(await page.evaluate(()=>window.marsstead.voice.muted),true,'visible mute controls voice too');
+ assert.equal(await page.evaluate(()=>window.marsstead.dialogue.connection),'current');
+ await context.unrouteAll({behavior:'wait'});
+ assert.deepEqual(errors,[]);
+ writeFileSync(evidence('conversation.json'),JSON.stringify({live:!!relay,records,audio},null,2));
+ console.log(`VESPER ${relay?'LIVE isolated relay':'offline'} browser: current home/storm context, guarded crew commands, pause cancellation and audio controls pass.`);
+ for(const record of records.filter(record=>record.reply))console.log(record.reply.line);
+}finally{await browser.close();}

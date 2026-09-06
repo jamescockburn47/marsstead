@@ -83,9 +83,10 @@ export const MACHINE_QUEUE_CAP = 24;
 export const MAX_MACHINE_SLOPE = 0.25;
 export const MACHINE_SPACING = 3;   // m — machines don't stack
 
-export function createMachine(type, x, z, heading = 0) {
+export function createMachine(type, x, z, heading = 0, paidCosts = null) {
   if (!MACHINE_TYPES[type]) return null;
-  return { type, x, z, heading, queue: [], t: 0, out: {} };
+  return { type, x, z, heading, queue: [], t: 0, out: {}, exposure: { secured: false, dust: 0 },
+    paidCosts: (paidCosts ?? MACHINE_TYPES[type].costs).map(([id, n]) => [id, n]) };
 }
 
 // which cost list a holder can pay: the salvage alternative first (the
@@ -123,6 +124,10 @@ export function machineTick(m, dt) {
   const r = MACHINE_TYPES[m.type].recipes[head];
   if (m.t < r.seconds) return null;
   m.t = 0;
+  if (head === 'regolith' && m.type === 'smelter') {
+    m.queue[0] = 'iron-ore';
+    return null;
+  }
   m.queue.shift();
   m.out[r.out] = (m.out[r.out] || 0) + 1;
   return r.out;

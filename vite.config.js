@@ -36,7 +36,7 @@ export default {
   server: {
     proxy: {
       '/brain': { target: 'https://marsstead.sovren.xyz', changeOrigin: true },
-      '/dash': { target: 'https://saltstead.sovren.xyz', changeOrigin: true },
+      '/dash': { target: 'https://marsstead.sovren.xyz', changeOrigin: true },
     },
   },
 };

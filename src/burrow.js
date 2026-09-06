@@ -1,7 +1,7 @@
 // The Burrow — the underground warren and the hands that dig it. Pure, no
 // THREE, no DOM. verify-burrow.mjs guards it. STRUCTURE.md doctrines 1-3:
-// the player never walks the hab — this model IS the home, drawn by the
-// Burrow console and dug by the drones; the surface only shows the crown.
+// the model drives both the planning diagram and the walkable habitat,
+// excavated by the drones; the surface shows the crown.
 // Digging a room and digging ore are the same verb: SPOIL IS ORE — the
 // house pays for itself as it is dug.
 //
@@ -110,6 +110,14 @@ export function spoilFor(col, depth) {
 export { DIG_KWH, LIGHT_REACH } from './power.js';
 import { DIG_KWH } from './power.js';
 
+// The first connecting passage and bunk use the lander's fitted starter
+// forms. A modest once-per-warren saving, not a permanent power subsidy.
+export function digPrice(b, piece) {
+  const starter = piece === 'corridor' ? 1 : piece === 'bunk' ? 2 : null;
+  const started = [...b.cells.values()].some((c) => c.piece === piece && (c.funded || c.dug > 0));
+  return starter !== null && !started ? starter : DIG_KWH[piece];
+}
+
 // the hands: droneCount drones all work the OLDEST unfinished dig (they
 // swarm one face — reads well on the surface and keeps the model simple).
 // tryFund(kwh) is the bank's hand (power.spend bound by the caller): it
@@ -124,7 +132,7 @@ export function tick(b, dt, droneCount = 0, tryFund = () => true) {
     const cell = b.cells.get(k);
     if (!cell) { b.queue.shift(); continue; }
     if (cell.dug === 0 && !cell.funded) {
-      if (!tryFund(DIG_KWH[cell.piece] ?? 2)) {
+      if (!tryFund(digPrice(b, cell.piece))) {
         if (!cell.waiting) { cell.waiting = true; events.push({ type: 'waiting', key: k, piece: cell.piece }); }
         break; // the head waits; order is never jumped
       }
@@ -251,6 +259,7 @@ export function serialize(b) {
     ring: b.ringInstalled,
     cells: [...b.cells.entries()].map(([k, c]) => [k, c.piece, +c.dug.toFixed(4)]),
     queue: [...b.queue],
+    funded: [...b.cells].filter(([, c]) => c.funded && +c.dug.toFixed(4) === 0).map(([k]) => k),
     spoil: { ...b.spoil },
   };
 }
@@ -264,9 +273,9 @@ export function deserialize(raw) {
       if (typeof k !== 'string' || !BURROW_PIECES[piece] || !Number.isFinite(dug)) continue;
       const { col, depth } = parseKey(k);
       if (!Number.isFinite(col) || !Number.isFinite(depth)) continue;
-      // a half-dug cell was already funded; a never-started one pays on start
+      // Preserve a prepaid, unstarted room without changing legacy cell rows.
       b.cells.set(k, {
-        piece, dug: Math.max(0, Math.min(1, dug)), planned: dug < 1, funded: dug > 0,
+        piece, dug: Math.max(0, Math.min(1, dug)), planned: dug < 1, funded: dug > 0 || (dug === 0 && Array.isArray(raw.funded) && raw.funded.includes(k)),
       });
     }
   }

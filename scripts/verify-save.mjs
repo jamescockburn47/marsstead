@@ -32,6 +32,14 @@ const state = {
 
 // 1. round-trip: what was lived is what wakes up
 {
+  const activities = {worker:'deployed',routeProgress:12,routeOpen:true,crop:{phase:'watered',growth:27},harvests:2,rations:1,benchRoom:'2,1',cropRoom:'-2,1'};
+  const back = acceptSave(snapshotSave({...state,activities}));
+  check('habitat activities round-trip', JSON.stringify(back.activities) === JSON.stringify(activities));
+  const legacy = snapshotSave(state); delete legacy.activities;
+  const defaults = acceptSave(legacy).activities;
+  check('legacy habitat activities begin unclaimed', defaults.worker === 'stranded' && defaults.rations === 0 && !defaults.routeOpen);
+}
+{
   const back = acceptSave(snapshotSave(state));
   check('round-trip accepts', back !== null);
   check('clock survives', back.simMillis === state.simMillis);

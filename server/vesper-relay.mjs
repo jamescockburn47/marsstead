@@ -13,7 +13,7 @@
 import {
   buildMessages, buildBarkMessages, BARK_MOMENTS, sanitizeState, clampLine,
   moodFor, moodForEvent, ttsPlan, splitPairingTag,
-  CHAT_PARAMS, LIMITS, MOODS, VOICE_ID, cleanStr,
+  CHAT_PARAMS, LIMITS, MOODS, VOICE_ID, VESPER_CONTRACT, TTS_MODEL, cleanStr,
 } from '../src/vesperbrain.js';
 import { decide, yieldFor, isCapSignal, capReason, METER_DEFAULTS } from '../src/vespermeter.js';
 
@@ -302,7 +302,7 @@ createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && path === '/brain/health') {
       return send(res, 200, {
-        ok: true, model: CHAT_PARAMS.model, voice: VOICE_ID,
+        ok: true, model: CHAT_PARAMS.model, voice: VOICE_ID, contract: VESPER_CONTRACT, ttsModel: TTS_MODEL,
         cache: ttsCache.size, uptime: Math.round(process.uptime()),
       });
     }

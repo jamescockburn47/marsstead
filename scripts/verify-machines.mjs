@@ -120,6 +120,11 @@ function check(name, ok, detail = '') {
   for (let t = 0; t < 8 && !w; t += 0.5) w = machineTick(el, 0.5);
   check('electrolyser makes water', w === 'water');
   check('queue caps', machineFeed(el, 'ice', 99) === MACHINE_QUEUE_CAP);
+  const pipeline = createMachine('smelter', 0, 0);
+  machineFeed(pipeline, 'regolith', 1);
+  for (let t = 0; t < 30; t += 0.5) machineTick(pipeline, 0.5);
+  check('smelter processes spoil unattended and stops at steel',
+    pipeline.out['steel-panel'] === 1 && !pipeline.out['iron-ore'] && !pipeline.queue.length);
 }
 
 if (failed) { console.error(`verify-machines: ${failed} FAILED`); process.exit(1); }

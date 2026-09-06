@@ -1,0 +1,53 @@
+# Whole-game redesign: architecture evidence
+
+5 September 2026. Read-only source audit; this report does not claim a new playtest, multiplayer implementation, or successful migration. Scope: preserving the existing game while proving a substantially better first expedition. Cooperative-world policy remains in [COOPERATIVE-FRONTIER.md](../COOPERATIVE-FRONTIER.md).
+
+## Finding
+
+The game has useful deterministic simulation and rendering boundaries. It does not need an engine replacement to test a different visual identity. Its main obstacle is that one large game object owns the player, every location, time, interactions, presentation and persistence. New art can be isolated now; multiple bases and cooperation cannot safely be implemented by cloning the current crown object.
+
+There are two different home systems, not merely two views of one home: the older surface `stead.parts` with face-based building/pressure, and `burrow.cells` with underground rooms. Both are saved. Preserve old structures, but stop expanding both progression paths. The revised route should teach the burrow once and retain older surface builds as supported legacy constructions.
+
+## Keep, rebuild, remove from the new route
+
+| Area | Actual boundary and evidence | Decision |
+| --- | --- | --- |
+| Planet model | `mars.js:26` uses 296 game metres per degree, approximately 1:200 horizontal compression. Generated Mars data supplies geography; `marschunk.js:115` supplies rendered-mesh ground height. | Keep geographic data, coordinates and deterministic ground contract. Rebuild local geological composition independently of the map scale. Do not imply full-scale surveyed terrain. |
+| Terrain presentation | `terrain.js:31` starts the layer; one Lambert material with shader detail, streamed LOD and explicit disposal. `marschunk.js:12` uses 64 m chunks and 16/8/4 subdivisions. | Replace/test the material and authored procedural formations without replacing the streamer. Geometry that changes traversability needs the same collision surface. A prettier normal map cannot create convincing cliffs or overhangs. |
+| Character | `colonist.js:94` builds the procedural body; `colonistrig.js:149` owns the pure rig. `main.js:2149` onwards passes actual travel, airborne state and ground sampling to the pose. | Keep the input-to-pose seam and contact regression tests. Rebuild silhouette/proportions and reassess animation in ordinary motion. Numerical foot contact is necessary, not evidence of attractive animation. |
+| Walking and camera | `main.js:2076` owns movement, collision, pose, tracks and a 7 m orbit. Camera only lifts above terrain at `:2179`; this is not general camera occlusion handling. Habitat and cave sessions have their own controls/cameras. | Extract one bounded surface traversal session when the new route needs it. Test speed, turning, stopping, slopes and camera obstruction together. Keep specialised interior camera behaviour, but share action names and sensitivity settings. |
+| Vehicles | Pure buggy/hopper simulation is separate from `buggylayer.js`/`shiplayer.js`; `main.js:1346` stages flight and `:2490` onwards substeps buggy motion. | Keep simulation as the baseline. Replace body design and revise handling only against a driving course. Current rocket travel is staged and unsteerable; a cinematic launch does not prove flight gameplay. |
+| Interactions | `gameinput.js` clears/blocks world input for panels. `main.js:1394` resolves interactions, and `:2263` onwards independently builds prompts. | Keep the input boundary. Rebuild the new route around a small explicit list of available actions shared by prompts and execution; avoid more competing proximity branches. Do not introduce a generic entity framework. |
+| Construction | `burrow.js` has pure plan/fund/dig/serialize operations; `habitat-model.js` maps completed cells into room geometry/collision. | Keep these rules and their single source of truth. Rebuild the placement experience and presentation around visible work. Do not make trailer-only construction the product interaction. |
+| Production/power | `power.js` has readable load priorities and deterministic supply. `main.js:2865` counts every solar array/battery into one bank. `main.js:919` collects player-proximity cargo stores. | Keep arithmetic and conservation helpers. Introduce base-local ownership before multiple banks. Copying the existing bank would duplicate RTG/capacity benefits or let remote arrays power unrelated homes. |
+| VESPER | Instrument events are immediate at `main.js:1780`; live `/brain/chat` is separate. Prompt whitelist is in `vesperbrain.js`. Current prompt still says “only other mind on the planet” and carries old Seed material. | Keep deterministic abilities/safety outside generated speech. Add a small companion state/view boundary and replace conflicting prompt context when runtime changes. No physical body, battery, care or assistance action currently exists. |
+| Opening momentum | `fieldwork.js:43` derives First Light objectives from actual state; one fixed survey site grants one solar wing. | Keep state-derived guidance and single-claim reward mechanics. Replace the linear instruction sequence with a short physical expedition including VESPER. Current dial UI is not cooperative physical work. |
+| Underground | `underworld.js` is a 150 m deterministic route with three ordered nodes; `under-session.js` owns visit state, light modes and scanning. | Keep safe-return and completed-discovery persistence. Rebuild one episode with an actual change in the world. Do not describe the existing fixed route as a cave campaign or a multilayer regional world. |
+| Sound | Procedural local `gamesound.js` is separate from teaser editing. | Keep bounded spatial/event sound as a useful feedback seam. Do not reinstate the rejected soundtrack. |
+
+## Preserve the baseline while making a real comparison
+
+Use a separate prototype entrypoint with its own scene and disposable state. It must not instantiate the normal game constructor merely to borrow assets: that constructor wires persistence, dashboard pings, VESPER and UI as well as rendering. Import rendering and pure simulation modules directly. No save reads/writes, no real conversations and no world-service connection are needed to judge the visual direction.
+
+Show baseline and candidate at equal camera height, field of view, time of day and quality. Include a normal walking/buggy view, not only a close composition. Show motion and a modest quality setting. Record renderer draw calls/frame timings as observations with the device and resolution; do not turn a desktop result into a general performance claim.
+
+Promote successful rendering modules into gameplay one seam at a time. The prototype entrypoint remains explicitly experimental until its scene uses the product's traversal and interaction rules. Do not grow an independent second game's simulation to make a showroom seem playable.
+
+## Save/base boundary that must precede persistent expansion
+
+`save.js` currently uses one `marsstead/meta/game` record, `SAVE_VERSION = 1`, forward-version refusal, normalised data and serial/coalesced writes. `main.js:697` restores fields individually; `:786` assembles a whole-game snapshot. The crown is hard-coded at `main.js:310`. Interior positions are intentionally session-only (`habitat-session.js:8`), and room keys such as `0,1` identify cells only within that one burrow.
+
+The first multi-base change should wrap the current crown as a stable first base, then make active-base access explicit. A base needs an ID, world origin, local burrow, bank, owned machines and designated stores. Interior identity must be `(baseId, roomKey)`. Player inventory, ship/buggy, personal discovery and VESPER memory remain player-owned. Existing surface stead data must survive even if the new onboarding no longer teaches it.
+
+Read and retain the raw old record before normalisation/migration; `loadGame()` currently returns only the accepted form. Write a backup and upgraded record atomically, or retain the old database unchanged while writing a new versioned slot. Do not overwrite version 1 with an incompatible structure still labelled version 1. Make repeat migration idempotent and test failure between writes, duplicate room keys across bases, charge/resource preservation, legacy structures, and reopen after travel.
+
+This is future critical-consequence work, not required for the current visual prototype. No backend or save migration was performed for this audit.
+
+## Four bounded delivery slices
+
+1. **Whole-route visual and movement proof.** Separate non-saving entrypoint; surface terrain, astronaut, vehicle, VESPER shell and a useful destination share an art direction. Acceptance: visibly distinct comparison at normal camera distance; move/turn/stop/drive around it; no unexpected camera obstruction; modest-quality view remains legible; baseline still starts unchanged. Root owns judgement, not test counts.
+2. **Solo first expedition.** Integrate the chosen art into a fresh-start route: recover VESPER, restore shelter, travel, solve one physical problem, return with a visible change. Add deterministic companion care/hibernation and one reliable assistance action, with live speech optional. Acceptance: complete by actual controls with guidance on/off; keyboard and touch; essential help survives relay failure; stopping play never drains the companion; existing saves still load. Measure pacing rather than declaring “15 minutes” from a script.
+3. **Two useful local bases.** Implement the versioned save/base boundary and a forward refuge whose location genuinely changes refuelling or access. Acceptance: establish, leave, operate the other base, return and reload with separate power/stores/cells intact; existing snapshot migrates once without losses; rescue destination is explicit. Independent review at the migration boundary.
+4. **Two-player private expedition.** Apply the authority requirements already recorded in Cooperative Frontier; add shared contribution and nearby presence to the same route. Acceptance: separate viable landings, meet, contribute once, disconnect/retry/rejoin without duplicated payment or blocked exit; VESPER histories remain private; a solo completion path exists. Shared sleep cannot advance everybody's world clock from one player's local animation.
+
+Do not make the whole-game redesign wait for multiplayer infrastructure. Conversely, do not present presence dots as persistent cooperation. The visual proof and solo expedition can be learned from immediately; save and shared authority get their own bounded implementation afterward.

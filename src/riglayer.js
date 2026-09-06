@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { hash2 } from './noise.js';
+import { rigFittings } from './industry-fittings.js';
 import { depositsNear, HOPPER_CAP, hopperCount } from './mine.js';
 
 const FRAME = 0x3a3430, DECK = 0x6e5f4c, GOLD = 0xc9974a;
@@ -68,6 +69,7 @@ export class RigLayer {
     }
     this.group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 
+    this.finish = rigFittings(this);
     // ---- the ore bodies: clusters rebuilt as the walker ranges ------------
     this.oreGroup = new THREE.Group();
     scene.add(this.oreGroup);

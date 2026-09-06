@@ -28,16 +28,20 @@ function check(name, ok, detail = '') {
     RECIPES[RECIPES.regolith.out].out === 'steel-panel');
 }
 
-// 1b. the pipeline in motion: feed regolith alone, harvest steel — the
-//     T-refeed loop (collect tray, feed back) closed by the recipe map
+// 1b. The actual unattended product: no synthetic T/refeed in the test.
 {
   const fab = createFab();
   fabFeed(fab, 'regolith', 1);
   for (let t = 0; t < 60; t += 0.5) {
-    const d = fabTick(fab, 0.5);
-    if (d && RECIPES[d]) { fabTake(fab, d, 1); fabFeed(fab, d, 1); } // the T loop
+    fabTick(fab, 0.5);
   }
   check('a sack of spoil ends as a steel panel', fab.out['steel-panel'] === 1);
+  check('pipeline stops at steel', fab.queue.length === 0 && !fab.out['iron-ore']);
+  const full = createFab();
+  fabFeed(full, 'regolith', QUEUE_CAP);
+  fabTick(full, RECIPES.regolith.seconds);
+  check('intermediate keeps the full queue bounded', full.queue.length === QUEUE_CAP
+    && full.queue[0] === 'iron-ore' && fabOutCount(full) === 0);
 }
 
 // 2. the cook: FIFO, per-recipe rates, out-tray fills

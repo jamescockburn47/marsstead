@@ -139,6 +139,10 @@ export function controlsFor(state) {
 // one is a plain key dispatch — devKeys gates them by distance and state,
 // exactly as it does for the keyboard.
 export const MORE_ITEMS = [
+  ['Pause and settings', 'Escape'],
+  ['Mission orders', 'KeyO'],
+  ['Discovery record', 'KeyJ'],
+  ['Type to VESPER', 'Enter'],
   ['Sleep till dawn', 'KeyR'],
   ['Lamp', 'KeyL'],
   ['Hitch · unhitch the rig', 'KeyH'],
@@ -265,6 +269,11 @@ export class TouchControls {
   tick() {
     if (!this.active) return;
     const g = this.game;
+    const panel = g.paused || g.under?.ui.visible || g.orders?.visible || g.map?.visible || g.journalUI?.visible
+      || g.weatherSession?.visible || g.crew?.visible || g.burrowUI?.visible || g.worksUI?.visible || g.hopUI?.visible || g.fieldUI?.visible
+      || g.chatBar?.style.display === 'block';
+    this.root.style.display = panel ? 'none' : '';
+    if (panel) { this._clearMoveKeys(); g.touchStick = null; return; }
     const state = stateOf({
       sleeping: !!g.sleepAnim, inLander: !!g.inLander,
       driving: !!g.driving, buildMode: !!g.buildMode,

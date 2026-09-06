@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { CELL, parseFaceKey, faceCentre } from './build.js';
+import { panelFittings } from './industry-fittings.js';
 
 const PANEL = 0xcfc5b6, STEEL = 0x9aa2ab, GLASS = 0x9fc4e0, LOCK = 0xb34a2a;
 const FRAME = 0x3a3430, GOLD = 0xc9974a, BERM = 0x7e452b;
@@ -116,6 +117,7 @@ export class SteadLayer {
     const lef = bar(BAR, H, THICK * 1.6, FRAME); lef.position.set(-CELL / 2 + BAR / 2, yMid, 0);
     const rig = bar(BAR, H, THICK * 1.6, FRAME); rig.position.set(CELL / 2 - BAR / 2, yMid, 0);
     g.add(top, bot, lef, rig);
+    panelFittings(g,type,CELL);
     return g;
   }
 

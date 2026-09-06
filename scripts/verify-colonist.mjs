@@ -9,6 +9,7 @@ import {
   BONES, GAIT, JOINT_CAP, gaitBlend, cadence, dutyFactor, strideLength,
   springStep, smoothDampAngle, smoother01, solveLeg, legFK, angDiff, ColonistRig,
 } from '../src/colonistrig.js';
+import './verify-colonist-contact.mjs';
 
 let failed = 0;
 function check(name, ok, detail = '') {
@@ -71,18 +72,14 @@ function check(name, ok, detail = '') {
   check('spring survives 4000 worst-case frames', worst < 2, `worst ${worst.toFixed(2)}`);
 }
 
-// ---- gait parameters (the FROUDE LAW, 2026-07-20: the regime follows
-// the physics — on Mars g the walk wall sits near 1.2 m/s, so a true
-// walk double-supports only BELOW it and everything faster is the lope)
-check('a true walk double-supports (below the Froude wall)', dutyFactor(1.0) > 0.5);
-check('the travel speed is a lope, as physics demands', dutyFactor(GAIT.WALK_V) < 0.5);
+// Supported walking follows the grounded controller. Sprint remains a lope.
+check('normal walking double-supports', dutyFactor(GAIT.WALK_V) > 0.5);
+check('brisk travel remains supported', dutyFactor(2.6) > 0.5);
 check('lope flies (duty < 0.5)', dutyFactor(GAIT.LOPE_V) < 0.5);
 check('blend is smooth 0..1', gaitBlend(0) === 0 && gaitBlend(9) === 1
-  && gaitBlend(1.6) > 0 && gaitBlend(1.6) < 1);
-check('stride grows with speed',
-  strideLength(GAIT.LOPE_V) > strideLength(GAIT.WALK_V));
-check('cadence eases DOWN toward the lope (low-g)',
-  cadence(GAIT.LOPE_V) < cadence(1.0));
+  && gaitBlend(3.8) > 0 && gaitBlend(3.8) < 1);
+check('stride grows with speed', strideLength(GAIT.LOPE_V) > strideLength(GAIT.WALK_V));
+check('walking cadence responds to speed', cadence(2.6) > cadence(1));
 check('angDiff wraps', Math.abs(angDiff(0.1, Math.PI * 2 + 0.2) - 0.1) < 1e-9
   && Math.abs(angDiff(3, -3) - (2 * Math.PI - 6)) < 1e-9);
 
@@ -135,7 +132,7 @@ function simulate(speed, seconds, dtStep = 1 / 90) {
   check('a true walk never goes airborne', slowFlight === 0, `${slowFlight} flight frames`);
   const flight = frames.filter((f) => !f.pose.footL.planted
     && !f.pose.footR.planted).length;
-  check('the travel lope truly flies', flight > 0, `${flight} flight frames`);
+  check('normal walking always has support', flight === 0, `${flight} flight frames`);
 
   // (d) pelvis height is continuous and oscillates in a sane band
   let maxJump = 0, lo = 9, hi = -9;
@@ -212,6 +209,26 @@ function simulate(speed, seconds, dtStep = 1 / 90) {
     `${(flight / settled.length).toFixed(2)} of frames`);
 }
 
+// User-visible regressions: low boot clearance, modest vertical motion and
+// arms that pass behind the shoulder as well as forward. Exact planted targets
+// alone did not catch the previous floating paddle gait.
+{
+  const frames = simulate(GAIT.WALK_V, 5).filter(f => f.t > 1);
+  const poses = frames.map(f => f.pose);
+  const lift = Math.max(...poses.flatMap(p => [p.footL.y, p.footR.y]));
+  const hips = poses.map(p => p.hipY);
+  const arms = poses.map(p => p.armL.shoulderPitch);
+  check('walking boot clearance stays below 5 cm', lift > 0.02 && lift < 0.05);
+  check('walking pelvis does not repeatedly squat or pogo',
+    Math.min(...hips) > 0.75 && Math.max(...hips) > 0.79
+      && Math.max(...hips) - Math.min(...hips) < 0.045);
+  check('arms counter-swing on both sides of neutral',
+    Math.min(...arms) < -0.10 && Math.max(...arms) > 0.10);
+  const brisk = simulate(2.6, 3);
+  check('brisk grounded travel also retains support',
+    brisk.every(f => f.pose.footL.planted || f.pose.footR.planted));
+}
+
 // ---- the settle: walk, stop, and stand tall on straight legs under him -----
 {
   const rig = new ColonistRig();
@@ -276,5 +293,12 @@ function simulate(speed, seconds, dtStep = 1 / 90) {
   check('idle boots stay put', moved < 1e-9, `moved ${moved}`);
 }
 
+// Travelling motion is tested through the real controller and rendered rig.
+// Isolated frozen bound poses cannot establish a coherent gait.
+await import('./verify-travel-gait.mjs');
+
 if (failed) { console.error(`verify-colonist: ${failed} FAILED`); process.exit(1); }
 console.log('verify-colonist: all green');
+
+await import('./verify-gait-turn.mjs');
+await import('./verify-gait-release.mjs');

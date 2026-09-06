@@ -9,6 +9,7 @@
 export const SAVE_VERSION = 1;
 const DB = 'marsstead', STORE = 'meta', KEY = 'game';
 
+import { acceptWeather, acceptCondition } from './weather.js';
 import { ITEMS } from './inventory.js';
 import { LANDER_STOCK } from './salvage.js';
 import { PART_TYPES } from './build.js';
@@ -18,9 +19,22 @@ import { RECIPES, QUEUE_CAP } from './refine.js';
 import { MACHINE_TYPES, MACHINE_QUEUE_CAP } from './machines.js';
 import { serializeMystery, deserializeMystery } from './marslegends.js';
 import { serializeHeritage, deserializeHeritage } from './heritage.js';
+import { acceptFieldwork } from './fieldwork.js';
+import { normaliseSettings } from './playsettings.js';
+import { acceptUnderworld } from './underworld.js';
+import { acceptOpening } from './opening.js';
+import { acceptHabitatActivities } from './habitat-activities.js';
 
 const clamp01 = (v, dflt) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : dflt);
 const fin = (v, dflt) => (Number.isFinite(v) ? v : dflt);
+function paidRecipe(machine) {
+  const type = MACHINE_TYPES[machine.type];
+  if (!type) return undefined;
+  const candidates = [type.costs, type.altCosts].filter(Boolean);
+  const match = candidates.find(cost => JSON.stringify(cost) === JSON.stringify(machine.paidCosts));
+  // Pre-provenance saves retain their previous standard-recipe refund rule.
+  return (match || type.costs).map(([id, n]) => [id, n]);
+}
 
 // slots: keep only real items, whole non-negative counts, bounded
 function vetSlots(slots, cap = 999) {
@@ -73,7 +87,15 @@ export function snapshotSave(state) {
     machines: state.machines.map((m) => ({
       type: m.type, x: m.x, z: m.z, heading: m.heading,
       queue: [...m.queue], t: m.t, out: { ...m.out },
+      paidCosts: paidRecipe(m), exposure: acceptCondition(m.exposure),
     })),
+    expedition: acceptFieldwork(state.expedition),
+    underworld: acceptUnderworld(state.underworld),
+    activities: acceptHabitatActivities(state.activities),
+    opening: acceptOpening(state.opening),
+    weather: acceptWeather(state.weather, state.simMillis),
+    weatherEquipment: { rover: acceptCondition(state.weatherEquipment?.rover), rig: acceptCondition(state.weatherEquipment?.rig) },
+    settings: normaliseSettings(state.settings),
     // the trail (additive, version stays 1: an older save just wakes on
     // unmarked ground) — already flat-encoded by tracks.serializeTrail
     trail: Array.isArray(state.trail) ? state.trail : [],
@@ -195,6 +217,7 @@ export function acceptSave(meta) {
       }
       machines.push({
         type: m.type, x: m.x, z: m.z, heading: fin(m.heading, 0),
+        paidCosts: paidRecipe(m), exposure: acceptCondition(m.exposure),
         queue: Array.isArray(m.queue)
           ? m.queue.filter((id) => MACHINE_TYPES[m.type].recipes[id]).slice(0, MACHINE_QUEUE_CAP)
           : [],
@@ -235,6 +258,13 @@ export function acceptSave(meta) {
     prospected,
     fab,
     machines,
+    expedition: acceptFieldwork(meta.expedition),
+    underworld: acceptUnderworld(meta.underworld),
+    activities: acceptHabitatActivities(meta.activities),
+    opening: acceptOpening(meta.opening),
+    weather: acceptWeather(meta.weather, meta.simMillis),
+    weatherEquipment: { rover: acceptCondition(meta.weatherEquipment?.rover), rig: acceptCondition(meta.weatherEquipment?.rig) },
+    settings: normaliseSettings(meta.settings),
     // bounded pass-through: tracks.deserializeTrail launders the quads
     trail: Array.isArray(meta.trail) ? meta.trail.slice(0, 48000) : [],
     settlerName: cleanName(meta.settlerName || ''),
@@ -286,19 +316,21 @@ let pendingMeta = null;
 
 export function saveGame(meta) {
   pendingMeta = meta;
-  writeQueue = writeQueue.then(async () => {
+  const write = writeQueue.then(async () => {
     if (pendingMeta === null) return;
     const m = pendingMeta;
     pendingMeta = null;
     const db = await openDB();
-    await new Promise((res, rej) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(m, KEY);
-      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
-    });
-    db.close();
-  }).catch(() => {}); // a failed write must not wedge the chain
-  return writeQueue;
+    try {
+      await new Promise((res, rej) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(m, KEY);
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+      });
+    } finally { db.close(); }
+  });
+  writeQueue = write.catch(() => {}); // recover the queue; this caller still sees failure
+  return write;
 }
 
 export async function loadGame() {

@@ -18,12 +18,12 @@ import { makeEnvTexture } from './colonist.js';
 import { FBM_GLSL } from './glsl.js';
 import { MAX_TANKS, TANK_FUEL_KG } from './hopper.js';
 import { meshGroundHeight } from './marschunk.js';
+import { addShipFinish } from './ship-finish.js';
 
 const SHELL = 0xe8e2d6;
 const RUST = 0xc45a2e;
 const METAL = 0x8a8f96;
 const DARKMETAL = 0x3c3a38;
-const VISOR = 0xd8a748;
 const RUBBER = 0x24211f;
 const FROST = 0xdce8ea;
 const TEAL = 0x3fd0c9;
@@ -52,8 +52,8 @@ export class ShipLayer {
     scene.add(this.group);
 
     const shell = new THREE.MeshPhysicalMaterial({
-      color: SHELL, roughness: 0.38, metalness: 0,
-      clearcoat: 0.7, clearcoatRoughness: 0.28,
+      color: SHELL, roughness: 0.52, metalness: 0,
+      clearcoat: 0.22, clearcoatRoughness: 0.38,
     });
     const accent = new THREE.MeshPhysicalMaterial({
       color: RUST, roughness: 0.55, metalness: 0,
@@ -61,7 +61,7 @@ export class ShipLayer {
     });
     const metal = new THREE.MeshPhysicalMaterial({ color: METAL, roughness: 0.34, metalness: 1 });
     const dark = new THREE.MeshPhysicalMaterial({ color: DARKMETAL, roughness: 0.5, metalness: 1 });
-    const visor = new THREE.MeshPhysicalMaterial({ color: VISOR, roughness: 0.07, metalness: 1 });
+    const visor = new THREE.MeshPhysicalMaterial({ color: 0x725335, roughness: 0.16, metalness: .9, clearcoat:1 });
     const rubber = new THREE.MeshPhysicalMaterial({ color: RUBBER, roughness: 0.92, metalness: 0 });
     const frost = new THREE.MeshPhysicalMaterial({
       color: FROST, roughness: 0.55, metalness: 0,
@@ -100,9 +100,9 @@ export class ShipLayer {
     // ---- the canopy: a wrap of bronze glass under the nose ----------------
     const canopy = new THREE.Mesh(
       new THREE.LatheGeometry(
-        [[1.26, 6.55], [1.16, 6.95], [1.0, 7.3], [0.84, 7.55]]
-          .map(([x, y]) => new THREE.Vector2(x + 0.015, y)),
-        26, -Math.PI * 0.62, Math.PI * 1.24,
+        [[1.325,6.55],[1.28,6.7],[1.17286,6.95],[1.02286,7.3],[.98,7.4],[.90286,7.55]]
+          .map(([x, y]) => new THREE.Vector2(x + 0.028, y)),
+        64, -Math.PI * 0.62, Math.PI * 1.24,
       ), visor,
     );
     g.add(canopy);
@@ -216,6 +216,7 @@ export class ShipLayer {
       new THREE.MeshBasicMaterial({ color: 0xe8c46a, fog: false }));
     this.beacon.position.set(0.25, 9.82, 0);
     g.add(mast, dish, this.nav, this.beacon);
+    this.finish=addShipFinish(g,{shell,metal,dark,rubber,accent});
 
     g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     for (const f of this.flame.children) f.castShadow = false;
@@ -311,6 +312,9 @@ export class ShipLayer {
   }
 
   update(t, night) {
+    // The studio environment is a reflection approximation, not a night light.
+    // Let the service bay and real scene lamps reveal the parked craft after dark.
+    for (const material of this.mats) material.envMapIntensity = night ? .075 : .65;
     this.beacon.material.color.setHex(night ? 0xffd98a : 0xe8c46a);
     const pulse = 0.75 + 0.25 * Math.sin(t * 2.4);
     this.nav.scale.setScalar(pulse);

@@ -145,3 +145,10 @@ export function solClock(millis) {
   const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
   return `Sol ${Math.floor(msd)}, ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} MTC`;
 }
+
+// Player-facing expedition day and local sunlight clock; scientific MSD stays available above.
+export function missionClock(millis, start, lonE) {
+  const day = Math.max(1, Math.floor((millis - start) / 88775244) + 1);
+  const hours = ltst(millis, lonE);
+  return `Sol ${day} · ${String(Math.floor(hours)).padStart(2, '0')}:${String(Math.floor((hours % 1) * 60)).padStart(2, '0')} local`;
+}

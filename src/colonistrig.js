@@ -1,31 +1,19 @@
-// The colonist's rig — pure pose mathematics, no THREE, no DOM.
-// verify-colonist.mjs guards it.
-//
-// Third cut, and a change of species: the sine-wave walk is dead. Sine
-// joint rotations can never plant a foot — the boot skates through its
-// step because nothing ties it to the ground — and that skate is THE
-// robotic tell. This module is built the way procedural character work
-// actually gets done (Rosen's Overgrowth GDC talk; Orange Duck's
-// analytic IK; Juckett's damped springs):
-//
-//   1. a PHASE CLOCK with real stance/swing windows (duty factor: walk
-//      overlaps in double support, the lope has true flight phases),
-//   2. WORLD-LOCKED FOOT PLANTS — a stance boot freezes where it landed
-//      and the body vaults over it (inverted pendulum), enforced by
-//   3. analytic TWO-BONE IK (law of cosines) per leg, and
-//   4. DAMPED SPRINGS layering the life on top: head lag, arm settle,
-//      landing squash, acceleration lean, idle breathing and fidgets.
-//
-// 0.38 g tuning (hypogravity gait research): cadence is LOW, strides are
-// LONG, the lope is a chain of floaty bounds with high swing lift and a
-// forward lean, and the walk->lope change is a smooth blend, not a gear
-// shift (low-g transitions are gradual — Froude ~0.37 not 0.5).
+// Pure procedural pose mathematics. Grounded exploration uses short alternating
+// steps matched to actual displacement. Sprint uses longer low-g bounds; real
+// airborne physics selects the jump pose. Feet are world-locked during support
+// and finally solved against the rendered hip with analytic two-bone IK.
+// Upper-body springs provide counter-swing and settle without moving boot plants.
+// The grounded walking contract is checked by verify-colonist.mjs and its
+// rendered-hierarchy contact checks; media/gait-review.html compares real rigs.
 //
 // Angle conventions (semantic; the view maps to THREE rotations):
 //   hipPitch    + swings the thigh FORWARD
 //   kneeFlex    + bends the shin BACK (never negative: no hyperextension)
 //   anklePitch  + lifts the TOES
 //   shoulderPitch + swings the arm FORWARD;  elbowFlex + bends forward
+import { G_MARS, HABITAT_WALK_SPEED } from './physics.js';
+import { supportHeight, solveFoot, swingFoot } from './colonistcontact.js';
+import { stepLope } from './colonistlope.js';
 
 // ---- suit skeleton (metres) — the view builds flesh on these bones ------
 export const BONES = {
@@ -44,41 +32,29 @@ export const BONES = {
 const LEG = BONES.THIGH + BONES.SHIN;         // full leg reach, hip->ankle
 const REST_HIP = BONES.HIP_Y - BONES.ANKLE_H; // hip over the ANKLE at rest
 
-// ---- gait numbers (0.38 g) ----------------------------------------------
+// Supported exploration steps are an animation choice, not a claim that an
+// unassisted human would choose this cadence on Mars. The gameplay controller
+// stays grounded when walking; its visual gait must do the same. Sprint retains
+// long low-gravity bounds, and actual jumps use the airborne pose.
 export const GAIT = {
-  WALK_V: 2.6, LOPE_V: 6.0,        // physics.js speeds — kept in step
-  CAD_WALK: 1.4, CAD_LOPE: 1.1,    // strides/s (physics.js STRIDE_HZ_*)
-  DUTY_WALK: 0.62,                 // stance fraction: double support, a walk
-  DUTY_LOPE: 0.30,                 // stance fraction: real flight, a bound
-  LIFT_WALK: 0.07, LIFT_LOPE: 0.20, // swing-foot arc height (high: low-g)
-  PEND_SOFT: 0.42,                 // knee absorbs this much of the vault
+  WALK_V: HABITAT_WALK_SPEED, LOPE_V: 6.0,
+  CAD_WALK: 1.85, CAD_LOPE: 1.45,
+  DUTY_WALK: 0.52, DUTY_LOPE: 0.30,
+  LIFT_WALK: 0.04, LIFT_LOPE: 0.16,
+  PEND_SOFT: 0.42,
 };
-
-// ---- the Froude law (2026-07-20 gait audit — the core fix) --------------
-// Walking is an inverted pendulum, and the pendulum has a speed limit:
-// past Froude ~0.5 (v² / g·leg) the stance foot cannot stay down — every
-// real body switches to a run. On Mars g the wall sits at ~1.2 m/s, so
-// the game's 2.6 m/s "walk" was a physical impossibility: rendering it
-// as a 62%-duty walk forced 0.93 m steps on a 0.82 m leg, and the IK
-// clamped at full stretch on EVERY stride — THE goofy tell #1. The blend
-// now follows the physics: below the wall a true short-stepped walk,
-// above it the floaty Mars lope Apollo footage actually shows.
-export const G_EFF = 3.71;
+export const G_EFF = G_MARS;
 export function froude(speed) { return (speed * speed) / (G_EFF * LEG); }
-
-// blend 0 (walk) -> 1 (lope), smooth — driven by Froude, not by taste
 export function gaitBlend(speed) {
-  const t = (froude(speed) - 0.45) / 1.15;
-  const c = Math.max(0, Math.min(1, t));
-  return c * c * (3 - 2 * c);
+  const t = Math.max(0, Math.min(1, (speed - 2.8) / 2.2));
+  return t * t * (3 - 2 * t);
 }
 export function cadence(speed) {
-  const b = gaitBlend(speed);
-  return GAIT.CAD_WALK + (GAIT.CAD_LOPE - GAIT.CAD_WALK) * b;
+  const walk = Math.min(2.05, 0.75 + Math.max(0, speed) * 0.5);
+  return walk + (GAIT.CAD_LOPE - walk) * gaitBlend(speed);
 }
 export function dutyFactor(speed) {
-  const b = gaitBlend(speed);
-  return GAIT.DUTY_WALK + (GAIT.DUTY_LOPE - GAIT.DUTY_WALK) * b;
+  return GAIT.DUTY_WALK + (GAIT.DUTY_LOPE - GAIT.DUTY_WALK) * gaitBlend(speed);
 }
 export function strideLength(speed) { return Math.max(0.5, speed / cadence(speed)); }
 
@@ -215,6 +191,28 @@ export class ColonistRig {
   step(dt, inp) {
     dt = clamp(dt, 1e-4, 0.1);
     this.t += dt;
+    if (inp.gait) { this.lopeSettle = null; return stepLope(this, dt, inp, BONES, solveLeg, springStep); }
+    if (this.lope) {
+      this.lope = null;
+      // Complete the actual recovery arc before handing feet to the walk clock.
+      // The supporting heel lowers around its existing toe pivot.
+      const recovering = this.feet.findIndex(f => !f.planted);
+      if (!inp.airborne && recovering >= 0) {
+        const f = this.feet[recovering];
+        const leg = recovering === 0 ? this.lastLopePose.legR : this.lastLopePose.legL;
+        this.lopeSettle = { i: recovering, u: 0, from: { x: f.px, y: f.py, z: f.pz },
+          style: leg.anklePitch + leg.hipPitch - leg.kneeFlex };
+      } else for (const f of this.feet) if (f.toe) {
+        f.px -= Math.sin(f.yaw) * .20; f.pz -= Math.cos(f.yaw) * .20; f.toe = false;
+      }
+      this.prevAirborne = false;
+      this.sm = {};
+      if (this.lastLopePose) for (const [tag, leg] of [['L',this.lastLopePose.legL],['R',this.lastLopePose.legR]]) {
+        this.sm['h'+tag]={x:leg.hipPitch,v:0};
+        this.sm['k'+tag]={x:leg.kneeFlex,v:0};
+        this.sm['a'+tag]={x:leg.anklePitch,v:0};
+      }
+    }
     // the poison rule (this codebase keeps re-learning it): a value that
     // reaches a spring poisoned — NaN OR a finite explosion (a hip a
     // metre out of band is already impossible) — must never survive a
@@ -237,6 +235,7 @@ export class ColonistRig {
     else if (this.moving) { if (speed < 0.15) this.moving = false; }
     else if (speed > 0.35) this.moving = true;
     const moving = this.moving;
+    if (moving || airborne) this.idleStep = null;
     const b = gaitBlend(speed);
 
     // teleports (buggy dismount, save load) re-seat everything
@@ -257,16 +256,46 @@ export class ColonistRig {
     // every heel-strike; this is what removes it at ANY speed)
     const D = Math.min(dutyFactor(speed),
       speed > 0.2 ? (0.92 * LEG) / (speed * T) : 1);
-    if (moving) this.phase = (this.phase + cad * dt) % 1;
+    if (airborne) this.lopeSettle = null;
+    const settling = !!this.lopeSettle;
+    let settleStyle = 0;
+    if (settling) {
+      const st = this.lopeSettle, f = this.feet[st.i];
+      st.u = Math.min(1, st.u + dt / .24);
+      const k = smoother01(st.u);
+      settleStyle = st.style * (1 - k);
+      const ahead = Math.min(.12, speed * .08);
+      const tx = x + rx * f.side * BONES.FOOT_LAT + fx * ahead;
+      const tz = z + rz * f.side * BONES.FOOT_LAT + fz * ahead;
+      f.px = lerp(st.from.x, tx, k); f.pz = lerp(st.from.z, tz, k);
+      f.py = lerp(st.from.y, ground(f.px, f.pz), k);
+      if (st.u === 1) {
+        f.planted = true; f.yaw = heading; f.lift = null; f.swingStart = null;
+        // The other boot leaves support next; the recovered boot receives weight.
+        this.phase = st.i === 0 ? (D + .5) % 1 : D;
+        for (const boot of this.feet) if (boot.toe) {
+          boot.px -= Math.sin(boot.yaw) * .20; boot.pz -= Math.cos(boot.yaw) * .20; boot.toe = false;
+        }
+        this.lopeSettle = null;
+      }
+    } else if (moving) this.phase = (this.phase + cad * dt) % 1;
 
-    // landing: both boots down NOW, and the squash spring takes the hit
-    if (this.prevAirborne && !airborne) {
+    // A manual landing seats both boots before the next travelling support.
+    // Do not interpret the other leg as an already advanced walking swing
+    // on this same frame: at speed that invents a metre-long recovery target.
+    const landed = this.prevAirborne && !airborne;
+    if (landed) {
       this.phase = 0.55 * D;      // both cycles inside their stance windows
       this.replant(inp);
-      const sev = clamp(Math.abs(inp.vy || 0) / 6, 0, 1);
+      if (moving) {
+        const f=this.feet[1]; f.planted=false;
+        this.lopeSettle={i:1,u:0,from:{x:f.px,y:f.py,z:f.pz},style:0};
+      }
+      const sev = clamp(Math.abs(this.lastVy || inp.vy || 0) / 6, 0, 1);
       this.hipYS.v -= sev * 2.2;  // the knees take it; the spring gives it back
     }
     this.prevAirborne = airborne;
+    this.lastVy = inp.vy || 0;
 
     // ---- feet: locked plants and swing arcs -------------------------------
     const halfStance = clamp(speed * D * T * 0.5, 0, LEG * 0.9);
@@ -280,60 +309,54 @@ export class ColonistRig {
 
       if (airborne) { f.planted = false; f.lift = null; continue; }
 
+      if (settling || landed) continue;
+
       if (!moving) {
         // idling: boots stay where they were left, unless the tidy-up
         // micro-step (below) is walking one home
-        if (!f.planted) this.plantFoot(f, x, z, rx, rz, fx, fz, 0, ground);
         continue;
       }
 
       if (inStance) {
         if (!f.planted) {
-          // heel-strike: freeze the boot where the swing delivered it
-          this.plantFoot(f, f.px, f.pz, rx, rz, fx, fz, 0, ground, true);
+          // Seat at the sub-frame touchdown, not the previous frame's
+          // swing sample. At 30 Hz a runner travels 20 cm per frame;
+          // freezing that stale sample overextends the next stance.
+          this.plantFoot(f, x, z, rx, rz, fx, fz, halfStance - speed * cyc * T, ground);
         }
         // the planted boot: WORLD-LOCKED — this is the anti-skate law
         const sFrac = cyc / D;
         const w = Math.sin(Math.PI * sFrac);           // loaded mid-stance
-        const horiz = Math.hypot(x - f.px, z - f.pz) * GAIT.PEND_SOFT;
+        const horiz = Math.hypot(x - f.px, z - f.pz);
         const pend = Math.sqrt(Math.max(
-          LEG * LEG * 0.92 - horiz * horiz, LEG * LEG * 0.25));
+          LEG * LEG * 0.985 - horiz * horiz, LEG * LEG * 0.25));
         stanceHip += (f.py + pend) * w; stanceWSum += w;
         swayTarget += f.side * w;
       } else {
         // swing: an arc from lift-off to the predicted catch point
-        if (f.planted) { f.planted = false; f.lift = { x: f.px, z: f.pz, y: f.py }; f.tgt = null; }
+        if (f.planted) { f.planted = false; f.lift = { x: f.px, z: f.pz, y: f.py }; f.swingStart = null; }
         if (!f.lift) f.lift = { x: f.px, z: f.pz, y: f.py };
         const u = (cyc - D) / (1 - D);
-        const tLand = (1 - u) * (1 - D) * T;
-        // capture point: land where the body will need catching. The LIVE
-        // point jumps when speed/heading change mid-swing — low-pass it so
-        // the foot can't be yanked (replanning every frame is the jitter).
-        const txLive = x + inp.vx * tLand + fx * halfStance + rx * f.side * BONES.FOOT_LAT;
-        const tzLive = z + inp.vz * tLand + fz * halfStance + rz * f.side * BONES.FOOT_LAT;
-        if (!f.tgt) f.tgt = { x: txLive, z: tzLive };
-        const k = Math.min(1, 7 * dt);
-        f.tgt.x += (txLive - f.tgt.x) * k;
-        f.tgt.z += (tzLive - f.tgt.z) * k;
-        const s = smoother01(u);   // min-jerk: no jerk at lift, no stamp at plant
-        f.px = lerp(f.lift.x, f.tgt.x, s);
-        f.pz = lerp(f.lift.z, f.tgt.z, s);
-        const gY = ground(f.px, f.pz);
         const liftH = lerp(GAIT.LIFT_WALK, GAIT.LIFT_LOPE, b);
-        f.py = Math.max(gY, lerp(f.lift.y, gY, s)) + Math.sin(Math.PI * u) * liftH;
+        swingFoot(f, inp, u, (1 - D) * T, halfStance, liftH, BONES);
       }
     }
 
     // ---- idle housekeeping: weight shift + tidy-up steps ------------------
-    if (!moving && !airborne) this.idleFeet(inp, fx, fz, rx, rz, dt);
+    if (!moving && !airborne && !settling) this.idleFeet(inp, fx, fz, rx, rz, dt);
 
     // ---- pelvis height: the inverted pendulum, spring-smoothed ------------
     const gHere = ground(x, z);
     let hipTarget;
     if (airborne) {
-      hipTarget = REST_HIP - 0.12;                    // tucked, in flight
+      hipTarget = REST_HIP - 0.12; // manual jump tuck
     } else if (stanceWSum > 1e-4) {
-      hipTarget = (stanceHip / stanceWSum) - gHere;   // vault over the plant
+      // Anticipate touchdown, then rise over the supporting leg at
+      // mid-stance. Holding the longest-step height throughout the cycle
+      // crouches both knees even while the feet pass beneath the hips.
+      const supportRail = Math.sqrt(LEG * LEG * 0.985 - halfStance * halfStance) + 0.008;
+      hipTarget = (stanceHip / stanceWSum) - gHere;
+      if (b < 0.01) hipTarget = supportRail - 0.024 * Math.cos(this.phase * Math.PI * 4);
     } else if (moving) {
       // the lope's flight sliver: neither boot down — the body FLOATS a
       // touch high and the spring draws the bound's arc between stances
@@ -343,8 +366,9 @@ export class ColonistRig {
       // reach — enough for a natural micro-bend, not a crouch)
       hipTarget = REST_HIP - 0.0015;
     }
+    if (landed) hipTarget = this.hipYS.x - .015;
     hipTarget = clamp(hipTarget, REST_HIP - 0.30, REST_HIP + 0.06);
-    springStep(this.hipYS, hipTarget, 18, 1, dt);
+    springStep(this.hipYS, hipTarget, moving && b < 0.01 && !settling && !landed ? 38 : 18, 1, dt);
     // the pack rides the same rail on a sloppier spring — the jiggle is
     // the DIFFERENCE between the two (mass visibly floating at 0.38 g)
     springStep(this.packS, this.hipYS.x, 9, 0.38, dt);
@@ -356,11 +380,13 @@ export class ColonistRig {
       const out = i === 0 ? pose.legL : pose.legR;
       let dz, dy;
       if (airborne) {
-        // the tuck: knees drawn up, asymmetric (a body, not a mechanism)
-        const k = i === 0 ? 1 : 0.72;
-        Object.assign(out, {
-          hipPitch: 0.55 * k, kneeFlex: 1.05 * k, anklePitch: -0.25 * k,
-        });
+        // Draw the knees up on ascent, then extend for the ground on the
+        // way down. A constant tuck made every jump a rigid frozen pose.
+        const tuck = smooth01(((inp.vy || 0) + 2) / 3.5);
+        const ik = solveLeg(BONES.THIGH, BONES.SHIN,
+          (i === 0 ? .06 : -.04) + tuck * .10,
+          -this.hipYS.x + tuck * (i === 0 ? .19 : .13));
+        Object.assign(out, ik, { anklePitch: -(ik.hipPitch-ik.kneeFlex) });
         continue;
       }
       // boot -> hip space (heading frame)
@@ -412,11 +438,14 @@ export class ColonistRig {
     // legs — at REAL amplitude (2026-07-20 audit): brisk-walk arm swing
     // is ±10-15°, not the ±40° cartoon march the old 0.9-1.4x drive
     // produced. The under-damped spring keeps the loose follow-through.
-    const armAmp = 0.34 + 0.18 * b;
-    const tL = airborne ? -0.5 : (pose.legR.hipPitch || 0) * armAmp;
-    const tR = airborne ? -0.5 : (pose.legL.hipPitch || 0) * armAmp;
-    springStep(this.armS[0], tL, 7, 0.62, dt);
-    springStep(this.armS[1], tR, 7, 0.62, dt);
+    // Remove the common knee-flexion bias: the arms must swing behind as
+    // well as ahead, rather than both hands hanging permanently forward.
+    const armAmp = 0.42 + 0.12 * b;
+    const counterSwing = ((pose.legR.hipPitch || 0) - (pose.legL.hipPitch || 0)) * armAmp;
+    const tL = airborne ? -0.5 : counterSwing;
+    const tR = airborne ? -0.5 : -counterSwing;
+    springStep(this.armS[0], tL, 14, 1, dt);
+    springStep(this.armS[1], tR, 14, 1, dt);
 
     // breathing is the ONLY idle motion — a slow swell of the chest, and
     // nothing that rotates a joint. No drift, no fidgets: a standing figure
@@ -450,14 +479,11 @@ export class ColonistRig {
       abduct: 0.2 + 0.05 * b + Math.max(0, -swR) * 0.08,
     };
 
-    // ---- the naturalistic cap: SmoothDamp every joint, then hold it to a
-    // physiological angular-velocity ceiling. This is what de-robotises the
-    // walk — the IK can jump its target at a foot plant, but the rendered
-    // joint eases and is slew-limited, so no snap ever reaches the screen.
-    // Caps scale with the bound (kk): a Mars lope moves faster than a walk.
+    // Smooth airborne poses and upper-body follow-through. Grounded legs
+    // are solved finally below: smoothing those angles breaks foot contact.
     const kk = 1 + b;
     const ST_LEG = 0.05, ST_ARM = 0.09, ST_TOR = 0.14;
-    for (const [tag, lp] of [['L', pose.legL], ['R', pose.legR]]) {
+    if (airborne) for (const [tag, lp] of [['L', pose.legL], ['R', pose.legR]]) {
       lp.hipPitch = this.smoothJoint('h' + tag, lp.hipPitch, JOINT_CAP.hip * kk, ST_LEG, dt);
       lp.kneeFlex = this.smoothJoint('k' + tag, lp.kneeFlex, JOINT_CAP.knee * kk, ST_LEG, dt);
       lp.anklePitch = this.smoothJoint('a' + tag, lp.anklePitch, JOINT_CAP.ankle * kk, ST_LEG, dt);
@@ -469,6 +495,27 @@ export class ColonistRig {
     pose.torsoYaw = this.smoothJoint('ty', pose.torsoYaw, JOINT_CAP.torso, ST_TOR, dt);
     pose.torsoPitch = this.smoothJoint('tp', pose.torsoPitch, JOINT_CAP.torso, ST_TOR, dt);
 
+    // Final IK uses the ACTUAL translated hip, including lateral sway and
+    // turn offsets. Support boots remain exact in the rendered hierarchy.
+    if (!airborne) {
+      const targets = settling ? this.feet.map(f => {
+        if (!f.toe) return f;
+        const a = -settleStyle, along = .20 * Math.cos(a) - BONES.ANKLE_H * Math.sin(a);
+        return { ...f, px: f.px - Math.sin(f.yaw) * along, pz: f.pz - Math.cos(f.yaw) * along,
+          py: f.py + .20 * Math.sin(a) + BONES.ANKLE_H * (Math.cos(a) - 1) };
+      }) : this.feet;
+      pose.hipY = supportHeight(pose, targets, inp, BONES);
+      for (const [i, lp] of [[0, pose.legL], [1, pose.legR]]) {
+        Object.assign(lp, solveFoot(targets[i], pose, inp, BONES, solveLeg));
+        if (settling && this.feet[i].toe) lp.anklePitch += settleStyle;
+      }
+      // Seed takeoff smoothing from the actual last supported joints.
+      for (const [tag, lp] of [['L',pose.legL],['R',pose.legR]]) {
+        this.sm['h'+tag]={x:lp.hipPitch,v:0};
+        this.sm['k'+tag]={x:lp.kneeFlex,v:0};
+        this.sm['a'+tag]={x:lp.anklePitch,v:0};
+      }
+    }
     // debug/verify taps
     pose.footL = { x: this.feet[0].px, y: this.feet[0].py, z: this.feet[0].pz,
       planted: this.feet[0].planted };
@@ -477,7 +524,15 @@ export class ColonistRig {
     pose.duty = D;
 
     this.lastX = x; this.lastZ = z;
+    this.lastPose = pose;
     return pose;
+  }
+
+  supportHint(x,z,heading) {
+    const fx=Math.sin(heading),fz=Math.cos(heading);
+    return this.feet.filter(f=>f.planted).map(f=>({side:f.side,
+      ahead:(f.px-x)*fx+(f.pz-z)*fz-(f.toe?.20:0)}))
+      .sort((a,b)=>b.ahead-a.ahead)[0];
   }
 
   // freeze a boot into the world at (bx,bz) (snapped under the hip frame
@@ -488,10 +543,13 @@ export class ColonistRig {
       bz = bz + rz * f.side * BONES.FOOT_LAT + fz * ahead;
     }
     f.px = bx; f.pz = bz; f.py = ground(bx, bz);
-    f.planted = true; f.lift = null; f.tgt = null;
+    f.yaw = Math.atan2(fx, fz);
+    f.planted = true; f.lift = null; f.tgt = null; f.swingStart = null;
   }
 
   replant(inp) {
+    this.idleStep = null;
+    this.lopeSettle = null;
     const fx = Math.sin(inp.heading), fz = Math.cos(inp.heading);
     const rx = fz, rz = -fx;
     for (const f of this.feet) {
@@ -512,18 +570,23 @@ export class ColonistRig {
       const s = smooth01(st.u);
       f.px = lerp(st.from.x, st.to.x, s);
       f.pz = lerp(st.from.z, st.to.z, s);
-      f.py = groundAt(f.px, f.pz) + Math.sin(Math.PI * st.u) * 0.05;
-      if (st.u >= 1) { f.py = groundAt(f.px, f.pz); this.idleStep = null; }
+      f.py = lerp(st.from.y, groundAt(f.px, f.pz), s) + Math.sin(Math.PI * st.u) ** 2 * 0.05;
+      if (st.u >= 1) {
+        f.py = groundAt(f.px, f.pz); f.planted = true;
+        f.yaw = inp.heading;
+        f.lift = null; f.swingStart = null; this.idleStep = null;
+      }
       return;
     }
     for (let i = 0; i < 2; i++) {
       const f = this.feet[i];
       const hx = x + rx * f.side * BONES.FOOT_LAT;
       const hz = z + rz * f.side * BONES.FOOT_LAT;
-      if (Math.hypot(f.px - hx, f.pz - hz) > 0.1) {
+      if (!f.planted || Math.hypot(f.px - hx, f.pz - hz) > 0.035) {
         // bring a stray boot back directly under the hip — on a stop, this
         // squares the stance so he settles with feet beneath him
-        this.idleStep = { i, u: 0, from: { x: f.px, z: f.pz },
+        f.planted = false;
+        this.idleStep = { i, u: 0, from: { x: f.px, z: f.pz, y: f.py },
           to: { x: hx, z: hz } };
         break;
       }

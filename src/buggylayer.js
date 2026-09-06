@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { hash2 } from './noise.js';
 import { WHEEL_R, SUSP_STATIC, WHEELBASE_F, WHEELBASE_R } from './buggy.js';
+import { createBuggyFinish } from './buggy-finish.js';
 
 const PANEL = 0xd8cec0;   // dust-white body panels
 const RUST = 0xb34a2a;    // the family rust accent
@@ -123,7 +124,8 @@ export class BuggyLayer {
       this.lampL, this.lampR, this.lampTarget, lightBar);
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     scene.add(this.group);
-
+    this.finish = createBuggyFinish(this, {seat, back});
+    this.finish.setEnabled(true);
   }
 
   setLamps(on) {

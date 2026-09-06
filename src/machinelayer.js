@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { MACHINE_TYPES } from './machines.js';
+import { machineFittings } from './industry-fittings.js';
 
 const FRAME = 0x3a3430, STEEL = 0x9aa2ab, FROST = 0xb8cfd8;
 const RUST = 0xc45a2e, TEAL = 0x3fd0c9, PV = 0x18222e, PAD = 0x64432a;
@@ -179,6 +180,7 @@ export class MachineLayer {
     for (let i = this.meshes.length; i < machines.length; i++) {
       const m = machines[i];
       const mesh = (BUILDERS[m.type] || buildSmelter)();
+      machineFittings(mesh,m.type);
       mesh.position.set(m.x, groundAt(m.x, m.z), m.z);
       mesh.rotation.y = m.heading;
       mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -193,7 +195,8 @@ export class MachineLayer {
     for (let i = 0; i < this.meshes.length; i++) {
       const glow = this.meshes[i].userData.glow;
       if (!glow) continue;
-      const busy = machines[i] && machines[i].queue.length > 0;
+      const busy = machines[i] && machines[i].queue.length > 0
+        && !machines[i].exposure?.secured && (machines[i].exposure?.dust ?? 0) < .6;
       glow.visible = !!busy;
       if (busy) glow.scale.setScalar(0.9 + 0.15 * Math.sin(t * 5 + i));
     }
