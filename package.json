@@ -1,6 +1,7 @@
 {
   "name": "marsstead",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "version": "0.0.76",
   "minClientVersion": "0.0.1",
   "type": "module",

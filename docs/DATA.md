@@ -15,10 +15,10 @@ tables in code** (the `earthdata.js` discipline).
 2. **Algorithms**: implement from the *published equations* with a citation in
    the module header (Allison & McEwen below is the model case). A paper's
    maths is adoptable; a repo's code carries its licence.
-3. **Code**: study open-source projects for technique (LOD schemes, DEM
-   handling); **never copy from GPL sources** (e.g. MarsJS is GPLv3 —
-   incompatible with shipping-in-code here). Everything in `src/` is written
-   fresh, like its siblings.
+3. **Code**: Marsstead's original software is GPL-3.0-or-later. Before adopting
+   third-party code, check compatibility with that licence and retain its
+   copyright, licence and attribution notices. Studying a technique does not
+   imply copying its implementation. MarsJS was studied, not incorporated.
 4. **Imagery: never.** Colour is synthesised from shape + latitude + season
    (invariant 1). The DEM is shape, not imagery — it's in; photos are out.
 

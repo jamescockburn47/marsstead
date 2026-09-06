@@ -15,6 +15,23 @@ Gazetteer, scaled down and drawn entirely by code. Nothing to download.
 - **Live:** [www.marsstead.app](https://www.marsstead.app)
 - **The plan:** [docs/DESIGN.md](docs/DESIGN.md) — the founding design & architecture.
 
+## Licence
+
+Marsstead is free to play and free and open-source software.
+Copyright (C) 2026 James Cockburn and contributors.
+
+Except where otherwise identified, the original software in this repository is
+licensed under the **GNU General Public License, version 3 or (at your option)
+any later version** (`GPL-3.0-or-later`). You may use, study, modify and redistribute
+it under those terms. If you distribute modified versions, the GPL requires the
+covered work to remain under the GPL and recipients to receive corresponding source.
+The licence permits commercial use; Marsstead itself remains free to play.
+
+The software is provided without warranty; see [LICENSE](LICENSE) for the full
+terms. Scientific data and third-party components retain their own status and
+terms: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Source is available at
+[github.com/jamescockburn47/marsstead](https://github.com/jamescockburn47/marsstead).
+
 ## The two things that make it Marsstead
 
 1. **VESPER, a real AI co-star.** The only other mind on the planet — driven by a
